@@ -12,7 +12,7 @@ public class FeatureDiscoveryIntegrationTests
         var assembly = typeof(TestFixtures).Assembly;
 
         // Act
-        var features = FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
+        var features = CShells.FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
 
         // Assert
         Assert.Contains(features, f => f.Id == "Core");
@@ -29,7 +29,7 @@ public class FeatureDiscoveryIntegrationTests
         var assembly = typeof(TestFixtures).Assembly;
 
         // Act
-        var features = FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
+        var features = CShells.FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
 
         // Assert
         var coreFeature = features.Single(f => f.Id == "Core");
@@ -43,7 +43,7 @@ public class FeatureDiscoveryIntegrationTests
         var assembly = typeof(TestFixtures).Assembly;
 
         // Act
-        var features = FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
+        var features = CShells.FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
 
         // Assert
         var weatherFeature = features.Single(f => f.Id == "Weather");

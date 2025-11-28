@@ -49,6 +49,9 @@ namespace CShells
                     : new DefaultShellHost(shells, assemblies, logger);
             });
 
+            // Register the default shell context scope factory.
+            services.AddSingleton<IShellContextScopeFactory, DefaultShellContextScopeFactory>();
+
             return services;
         }
     }
