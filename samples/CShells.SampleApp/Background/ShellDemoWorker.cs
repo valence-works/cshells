@@ -27,11 +27,13 @@ public class ShellDemoWorker : BackgroundService
         IBackgroundWorkObserver? observer,
         ILogger<ShellDemoWorker> logger)
     {
-        _shellHost = shellHost ?? throw new ArgumentNullException(nameof(shellHost));
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        ArgumentNullException.ThrowIfNull(shellHost);
+        ArgumentNullException.ThrowIfNull(scopeFactory);
+        ArgumentNullException.ThrowIfNull(logger);
+        _shellHost = shellHost;
+        _scopeFactory = scopeFactory;
         _observer = observer;
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
+        _logger = logger;
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
