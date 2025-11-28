@@ -40,10 +40,10 @@ public static class ShellSettingsFactory
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var duplicates = options.Shells
+        var duplicates = (options.Shells
             .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1)
-            .Select(g => g.Key);
+            .Select(g => g.Key)).ToArray();
 
         if (duplicates.Any())
         {
