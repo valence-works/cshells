@@ -24,10 +24,10 @@ public class TimeService : ITimeService
 }
 
 /// <summary>
-/// Core feature startup that registers fundamental services.
+/// Core feature that registers fundamental services.
 /// </summary>
 [ShellFeature("Core", DisplayName = "Core Services")]
-public class CoreFeatureStartup : IShellFeature
+public class CoreFeature : IShellFeature
 {
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services)

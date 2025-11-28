@@ -11,12 +11,13 @@ builder.Services.AddCShells(
     assemblies: [typeof(Program).Assembly]);
 
 // Register ASP.NET Core integration for CShells with a custom shell resolver
-// The PathShellResolver maps "/admin" -> Admin shell, defaults to Default shell otherwise
+// The PathShellResolver maps paths to specific shells, defaults to Default shell otherwise
 builder.Services.AddSingleton<IShellResolver>(sp =>
 {
     var pathMappings = new Dictionary<string, ShellId>
     {
-        ["admin"] = new ShellId("Admin")
+        ["admin"] = new ShellId("Admin"),
+        ["tropical"] = new ShellId("Tropical")
     };
     return new CompositeShellResolver(
         new PathShellResolver(pathMappings),
@@ -58,12 +59,27 @@ app.MapGet("/", (HttpContext context) =>
 })
 .WithName("GetDefaultHome");
 
+// Tropical endpoint - resolves to Tropical shell with TropicalWeather feature
+app.MapGet("/tropical", (HttpContext context) =>
+{
+    var timeService = context.RequestServices.GetRequiredService<ITimeService>();
+    var weatherService = context.RequestServices.GetRequiredService<IWeatherService>();
+
+    return Results.Ok(new
+    {
+        Shell = "Tropical",
+        CurrentTime = timeService.GetCurrentTime(),
+        Forecast = weatherService.GetForecast()
+    });
+})
+.WithName("GetTropicalHome");
+
 // Admin endpoint - resolves to Admin shell with Admin feature
 app.MapGet("/admin", (HttpContext context) =>
 {
     var timeService = context.RequestServices.GetRequiredService<ITimeService>();
     var adminService = context.RequestServices.GetRequiredService<IAdminService>();
-    
+
     return Results.Ok(new
     {
         Shell = "Admin",

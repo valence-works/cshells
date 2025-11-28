@@ -45,10 +45,10 @@ public class AdminService : IAdminService
 }
 
 /// <summary>
-/// Admin feature startup that registers administrative services.
+/// Admin feature that registers administrative services.
 /// </summary>
 [ShellFeature("Admin", DependsOn = ["Core"], DisplayName = "Admin Feature")]
-public class AdminFeatureStartup : IShellFeature
+public class AdminFeature : IShellFeature
 {
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services)
