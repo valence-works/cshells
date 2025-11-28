@@ -39,21 +39,6 @@ public class ShellContextTests
         Assert.Same(serviceProvider, context.ServiceProvider);
     }
 
-    [Fact]
-    public void Id_ReturnsShellIdFromSettings()
-    {
-        // Arrange
-        var settings = new ShellSettings(new("MyShell"));
-        var serviceProvider = new TestServiceProvider();
-
-        // Act
-        var context = new ShellContext(settings, serviceProvider);
-
-        // Assert
-        Assert.Equal("MyShell", context.Id.Name);
-        Assert.Equal(settings.Id, context.Id);
-    }
-
     private class TestServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;

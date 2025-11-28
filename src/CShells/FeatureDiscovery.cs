@@ -25,6 +25,10 @@ public static class FeatureDiscovery
 
         foreach (var assembly in assemblies)
         {
+            // Skip null assemblies
+            if (assembly == null)
+                continue;
+
             foreach (var type in GetExportedTypes(assembly))
             {
                 var attribute = type.GetCustomAttribute<ShellFeatureAttribute>();

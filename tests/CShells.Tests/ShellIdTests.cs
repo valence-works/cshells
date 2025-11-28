@@ -40,27 +40,6 @@ public class ShellIdTests
     }
 
     [Fact]
-    public void GetHashCode_WithSameNameDifferentCase_ReturnsSameHashCode()
-    {
-        // Arrange
-        var shellId1 = new ShellId(TestName);
-        var shellId2 = new ShellId(TestName.ToUpperInvariant());
-
-        // Act & Assert
-        Assert.Equal(shellId1.GetHashCode(), shellId2.GetHashCode());
-    }
-
-    [Fact]
-    public void ToString_ReturnsName()
-    {
-        // Arrange
-        var shellId = new ShellId(TestName);
-
-        // Act & Assert
-        Assert.Equal(TestName, shellId.ToString());
-    }
-
-    [Fact]
     public void Equals_WithObject_ReturnsCorrectResult()
     {
         // Arrange

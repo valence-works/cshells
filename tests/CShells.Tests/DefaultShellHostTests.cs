@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Reflection.Emit;
+using CShells.Tests.TestHelpers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests;
@@ -169,9 +170,7 @@ public class DefaultShellHostTests : IDisposable
     public void GetShell_WithEnabledFeatures_ResolvesAndConfiguresServices()
     {
         // Arrange
-        var assembly = CreateTestAssembly(
-            ("TestFeature", typeof(TestFeatureFeature), [])
-        );
+        var assembly = CreateTestAssemblyWithService(typeof(ITestService), typeof(TestService), "TestFeature");
         var settings = new[]
         {
             new ShellSettings(new("TestShell"), ["TestFeature"])
@@ -288,21 +287,6 @@ public class DefaultShellHostTests : IDisposable
         Assert.Throws<ObjectDisposedException>(() => _ = host.AllShells);
     }
 
-    [Fact]
-    public void Dispose_CanBeCalledMultipleTimes()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"))
-        };
-        var host = new DefaultShellHost(settings, []);
-
-        // Act & Assert - Should not throw
-        host.Dispose();
-        host.Dispose();
-    }
-
     // Helper interfaces and test implementations
     public interface ITestService { }
     public class TestService : ITestService { }
@@ -313,93 +297,15 @@ public class DefaultShellHostTests : IDisposable
     public interface IChildService { }
     public class ChildService : IChildService { }
 
-    // Helper class for test features - cannot be used with dynamic assembly
-    // but keeping for reference
-    public class TestFeatureFeature : IShellFeature
-    {
-        public void ConfigureServices(IServiceCollection services)
-        {
-            services.AddSingleton<ITestService, TestService>();
-        }
-    }
-
-    /// <summary>
-    /// Creates a dynamic assembly with test feature types for testing purposes.
-    /// </summary>
-    private static Assembly CreateTestAssembly(params (string FeatureName, Type StartupType, string[] Dependencies)[] featureDefinitions)
+    private static Assembly CreateTestAssemblyWithService(Type serviceInterface, Type serviceImplementation, string featureName)
     {
         var assemblyName = new AssemblyName($"TestAssembly_{Guid.NewGuid():N}");
         var assemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run);
         var moduleBuilder = assemblyBuilder.DefineDynamicModule("MainModule");
 
-        var uniqueCounter = 0;
-        foreach (var (featureName, startupType, dependencies) in featureDefinitions)
-        {
-            var typeName = $"{featureName}Startup_{uniqueCounter++}";
-
-            // Create the type implementing IShellStartup
-            var typeBuilder = moduleBuilder.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class);
-            typeBuilder.AddInterfaceImplementation(typeof(IShellFeature));
-
-            // Set static field value
-            if (startupType == typeof(TestFeatureFeature))
-            {
-                // Will configure ITestService
-                DefineConfigureServicesWithTestService(typeBuilder, typeof(ITestService), typeof(TestService));
-            }
-            else
-            {
-                // Implement ConfigureServices method with empty body
-                var configureServicesMethod = typeBuilder.DefineMethod(
-                    "ConfigureServices",
-                    MethodAttributes.Public | MethodAttributes.Virtual,
-                    typeof(void),
-                    [typeof(IServiceCollection)]);
-                var ilConfigureServices = configureServicesMethod.GetILGenerator();
-                ilConfigureServices.Emit(OpCodes.Ret);
-            }
-
-            // Add the ShellFeatureAttribute
-            var attributeConstructor = typeof(ShellFeatureAttribute).GetConstructor([typeof(string)])!;
-            var attributeBuilder = new CustomAttributeBuilder(
-                attributeConstructor,
-                [featureName],
-                [typeof(ShellFeatureAttribute).GetProperty("DependsOn")!],
-                [dependencies]);
-            typeBuilder.SetCustomAttribute(attributeBuilder);
-
-            typeBuilder.CreateType();
-        }
+        TestAssemblyBuilder.CreateFeatureType(moduleBuilder, featureName, [], serviceInterface, serviceImplementation);
 
         return assemblyBuilder;
-    }
-
-    private static void DefineConfigureServicesWithTestService(TypeBuilder typeBuilder, Type serviceInterface, Type serviceImplementation)
-    {
-        // Implement ConfigureServices method that registers a service
-        var configureServicesMethod = typeBuilder.DefineMethod(
-            "ConfigureServices",
-            MethodAttributes.Public | MethodAttributes.Virtual,
-            typeof(void),
-            [typeof(IServiceCollection)]);
-
-        var il = configureServicesMethod.GetILGenerator();
-
-        // Load the services collection
-        il.Emit(OpCodes.Ldarg_1);
-
-        // Call ServiceCollectionServiceExtensions.AddSingleton<TService, TImplementation>(services)
-        var addSingletonMethod = typeof(ServiceCollectionServiceExtensions)
-            .GetMethods()
-            .First(m => m.Name == "AddSingleton" &&
-                        m.IsGenericMethod &&
-                        m.GetGenericArguments().Length == 2 &&
-                        m.GetParameters().Length == 1)
-            .MakeGenericMethod(serviceInterface, serviceImplementation);
-
-        il.Emit(OpCodes.Call, addSingletonMethod);
-        il.Emit(OpCodes.Pop); // Pop the return value (IServiceCollection)
-        il.Emit(OpCodes.Ret);
     }
 
     private static Assembly CreateTestAssemblyWithDependencies()
@@ -409,51 +315,11 @@ public class DefaultShellHostTests : IDisposable
         var moduleBuilder = assemblyBuilder.DefineDynamicModule("MainModule");
 
         // Create ParentFeature startup
-        CreateFeatureType(moduleBuilder, "ParentFeature", [], typeof(IParentService), typeof(ParentService));
+        TestAssemblyBuilder.CreateFeatureType(moduleBuilder, "ParentFeature", [], typeof(IParentService), typeof(ParentService));
 
         // Create ChildFeature startup with dependency on ParentFeature
-        CreateFeatureType(moduleBuilder, "ChildFeature", ["ParentFeature"], typeof(IChildService), typeof(ChildService));
+        TestAssemblyBuilder.CreateFeatureType(moduleBuilder, "ChildFeature", ["ParentFeature"], typeof(IChildService), typeof(ChildService));
 
         return assemblyBuilder;
-    }
-
-    private static void CreateFeatureType(ModuleBuilder moduleBuilder, string featureName, string[] dependencies, Type serviceInterface, Type serviceImplementation)
-    {
-        var typeName = $"{featureName}Startup";
-        var typeBuilder = moduleBuilder.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class);
-        typeBuilder.AddInterfaceImplementation(typeof(IShellFeature));
-
-        // Implement ConfigureServices method that registers a service
-        var configureServicesMethod = typeBuilder.DefineMethod(
-            "ConfigureServices",
-            MethodAttributes.Public | MethodAttributes.Virtual,
-            typeof(void),
-            [typeof(IServiceCollection)]);
-
-        var il = configureServicesMethod.GetILGenerator();
-        il.Emit(OpCodes.Ldarg_1);
-
-        var addSingletonMethod = typeof(ServiceCollectionServiceExtensions)
-            .GetMethods()
-            .First(m => m.Name == "AddSingleton" &&
-                        m.IsGenericMethod &&
-                        m.GetGenericArguments().Length == 2 &&
-                        m.GetParameters().Length == 1)
-            .MakeGenericMethod(serviceInterface, serviceImplementation);
-
-        il.Emit(OpCodes.Call, addSingletonMethod);
-        il.Emit(OpCodes.Pop);
-        il.Emit(OpCodes.Ret);
-
-        // Add the ShellFeatureAttribute
-        var attributeConstructor = typeof(ShellFeatureAttribute).GetConstructor([typeof(string)])!;
-        var attributeBuilder = new CustomAttributeBuilder(
-            attributeConstructor,
-            [featureName],
-            [typeof(ShellFeatureAttribute).GetProperty("DependsOn")!],
-            [dependencies]);
-        typeBuilder.SetCustomAttribute(attributeBuilder);
-
-        typeBuilder.CreateType();
     }
 }

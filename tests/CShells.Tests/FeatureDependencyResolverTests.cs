@@ -4,23 +4,17 @@ public class FeatureDependencyResolverTests
 {
     private readonly FeatureDependencyResolver _resolver = new();
 
-    [Fact]
-    public void ResolveDependencies_WithNullFeatureName_ThrowsArgumentNullException()
+    [Theory]
+    [InlineData(null, "featureName")]
+    [InlineData("Feature1", "features")]
+    public void ResolveDependencies_WithNullParameters_ThrowsArgumentNullException(string? featureName, string expectedParamName)
     {
         // Arrange
-        var features = new Dictionary<string, ShellFeatureDescriptor>();
+        var features = featureName == null ? new Dictionary<string, ShellFeatureDescriptor>() : null;
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => _resolver.ResolveDependencies(null!, features));
-        Assert.Equal("featureName", ex.ParamName);
-    }
-
-    [Fact]
-    public void ResolveDependencies_WithNullFeatures_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => _resolver.ResolveDependencies("Feature1", null!));
-        Assert.Equal("features", ex.ParamName);
+        var ex = Assert.Throws<ArgumentNullException>(() => _resolver.ResolveDependencies(featureName!, features!));
+        Assert.Equal(expectedParamName, ex.ParamName);
     }
 
     [Fact]
@@ -114,12 +108,22 @@ public class FeatureDependencyResolverTests
         Assert.Contains("NonExistent", ex.Message);
     }
 
-    [Fact]
-    public void GetOrderedFeatures_WithNullFeatures_ThrowsArgumentNullException()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void GetOrderedFeatures_WithNullFeatures_ThrowsArgumentNullException(bool withFeatureNames)
     {
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => _resolver.GetOrderedFeatures((IReadOnlyDictionary<string, ShellFeatureDescriptor>)null!));
-        Assert.Equal("features", ex.ParamName);
+        if (withFeatureNames)
+        {
+            var ex = Assert.Throws<ArgumentNullException>(() => _resolver.GetOrderedFeatures(new[] { "Feature1" }, null!));
+            Assert.Equal("features", ex.ParamName);
+        }
+        else
+        {
+            var ex = Assert.Throws<ArgumentNullException>(() => _resolver.GetOrderedFeatures((IReadOnlyDictionary<string, ShellFeatureDescriptor>)null!));
+            Assert.Equal("features", ex.ParamName);
+        }
     }
 
     [Fact]
@@ -196,14 +200,6 @@ public class FeatureDependencyResolverTests
         // Act & Assert
         var ex = Assert.Throws<ArgumentNullException>(() => _resolver.GetOrderedFeatures((IEnumerable<string>)null!, features));
         Assert.Equal("featureNames", ex.ParamName);
-    }
-
-    [Fact]
-    public void GetOrderedFeatures_WithFeatureNames_NullFeatures_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => _resolver.GetOrderedFeatures(new[] { "Feature1" }, null!));
-        Assert.Equal("features", ex.ParamName);
     }
 
     [Fact]

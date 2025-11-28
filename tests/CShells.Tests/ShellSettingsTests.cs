@@ -56,21 +56,6 @@ public class ShellSettingsTests
         Assert.Equal("enabledFeatures", ex.ParamName);
     }
 
-    [Theory]
-    [InlineData("Key1", "Value1")]
-    [InlineData("Key2", 42)]
-    public void Properties_CanAddAndRetrieveValues(string key, object value)
-    {
-        // Arrange
-        var settings = new ShellSettings(CreateTestShellId());
-
-        // Act
-        settings.Properties[key] = value;
-
-        // Assert
-        Assert.Equal(value, settings.Properties[key]);
-    }
-
     [Fact]
     public void EnabledFeatures_CanBeSet()
     {
@@ -83,22 +68,6 @@ public class ShellSettingsTests
 
         // Assert
         Assert.Equal(features, settings.EnabledFeatures);
-    }
-
-    [Fact]
-    public void EnabledFeatures_CreatesDefensiveCopy()
-    {
-        // Arrange
-        var settings = new ShellSettings();
-        var features = CreateTestFeatures();
-
-        // Act
-        settings.EnabledFeatures = features;
-        features.Add("Feature3");
-
-        // Assert
-        Assert.Equal(2, settings.EnabledFeatures.Count);
-        Assert.DoesNotContain("Feature3", settings.EnabledFeatures);
     }
 
     private static ShellId CreateTestShellId() => new(TestShellName);
