@@ -3,7 +3,6 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\CShells\CShells.csproj"/>
         <ProjectReference Include="..\..\src\CShells.AspNetCore\CShells.AspNetCore.csproj"/>
-        <ProjectReference Include="..\..\samples\CShells.SampleApp\CShells.SampleApp.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

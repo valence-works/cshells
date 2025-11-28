@@ -82,22 +82,19 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-public class ShellDemoWorker : BackgroundService
+public class ShellBackgroundWorker : BackgroundService
 {
     private readonly IShellHost _shellHost;
     private readonly IShellContextScopeFactory _scopeFactory;
-    private readonly IBackgroundWorkObserver? _observer;
-    private readonly ILogger<ShellDemoWorker> _logger;
+    private readonly ILogger<ShellBackgroundWorker> _logger;
 
-    public ShellDemoWorker(
+    public ShellBackgroundWorker(
         IShellHost shellHost,
         IShellContextScopeFactory scopeFactory,
-        IBackgroundWorkObserver? observer,
-        ILogger<ShellDemoWorker> logger)
+        ILogger<ShellBackgroundWorker> logger)
     {
         _shellHost = shellHost;
         _scopeFactory = scopeFactory;
-        _observer = observer;
         _logger = logger;
     }
 
@@ -110,11 +107,11 @@ public class ShellDemoWorker : BackgroundService
                 using var scope = _scopeFactory.CreateScope(shell);
                 
                 // Execute work in the shell's context
-                var workDescription = $"Background work executed for shell '{shell.Id.Name}'";
-                _logger.LogInformation(workDescription);
+                _logger.LogInformation("Background work executed for shell '{ShellId}'", shell.Id.Name);
                 
-                // Optionally notify an observer
-                _observer?.OnWorkExecuted(shell.Id, workDescription);
+                // Resolve and use scoped services
+                var service = scope.ServiceProvider.GetService<IMyService>();
+                service?.Execute();
             }
 
             await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
@@ -123,24 +120,8 @@ public class ShellDemoWorker : BackgroundService
 }
 ```
 
-### IBackgroundWorkObserver
-
-The `IBackgroundWorkObserver` interface can be used to monitor background work execution:
+Register your background worker in your service collection:
 
 ```csharp
-public class MyWorkObserver : IBackgroundWorkObserver
-{
-    public void OnWorkExecuted(ShellId shellId, string workDescription)
-    {
-        // Handle the work notification
-        Console.WriteLine($"Work executed for {shellId.Name}: {workDescription}");
-    }
-}
-```
-
-Register the observer in your service collection:
-
-```csharp
-services.AddSingleton<IBackgroundWorkObserver, MyWorkObserver>();
-services.AddHostedService<ShellDemoWorker>();
+services.AddHostedService<ShellBackgroundWorker>();
 ```
