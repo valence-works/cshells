@@ -26,7 +26,7 @@ public class ShellConfigTests
         {
             Name = "TestShell",
             Features = ["Feature1", "Feature2"],
-            Properties = new Dictionary<string, object>
+            Properties = new()
             {
                 ["Key1"] = "Value1",
                 ["Key2"] = 42

@@ -30,8 +30,8 @@ public class CShellsOptionsTests
         {
             Shells =
             [
-                new ShellConfig { Name = "Shell1" },
-                new ShellConfig { Name = "Shell2" }
+                new() { Name = "Shell1" },
+                new() { Name = "Shell2" }
             ]
         };
 

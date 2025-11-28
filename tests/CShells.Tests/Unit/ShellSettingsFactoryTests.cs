@@ -20,7 +20,7 @@ public class ShellSettingsFactoryTests
         {
             Name = "TestShell",
             Features = ["Feature1", "Feature2"],
-            Properties = new Dictionary<string, object>
+            Properties = new()
             {
                 ["Key1"] = "Value1"
             }
@@ -67,8 +67,8 @@ public class ShellSettingsFactoryTests
         {
             Shells =
             [
-                new ShellConfig { Name = "Shell1", Features = ["Feature1"] },
-                new ShellConfig { Name = "Shell2", Features = ["Feature2", "Feature3"] }
+                new() { Name = "Shell1", Features = ["Feature1"] },
+                new() { Name = "Shell2", Features = ["Feature2", "Feature3"] }
             ]
         };
 
@@ -121,8 +121,8 @@ public class ShellSettingsFactoryTests
         {
             Shells =
             [
-                new ShellConfig { Name = "DuplicateShell" },
-                new ShellConfig { Name = "DuplicateShell" }
+                new() { Name = "DuplicateShell" },
+                new() { Name = "DuplicateShell" }
             ]
         };
 
