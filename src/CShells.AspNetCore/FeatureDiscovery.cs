@@ -24,11 +24,8 @@ public static class FeatureDiscovery
 
         var features = new Dictionary<string, ShellFeatureDescriptor>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var assembly in assemblies)
+        foreach (var assembly in assemblies.Where(a => a != null))
         {
-            if (assembly == null)
-                continue;
-
             foreach (var type in GetExportedTypes(assembly))
             {
                 var attribute = type.GetCustomAttribute<ShellFeatureAttribute>();
@@ -58,6 +55,12 @@ public static class FeatureDiscovery
                 // Convert metadata array to dictionary (pairs of key-value)
                 if (attribute.Metadata.Length > 0)
                 {
+                    if (attribute.Metadata.Length % 2 != 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"Feature '{attribute.Name}' has an odd number of metadata elements. Metadata must be specified as key-value pairs.");
+                    }
+                    
                     var metadata = new Dictionary<string, object>();
                     for (var i = 0; i + 1 < attribute.Metadata.Length; i += 2)
                     {

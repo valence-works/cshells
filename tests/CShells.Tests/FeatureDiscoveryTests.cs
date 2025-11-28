@@ -139,6 +139,20 @@ public class FeatureDiscoveryTests
         Assert.Contains(features, f => f.Id == "Feature2");
     }
 
+    [Fact]
+    public void DiscoverFeatures_WithOddMetadataElements_ThrowsInvalidOperationException()
+    {
+        // Arrange - create assembly with odd number of metadata elements
+        var assembly = CreateTestAssembly(
+            ("FeatureWithOddMetadata", typeof(IShellStartup), Array.Empty<string>(), new object[] { "key1", "value1", "orphanKey" })
+        );
+
+        // Act & Assert
+        var ex = Assert.Throws<InvalidOperationException>(() => FeatureDiscovery.DiscoverFeatures(new[] { assembly }).ToList());
+        Assert.Contains("odd number of metadata elements", ex.Message);
+        Assert.Contains("FeatureWithOddMetadata", ex.Message);
+    }
+
     /// <summary>
     /// Creates a dynamic assembly with test feature types for testing purposes.
     /// </summary>
