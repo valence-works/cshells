@@ -1,7 +1,7 @@
 using System.Reflection;
 using CShells.Tests.TestHelpers;
 
-namespace CShells.Tests;
+namespace CShells.Tests.Integration;
 
 public class FeatureDiscoveryTests
 {

@@ -1,4 +1,4 @@
-namespace CShells.Tests;
+namespace CShells.Tests.Unit;
 
 public class FeatureDependencyResolverTests
 {

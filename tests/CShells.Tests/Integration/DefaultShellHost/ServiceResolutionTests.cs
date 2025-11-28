@@ -3,11 +3,14 @@ using System.Reflection.Emit;
 using CShells.Tests.TestHelpers;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace CShells.Tests;
+namespace CShells.Tests.Integration.DefaultShellHost;
 
-public class DefaultShellHostTests : IDisposable
+/// <summary>
+/// Tests for <see cref="CShells.DefaultShellHost"/> service resolution and dependency injection.
+/// </summary>
+public class ServiceResolutionTests : IDisposable
 {
-    private readonly List<DefaultShellHost> _hostsToDispose = [];
+    private readonly List<CShells.DefaultShellHost> _hostsToDispose = [];
 
     public void Dispose()
     {
@@ -15,155 +18,6 @@ public class DefaultShellHostTests : IDisposable
         {
             host.Dispose();
         }
-    }
-
-    [Fact(DisplayName = "Constructor with null shell settings throws ArgumentNullException")]
-    public void Constructor_WithNullShellSettings_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new DefaultShellHost(null!));
-        Assert.Equal("shellSettings", ex.ParamName);
-    }
-
-    [Fact(DisplayName = "Constructor with null assemblies throws ArgumentNullException")]
-    public void Constructor_WithNullAssemblies_ThrowsArgumentNullException()
-    {
-        // Arrange
-        var settings = new[] { new ShellSettings(new("Test")) };
-        IEnumerable<Assembly>? nullAssemblies = null;
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new DefaultShellHost(settings, nullAssemblies!));
-        Assert.Equal("assemblies", ex.ParamName);
-    }
-
-    [Fact(DisplayName = "DefaultShell with no shells throws InvalidOperationException")]
-    public void DefaultShell_WithNoShells_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var host = new DefaultShellHost([], []);
-        _hostsToDispose.Add(host);
-
-        // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _ = host.DefaultShell);
-        Assert.Contains("No shells have been configured", ex.Message);
-    }
-
-    [Fact(DisplayName = "DefaultShell with Default shell configured returns default shell")]
-    public void DefaultShell_WithDefaultShellConfigured_ReturnsDefaultShell()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("Default")),
-            new ShellSettings(new("Other"))
-        };
-        var host = new DefaultShellHost(settings, []);
-        _hostsToDispose.Add(host);
-
-        // Act
-        var shell = host.DefaultShell;
-
-        // Assert
-        Assert.Equal("Default", shell.Id.Name);
-    }
-
-    [Fact(DisplayName = "DefaultShell without default shell returns first shell")]
-    public void DefaultShell_WithoutDefaultShell_ReturnsFirstShell()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("First")),
-            new ShellSettings(new("Second"))
-        };
-        var host = new DefaultShellHost(settings, []);
-        _hostsToDispose.Add(host);
-
-        // Act
-        var shell = host.DefaultShell;
-
-        // Assert
-        Assert.Equal("First", shell.Id.Name);
-    }
-
-    [Fact(DisplayName = "GetShell with valid ID returns shell context")]
-    public void GetShell_WithValidId_ReturnsShellContext()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"))
-        };
-        var host = new DefaultShellHost(settings, []);
-        _hostsToDispose.Add(host);
-
-        // Act
-        var shell = host.GetShell(new("TestShell"));
-
-        // Assert
-        Assert.NotNull(shell);
-        Assert.Equal("TestShell", shell.Id.Name);
-        Assert.NotNull(shell.Settings);
-        Assert.NotNull(shell.ServiceProvider);
-    }
-
-    [Fact(DisplayName = "GetShell with invalid ID throws KeyNotFoundException")]
-    public void GetShell_WithInvalidId_ThrowsKeyNotFoundException()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"))
-        };
-        var host = new DefaultShellHost(settings, []);
-        _hostsToDispose.Add(host);
-
-        // Act & Assert
-        var ex = Assert.Throws<KeyNotFoundException>(() => host.GetShell(new("NonExistent")));
-        Assert.Contains("NonExistent", ex.Message);
-    }
-
-    [Fact(DisplayName = "GetShell called multiple times returns same instance")]
-    public void GetShell_CalledMultipleTimes_ReturnsSameInstance()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"))
-        };
-        var host = new DefaultShellHost(settings, []);
-        _hostsToDispose.Add(host);
-
-        // Act
-        var shell1 = host.GetShell(new("TestShell"));
-        var shell2 = host.GetShell(new("TestShell"));
-
-        // Assert
-        Assert.Same(shell1, shell2);
-    }
-
-    [Fact(DisplayName = "AllShells returns all configured shells")]
-    public void AllShells_ReturnsAllConfiguredShells()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("Shell1")),
-            new ShellSettings(new("Shell2")),
-            new ShellSettings(new("Shell3"))
-        };
-        var host = new DefaultShellHost(settings, []);
-        _hostsToDispose.Add(host);
-
-        // Act
-        var allShells = host.AllShells;
-
-        // Assert
-        Assert.Equal(3, allShells.Count);
-        Assert.Contains(allShells, s => s.Id.Name == "Shell1");
-        Assert.Contains(allShells, s => s.Id.Name == "Shell2");
-        Assert.Contains(allShells, s => s.Id.Name == "Shell3");
     }
 
     [Fact(DisplayName = "GetShell with enabled features resolves and configures services")]
@@ -175,7 +29,7 @@ public class DefaultShellHostTests : IDisposable
         {
             new ShellSettings(new("TestShell"), ["TestFeature"])
         };
-        var host = new DefaultShellHost(settings, [assembly]);
+        var host = new CShells.DefaultShellHost(settings, [assembly]);
         _hostsToDispose.Add(host);
 
         // Act
@@ -196,7 +50,7 @@ public class DefaultShellHostTests : IDisposable
         {
             new ShellSettings(new("TestShell"), ["ChildFeature"])
         };
-        var host = new DefaultShellHost(settings, [assembly]);
+        var host = new CShells.DefaultShellHost(settings, [assembly]);
         _hostsToDispose.Add(host);
 
         // Act
@@ -218,7 +72,7 @@ public class DefaultShellHostTests : IDisposable
         {
             new ShellSettings(new("TestShell"), ["DependentFeature"])
         };
-        var host = new DefaultShellHost(settings, [assembly]);
+        var host = new CShells.DefaultShellHost(settings, [assembly]);
         _hostsToDispose.Add(host);
 
         // Act - This should not throw
@@ -231,23 +85,6 @@ public class DefaultShellHostTests : IDisposable
         Assert.NotNull(validationService);
     }
 
-    [Fact(DisplayName = "GetShell with unknown feature throws InvalidOperationException")]
-    public void GetShell_WithUnknownFeature_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"), ["UnknownFeature"])
-        };
-        var host = new DefaultShellHost(settings, []);
-        _hostsToDispose.Add(host);
-
-        // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => host.GetShell(new("TestShell")));
-        Assert.Contains("UnknownFeature", ex.Message);
-        Assert.Contains("not found", ex.Message);
-    }
-
     [Fact(DisplayName = "GetShell returns ShellSettings from service provider")]
     public void GetShell_ShellSettingsIsRegistered_ReturnsFromServiceProvider()
     {
@@ -256,7 +93,7 @@ public class DefaultShellHostTests : IDisposable
         {
             new ShellSettings(new("TestShell"))
         };
-        var host = new DefaultShellHost(settings, []);
+        var host = new CShells.DefaultShellHost(settings, []);
         _hostsToDispose.Add(host);
 
         // Act
@@ -276,7 +113,7 @@ public class DefaultShellHostTests : IDisposable
         {
             new ShellSettings(new("TestShell"))
         };
-        var host = new DefaultShellHost(settings, []);
+        var host = new CShells.DefaultShellHost(settings, []);
         _hostsToDispose.Add(host);
 
         // Act
@@ -287,26 +124,6 @@ public class DefaultShellHostTests : IDisposable
         Assert.NotNull(resolvedContext);
         Assert.Same(shell, resolvedContext);
         Assert.Equal("TestShell", resolvedContext.Id.Name);
-    }
-
-    [Fact(DisplayName = "Dispose disposes all service providers")]
-    public void Dispose_DisposesServiceProviders()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"))
-        };
-        var host = new DefaultShellHost(settings, []);
-        _ = host.GetShell(new("TestShell")); // Ensure the shell is built
-
-        // Act
-        host.Dispose();
-
-        // Assert - After dispose, accessing shells should throw
-        Assert.Throws<ObjectDisposedException>(() => host.DefaultShell);
-        Assert.Throws<ObjectDisposedException>(() => host.GetShell(new("TestShell")));
-        Assert.Throws<ObjectDisposedException>(() => _ = host.AllShells);
     }
 
     // Helper interfaces and test implementations
