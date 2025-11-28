@@ -1,20 +1,13 @@
 using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace CShells.AspNetCore;
 
 /// <summary>
-/// Defines the contract for shell startup configuration classes.
+/// Extends <see cref="CShells.IShellStartup"/> with ASP.NET Core specific configuration.
 /// </summary>
-public interface IShellStartup
+public interface IShellStartupWithPipeline : CShells.IShellStartup
 {
-    /// <summary>
-    /// Configures the services for the shell.
-    /// </summary>
-    /// <param name="services">The service collection to configure.</param>
-    void ConfigureServices(IServiceCollection services);
-
     /// <summary>
     /// Configures the application pipeline for the shell.
     /// </summary>

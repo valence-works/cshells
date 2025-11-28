@@ -1,7 +1,6 @@
 using System.Reflection;
-using CShells;
 
-namespace CShells.AspNetCore;
+namespace CShells;
 
 /// <summary>
 /// Provides static methods for discovering shell features from assemblies.

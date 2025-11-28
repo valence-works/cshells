@@ -1,10 +1,6 @@
 using System.Reflection;
 using System.Reflection.Emit;
-using CShells.AspNetCore;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace CShells.Tests;
 
@@ -281,7 +277,7 @@ public class DefaultShellHostTests : IDisposable
             new ShellSettings(new ShellId("TestShell"))
         };
         var host = new DefaultShellHost(settings, []);
-        var shell = host.GetShell(new ShellId("TestShell"));
+        _ = host.GetShell(new ShellId("TestShell")); // Ensure the shell is built
 
         // Act
         host.Dispose();
@@ -325,8 +321,6 @@ public class DefaultShellHostTests : IDisposable
         {
             services.AddSingleton<ITestService, TestService>();
         }
-
-        public void Configure(IApplicationBuilder app, IHostEnvironment environment) { }
     }
 
     /// <summary>
@@ -347,12 +341,6 @@ public class DefaultShellHostTests : IDisposable
             var typeBuilder = moduleBuilder.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class);
             typeBuilder.AddInterfaceImplementation(typeof(IShellStartup));
 
-            // Define private field to hold services configuration action
-            var configActionField = typeBuilder.DefineField(
-                "_configAction",
-                typeof(Action<IServiceCollection>),
-                FieldAttributes.Private | FieldAttributes.Static);
-
             // Set static field value
             if (startupType == typeof(TestFeatureStartup))
             {
@@ -370,15 +358,6 @@ public class DefaultShellHostTests : IDisposable
                 var ilConfigureServices = configureServicesMethod.GetILGenerator();
                 ilConfigureServices.Emit(OpCodes.Ret);
             }
-
-            // Implement Configure method
-            var configureMethod = typeBuilder.DefineMethod(
-                "Configure",
-                MethodAttributes.Public | MethodAttributes.Virtual,
-                typeof(void),
-                [typeof(IApplicationBuilder), typeof(IHostEnvironment)]);
-            var ilConfigure = configureMethod.GetILGenerator();
-            ilConfigure.Emit(OpCodes.Ret);
 
             // Add the ShellFeatureAttribute
             var attributeConstructor = typeof(ShellFeatureAttribute).GetConstructor([typeof(string)])!;
@@ -465,15 +444,6 @@ public class DefaultShellHostTests : IDisposable
         il.Emit(OpCodes.Call, addSingletonMethod);
         il.Emit(OpCodes.Pop);
         il.Emit(OpCodes.Ret);
-
-        // Implement Configure method
-        var configureMethod = typeBuilder.DefineMethod(
-            "Configure",
-            MethodAttributes.Public | MethodAttributes.Virtual,
-            typeof(void),
-            [typeof(IApplicationBuilder), typeof(IHostEnvironment)]);
-        var ilConfigure = configureMethod.GetILGenerator();
-        ilConfigure.Emit(OpCodes.Ret);
 
         // Add the ShellFeatureAttribute
         var attributeConstructor = typeof(ShellFeatureAttribute).GetConstructor([typeof(string)])!;

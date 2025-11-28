@@ -1,9 +1,6 @@
 using System.Reflection;
 using System.Reflection.Emit;
-using CShells.AspNetCore;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace CShells.Tests;
 
@@ -182,15 +179,6 @@ public class FeatureDiscoveryTests
                     [typeof(IServiceCollection)]);
                 var ilConfigureServices = configureServicesMethod.GetILGenerator();
                 ilConfigureServices.Emit(OpCodes.Ret);
-                
-                // Implement Configure method
-                var configureMethod = typeBuilder.DefineMethod(
-                    "Configure",
-                    MethodAttributes.Public | MethodAttributes.Virtual,
-                    typeof(void),
-                    [typeof(IApplicationBuilder), typeof(IHostEnvironment)]);
-                var ilConfigure = configureMethod.GetILGenerator();
-                ilConfigure.Emit(OpCodes.Ret);
             }
             else
             {

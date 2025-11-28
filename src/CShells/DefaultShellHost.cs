@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace CShells.AspNetCore;
+namespace CShells;
 
 /// <summary>
 /// Default implementation of <see cref="IShellHost"/> that builds and caches per-shell
@@ -13,7 +13,7 @@ namespace CShells.AspNetCore;
 public class DefaultShellHost : IShellHost, IDisposable
 {
     private readonly IReadOnlyDictionary<string, ShellFeatureDescriptor> _featureMap;
-    private readonly IEnumerable<ShellSettings> _shellSettings;
+    private readonly IReadOnlyList<ShellSettings> _shellSettings;
     private readonly ConcurrentDictionary<ShellId, ShellContext> _shellContexts = new();
     private readonly FeatureDependencyResolver _dependencyResolver = new();
     private readonly ILogger<DefaultShellHost> _logger;
@@ -27,21 +27,8 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// <param name="logger">Optional logger for diagnostic output.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/> is null.</exception>
     public DefaultShellHost(IEnumerable<ShellSettings> shellSettings, ILogger<DefaultShellHost>? logger = null)
+        : this(shellSettings, AppDomain.CurrentDomain.GetAssemblies(), logger)
     {
-        ArgumentNullException.ThrowIfNull(shellSettings);
-        _shellSettings = shellSettings;
-        _logger = logger ?? NullLogger<DefaultShellHost>.Instance;
-
-        // Discover all features from loaded assemblies
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-        var features = FeatureDiscovery.DiscoverFeatures(assemblies).ToList();
-
-        _logger.LogInformation("Discovered {FeatureCount} features: {FeatureNames}",
-            features.Count,
-            string.Join(", ", features.Select(f => f.Id)));
-
-        // Build feature map for quick lookup
-        _featureMap = features.ToDictionary(f => f.Id, f => f, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -55,7 +42,8 @@ public class DefaultShellHost : IShellHost, IDisposable
     {
         ArgumentNullException.ThrowIfNull(shellSettings);
         ArgumentNullException.ThrowIfNull(assemblies);
-        _shellSettings = shellSettings;
+        
+        _shellSettings = shellSettings.ToList();
         _logger = logger ?? NullLogger<DefaultShellHost>.Instance;
 
         // Discover all features from specified assemblies
@@ -125,10 +113,11 @@ public class DefaultShellHost : IShellHost, IDisposable
         {
             ThrowIfDisposed();
 
-            // Ensure all shells are built
+            // Build all shells that haven't been built yet
             foreach (var settings in _shellSettings)
             {
-                GetShell(settings.Id);
+                // Use GetOrAdd pattern to build each shell only once
+                _shellContexts.GetOrAdd(settings.Id, _ => BuildShellContextInternal(settings));
             }
 
             return _shellContexts.Values.ToList().AsReadOnly();
@@ -147,16 +136,25 @@ public class DefaultShellHost : IShellHost, IDisposable
             throw new KeyNotFoundException($"Shell with Id '{id}' was not found in the configured shell settings.");
         }
 
-        // Double-check locking for thread safety
+        return _shellContexts.GetOrAdd(id, _ => BuildShellContextInternal(settings));
+    }
+
+    /// <summary>
+    /// Internal method to build a shell context for the given settings.
+    /// This method is called within GetOrAdd and ensures thread-safe initialization.
+    /// </summary>
+    private ShellContext BuildShellContextInternal(ShellSettings settings)
+    {
+        // Double-check locking for thread safety during initialization
         lock (_buildLock)
         {
-            // Check again after acquiring lock
-            if (_shellContexts.TryGetValue(id, out var existingContext))
+            // Check again after acquiring lock in case another thread already built it
+            if (_shellContexts.TryGetValue(settings.Id, out var existingContext))
             {
                 return existingContext;
             }
 
-            _logger.LogInformation("Building shell context for '{ShellId}'", id);
+            _logger.LogInformation("Building shell context for '{ShellId}'", settings.Id);
 
             // Validate configured features exist
             ValidateEnabledFeatures(settings);
@@ -169,12 +167,12 @@ public class DefaultShellHost : IShellHost, IDisposable
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogError(ex, "Failed to resolve feature dependencies for shell '{ShellId}'", id);
+                _logger.LogError(ex, "Failed to resolve feature dependencies for shell '{ShellId}'", settings.Id);
                 throw;
             }
 
             _logger.LogInformation("Shell '{ShellId}' will use features (in order): {Features}",
-                id, string.Join(", ", orderedFeatures));
+                settings.Id, string.Join(", ", orderedFeatures));
 
             // Build the service provider with a context holder
             var contextHolder = new ShellContextHolder();
@@ -184,7 +182,6 @@ public class DefaultShellHost : IShellHost, IDisposable
             // Populate the holder so ShellContext can be resolved from DI
             contextHolder.Context = context;
 
-            _shellContexts[id] = context;
             return context;
         }
     }
@@ -196,15 +193,20 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// <exception cref="InvalidOperationException">Thrown when an unknown feature is configured.</exception>
     private void ValidateEnabledFeatures(ShellSettings settings)
     {
-        foreach (var featureName in settings.EnabledFeatures)
+        var unknownFeatures = settings.EnabledFeatures
+            .Where(featureName => !_featureMap.ContainsKey(featureName))
+            .ToList();
+
+        foreach (var featureName in unknownFeatures)
         {
-            if (!_featureMap.ContainsKey(featureName))
-            {
-                _logger.LogWarning("Unknown feature '{FeatureName}' configured for shell '{ShellId}'",
-                    featureName, settings.Id);
-                throw new InvalidOperationException(
-                    $"Feature '{featureName}' configured for shell '{settings.Id}' was not found in discovered features.");
-            }
+            _logger.LogWarning("Unknown feature '{FeatureName}' configured for shell '{ShellId}'",
+                featureName, settings.Id);
+        }
+
+        if (unknownFeatures.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Feature(s) '{string.Join(", ", unknownFeatures)}' configured for shell '{settings.Id}' were not found in discovered features.");
         }
     }
 
@@ -223,8 +225,8 @@ public class DefaultShellHost : IShellHost, IDisposable
         
         // Register the ShellContext using the holder pattern
         // The holder will be populated after the service provider is built
-        // Do not register ShellContextHolder itself; it's an internal implementation detail.
-        services.AddSingleton<ShellContext>(sp => sp.GetRequiredService<ShellContextHolder>().Context 
+        // Note: ShellContextHolder is not registered; it's an internal implementation detail
+        services.AddSingleton<ShellContext>(sp => contextHolder.Context 
             ?? throw new InvalidOperationException($"ShellContext for shell '{settings.Id}' has not been initialized yet. This may indicate a service is being resolved during shell construction."));
 
         // If there are no features to configure, build and return immediately
@@ -238,22 +240,20 @@ public class DefaultShellHost : IShellHost, IDisposable
         using var tempProvider = services.BuildServiceProvider();
 
         // Configure services from each feature's startup in dependency order
-        foreach (var featureName in orderedFeatures)
-        {
-            var descriptor = _featureMap[featureName];
-            if (descriptor.StartupType == null)
-            {
-                continue;
-            }
+        var featuresWithStartups = orderedFeatures
+            .Select(name => (Name: name, Descriptor: _featureMap[name]))
+            .Where(f => f.Descriptor.StartupType != null);
 
+        foreach (var (featureName, descriptor) in featuresWithStartups)
+        {
             try
             {
                 // Create the startup instance using ActivatorUtilities
-                var startup = (IShellStartup)ActivatorUtilities.CreateInstance(tempProvider, descriptor.StartupType);
+                var startup = (IShellStartup)ActivatorUtilities.CreateInstance(tempProvider, descriptor.StartupType!);
                 startup.ConfigureServices(services);
 
                 _logger.LogDebug("Configured services from feature '{FeatureName}' startup type '{StartupType}'",
-                    featureName, descriptor.StartupType.FullName);
+                    featureName, descriptor.StartupType!.FullName);
             }
             catch (Exception ex)
             {
@@ -268,6 +268,7 @@ public class DefaultShellHost : IShellHost, IDisposable
 
     /// <summary>
     /// A holder class that allows the ShellContext to be set after the service provider is built.
+    /// This is an internal implementation detail and is not registered in the service collection.
     /// </summary>
     private sealed class ShellContextHolder
     {
@@ -303,19 +304,19 @@ public class DefaultShellHost : IShellHost, IDisposable
         if (disposing)
         {
             // Dispose all service providers
-            foreach (var context in _shellContexts.Values)
+            var disposableProviders = _shellContexts.Values
+                .Select(c => c.ServiceProvider)
+                .OfType<IDisposable>();
+
+            foreach (var disposable in disposableProviders)
             {
-                if (context.ServiceProvider is IDisposable disposable)
+                try
                 {
-                    try
-                    {
-                        disposable.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error disposing service provider for shell '{ShellId}'",
-                            context.Id);
-                    }
+                    disposable.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error disposing service provider");
                 }
             }
 
