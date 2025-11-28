@@ -17,7 +17,7 @@ public interface IAdminService
 /// <summary>
 /// Admin information record.
 /// </summary>
-public record AdminInfo(string Status, DateTime ServerTime, int ActiveShells);
+public record AdminInfo(string Status, string ShellName, DateTime ServerTime);
 
 /// <summary>
 /// Implementation of the admin service.
@@ -25,10 +25,12 @@ public record AdminInfo(string Status, DateTime ServerTime, int ActiveShells);
 public class AdminService : IAdminService
 {
     private readonly ITimeService _timeService;
+    private readonly ShellSettings _shellSettings;
 
-    public AdminService(ITimeService timeService)
+    public AdminService(ITimeService timeService, ShellSettings shellSettings)
     {
         _timeService = timeService;
+        _shellSettings = shellSettings;
     }
 
     /// <inheritdoc />
@@ -36,8 +38,8 @@ public class AdminService : IAdminService
     {
         return new AdminInfo(
             Status: "Running",
-            ServerTime: _timeService.GetCurrentTime(),
-            ActiveShells: 2 // Default and Admin
+            ShellName: _shellSettings.Id.Name,
+            ServerTime: _timeService.GetCurrentTime()
         );
     }
 }
