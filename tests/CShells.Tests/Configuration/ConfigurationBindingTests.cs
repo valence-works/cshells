@@ -52,7 +52,7 @@ namespace CShells.Tests.Configuration
         [Fact]
         public void AddCShells_Registers_IShellHost_And_ShellSettings()
         {
-            var json = @"{ ""CShells"": { ""Shells"": [ { ""Name"": ""Default"", ""Features"": [""Core""] } ] } }";
+            var json = @"{ ""CShells"": { ""Shells"": [ { ""Name"": ""Default"", ""Features"": [] } ] } }";
             var config = new ConfigurationBuilder().AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(json))).Build();
 
             var services = new ServiceCollection();
