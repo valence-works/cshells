@@ -1,44 +1,38 @@
-using FluentAssertions;
-
 namespace CShells.Tests;
 
 public class ShellIdTests
 {
+    private const string TestName = "TestShell";
+
     [Fact]
     public void Constructor_WithValidName_SetsName()
     {
-        // Arrange
-        const string name = "TestShell";
-
         // Act
-        var shellId = new ShellId(name);
+        var shellId = new ShellId(TestName);
 
         // Assert
-        shellId.Name.Should().Be(name);
+        Assert.Equal(TestName, shellId.Name);
     }
 
     [Fact]
     public void Constructor_WithNullName_ThrowsArgumentNullException()
     {
-        // Arrange & Act
-        var act = () => new ShellId(null!);
-
-        // Assert
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("name");
+        // Act & Assert
+        var ex = Assert.Throws<ArgumentNullException>(() => new ShellId(null!));
+        Assert.Equal("Name", ex.ParamName);
     }
 
     [Fact]
     public void Equals_WithSameNameDifferentCase_ReturnsTrue()
     {
         // Arrange
-        var shellId1 = new ShellId("TestShell");
-        var shellId2 = new ShellId("TESTSHELL");
+        var shellId1 = new ShellId(TestName);
+        var shellId2 = new ShellId(TestName.ToUpperInvariant());
 
         // Act & Assert
-        shellId1.Equals(shellId2).Should().BeTrue();
-        (shellId1 == shellId2).Should().BeTrue();
-        (shellId1 != shellId2).Should().BeFalse();
+        Assert.Equal(shellId1, shellId2);
+        Assert.True(shellId1 == shellId2);
+        Assert.False(shellId1 != shellId2);
     }
 
     [Fact]
@@ -49,44 +43,42 @@ public class ShellIdTests
         var shellId2 = new ShellId("Shell2");
 
         // Act & Assert
-        shellId1.Equals(shellId2).Should().BeFalse();
-        (shellId1 == shellId2).Should().BeFalse();
-        (shellId1 != shellId2).Should().BeTrue();
+        Assert.NotEqual(shellId1, shellId2);
+        Assert.False(shellId1 == shellId2);
+        Assert.True(shellId1 != shellId2);
     }
 
     [Fact]
     public void GetHashCode_WithSameNameDifferentCase_ReturnsSameHashCode()
     {
         // Arrange
-        var shellId1 = new ShellId("TestShell");
-        var shellId2 = new ShellId("TESTSHELL");
+        var shellId1 = new ShellId(TestName);
+        var shellId2 = new ShellId(TestName.ToUpperInvariant());
 
         // Act & Assert
-        shellId1.GetHashCode().Should().Be(shellId2.GetHashCode());
+        Assert.Equal(shellId1.GetHashCode(), shellId2.GetHashCode());
     }
 
     [Fact]
     public void ToString_ReturnsName()
     {
         // Arrange
-        const string name = "TestShell";
-        var shellId = new ShellId(name);
+        var shellId = new ShellId(TestName);
 
         // Act & Assert
-        shellId.ToString().Should().Be(name);
+        Assert.Equal(TestName, shellId.ToString());
     }
 
     [Fact]
     public void Equals_WithObject_ReturnsCorrectResult()
     {
         // Arrange
-        var shellId1 = new ShellId("TestShell");
-        object shellId2 = new ShellId("TestShell");
-        object notShellId = "TestShell";
+        var shellId1 = new ShellId(TestName);
+        object shellId2 = new ShellId(TestName);
+        object notShellId = TestName;
 
         // Act & Assert
-        shellId1.Equals(shellId2).Should().BeTrue();
-        shellId1.Equals(notShellId).Should().BeFalse();
-        shellId1.Equals(null).Should().BeFalse();
+        Assert.Equal(shellId1, shellId2);
+        Assert.NotEqual(shellId1, notShellId);
     }
 }
