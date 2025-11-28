@@ -31,6 +31,9 @@ namespace CShells
             var options = new CShellsOptions();
             configuration.GetSection(sectionName).Bind(options);
 
+            // Validate that shells are configured
+            if (options.Shells == null || !options.Shells.Any())
+                throw new InvalidOperationException($"No shells configured in the configuration section '{sectionName}'.");
             // Convert configuration DTOs to runtime ShellSettings (may throw on invalid config).
             var shells = ShellSettingsFactory.CreateFromOptions(options).ToList();
 

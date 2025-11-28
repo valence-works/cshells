@@ -60,5 +60,5 @@ public static class ShellSettingsFactory
     /// <returns>A collection of <see cref="ShellSettings"/> instances.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when duplicate shell names are found.</exception>
-    public static IEnumerable<ShellSettings> CreateFromOptions(CShellsOptions options) => CreateAll(options);
+    public static IReadOnlyList<ShellSettings> CreateFromOptions(CShellsOptions options) => CreateAll(options);
 }
