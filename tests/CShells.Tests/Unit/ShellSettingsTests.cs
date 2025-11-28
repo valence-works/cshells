@@ -1,10 +1,10 @@
-namespace CShells.Tests;
+namespace CShells.Tests.Unit;
 
 public class ShellSettingsTests
 {
     private const string TestShellName = "TestShell";
 
-    [Fact]
+    [Fact(DisplayName = "Default constructor initializes with empty collections")]
     public void DefaultConstructor_InitializesWithEmptyCollections()
     {
         // Act
@@ -14,7 +14,7 @@ public class ShellSettingsTests
         AssertHasEmptyCollections(settings);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Constructor with ShellId sets ID property")]
     public void Constructor_WithShellId_SetsId()
     {
         // Arrange
@@ -28,7 +28,7 @@ public class ShellSettingsTests
         AssertHasEmptyCollections(settings);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Constructor with ShellId and features sets all properties")]
     public void Constructor_WithShellIdAndFeatures_SetsProperties()
     {
         // Arrange
@@ -45,7 +45,7 @@ public class ShellSettingsTests
         Assert.Empty(settings.Properties);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Constructor with null features throws ArgumentNullException")]
     public void Constructor_WithNullFeatures_ThrowsArgumentNullException()
     {
         // Arrange
@@ -56,7 +56,7 @@ public class ShellSettingsTests
         Assert.Equal("enabledFeatures", ex.ParamName);
     }
 
-    [Fact]
+    [Fact(DisplayName = "EnabledFeatures property can be set and retrieved")]
     public void EnabledFeatures_CanBeSet()
     {
         // Arrange

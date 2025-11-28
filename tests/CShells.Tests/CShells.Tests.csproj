@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\CShells\CShells.csproj" />
-    <ProjectReference Include="..\..\src\CShells.AspNetCore\CShells.AspNetCore.csproj" />
-  </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\CShells\CShells.csproj"/>
+        <ProjectReference Include="..\..\src\CShells.AspNetCore\CShells.AspNetCore.csproj"/>
+    </ItemGroup>
 
 </Project>

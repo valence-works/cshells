@@ -1,8 +1,8 @@
-namespace CShells.Tests;
+namespace CShells.Tests.Unit;
 
 public class ShellContextTests
 {
-    [Fact]
+    [Fact(DisplayName = "Constructor with null settings throws ArgumentNullException")]
     public void Constructor_WithNullSettings_ThrowsArgumentNullException()
     {
         // Arrange
@@ -13,7 +13,7 @@ public class ShellContextTests
         Assert.Equal("settings", ex.ParamName);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Constructor with null service provider throws ArgumentNullException")]
     public void Constructor_WithNullServiceProvider_ThrowsArgumentNullException()
     {
         // Arrange
@@ -24,7 +24,7 @@ public class ShellContextTests
         Assert.Equal("serviceProvider", ex.ParamName);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Constructor sets properties")]
     public void Constructor_WithValidParameters_SetsProperties()
     {
         // Arrange

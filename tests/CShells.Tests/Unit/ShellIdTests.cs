@@ -1,10 +1,10 @@
-namespace CShells.Tests;
+namespace CShells.Tests.Unit;
 
 public class ShellIdTests
 {
     private const string TestName = "TestShell";
 
-    [Fact]
+    [Fact(DisplayName = "Constructor with valid name sets Name property")]
     public void Constructor_WithValidName_SetsName()
     {
         // Act
@@ -14,7 +14,7 @@ public class ShellIdTests
         Assert.Equal(TestName, shellId.Name);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Constructor with null name throws ArgumentNullException")]
     public void Constructor_WithNullName_ThrowsArgumentNullException()
     {
         // Act & Assert
@@ -22,7 +22,7 @@ public class ShellIdTests
         Assert.Equal("name", ex.ParamName);
     }
 
-    [Theory]
+    [Theory(DisplayName = "Equals performs case-insensitive comparison")]
     [InlineData("TestShell", "TESTSHELL", true)]
     [InlineData("TestShell", "testshell", true)]
     [InlineData("Shell1", "Shell2", false)]
@@ -39,7 +39,7 @@ public class ShellIdTests
         Assert.Equal(!expectedEqual, shellId1 != shellId2);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Equals with object type handles ShellId and non-ShellId correctly")]
     public void Equals_WithObject_ReturnsCorrectResult()
     {
         // Arrange

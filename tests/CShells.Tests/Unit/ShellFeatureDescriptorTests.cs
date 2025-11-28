@@ -1,10 +1,10 @@
-namespace CShells.Tests;
+namespace CShells.Tests.Unit;
 
 public class ShellFeatureDescriptorTests
 {
     private const string TestFeatureId = "TestFeature";
 
-    [Fact]
+    [Fact(DisplayName = "Default constructor initializes with default values")]
     public void DefaultConstructor_InitializesWithDefaults()
     {
         // Act
@@ -19,7 +19,7 @@ public class ShellFeatureDescriptorTests
         Assert.Null(descriptor.StartupType);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Constructor with ID sets ID and initializes defaults")]
     public void Constructor_WithId_SetsIdAndInitializesDefaults()
     {
         // Act
@@ -34,7 +34,7 @@ public class ShellFeatureDescriptorTests
         Assert.Null(descriptor.StartupType);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Constructor with null ID throws ArgumentNullException")]
     public void Constructor_WithNullId_ThrowsArgumentNullException()
     {
         // Act & Assert
@@ -42,7 +42,7 @@ public class ShellFeatureDescriptorTests
         Assert.Equal("id", ex.ParamName);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Dependencies property can be set and retrieved")]
     public void Dependencies_CanBeSet()
     {
         // Arrange
@@ -56,7 +56,7 @@ public class ShellFeatureDescriptorTests
         Assert.Equal(dependencies, descriptor.Dependencies);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Metadata dictionary can store and retrieve values")]
     public void Metadata_CanBeSetAndRetrieveValues()
     {
         // Arrange
