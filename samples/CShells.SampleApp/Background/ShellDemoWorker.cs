@@ -34,6 +34,7 @@ public class ShellDemoWorker : BackgroundService
         _scopeFactory = scopeFactory;
         _observer = observer;
         _logger = logger;
+    }
 
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -61,7 +62,7 @@ public class ShellDemoWorker : BackgroundService
         }
     }
 
-    private Task ExecuteForShellAsync(ShellContext shell, CancellationToken cancellationToken)
+    private Task ExecuteForShellAsync(ShellContext shell, CancellationToken _)
     {
         using var scope = _scopeFactory.CreateScope(shell);
 
