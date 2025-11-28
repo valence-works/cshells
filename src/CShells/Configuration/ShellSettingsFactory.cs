@@ -47,8 +47,18 @@ public static class ShellSettingsFactory
 
         if (duplicates.Any())
         {
-            throw new ArgumentException($"Duplicate shell names found: {string.Join(", ", duplicates)}", nameof(options));
+            throw new ArgumentException($"Duplicate shell name: {duplicates.First()}", nameof(options));
         }
         return options.Shells.Select(Create).ToList();
     }
+
+    /// <summary>
+    /// Creates a collection of <see cref="ShellSettings"/> instances from <see cref="CShellsOptions"/>.
+    /// This is an alias for <see cref="CreateAll"/>.
+    /// </summary>
+    /// <param name="options">The CShells options.</param>
+    /// <returns>A collection of <see cref="ShellSettings"/> instances.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when duplicate shell names are found.</exception>
+    public static IEnumerable<ShellSettings> CreateFromOptions(CShellsOptions options) => CreateAll(options);
 }
