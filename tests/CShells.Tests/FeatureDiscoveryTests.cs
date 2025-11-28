@@ -1,9 +1,5 @@
 using System.Reflection;
-using System.Reflection.Emit;
-using CShells.AspNetCore;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using CShells.Tests.TestHelpers;
 
 namespace CShells.Tests;
 
@@ -31,21 +27,25 @@ public class FeatureDiscoveryTests
     public void DiscoverFeatures_WithNullAssemblyInCollection_SkipsNullAssembly()
     {
         // Arrange
-        var assemblies = new Assembly?[] { null };
+        var validAssembly = TestAssemblyBuilder.CreateTestAssembly(
+            ("ValidFeature", typeof(IShellFeature), Array.Empty<string>(), Array.Empty<object>())
+        );
+        var assemblies = new Assembly?[] { null, validAssembly, null };
 
         // Act
-        var features = FeatureDiscovery.DiscoverFeatures(assemblies!);
+        var features = FeatureDiscovery.DiscoverFeatures(assemblies!).ToList();
 
         // Assert
-        Assert.Empty(features);
+        Assert.Single(features);
+        Assert.Equal("ValidFeature", features[0].Id);
     }
 
     [Fact]
     public void DiscoverFeatures_WithValidFeature_ReturnsFeatureDescriptor()
     {
         // Arrange - use assembly with only valid features
-        var assembly = CreateTestAssembly(
-            ("ValidTestFeature", typeof(IShellStartup), Array.Empty<string>(), Array.Empty<object>())
+        var assembly = TestAssemblyBuilder.CreateTestAssembly(
+            ("ValidTestFeature", typeof(IShellFeature), Array.Empty<string>(), Array.Empty<object>())
         );
 
         // Act
@@ -62,8 +62,8 @@ public class FeatureDiscoveryTests
     public void DiscoverFeatures_WithFeatureHavingDependencies_SetsDependencies()
     {
         // Arrange - use assembly with feature that has dependencies
-        var assembly = CreateTestAssembly(
-            ("FeatureWithDeps", typeof(IShellStartup), new[] { "Dependency1", "Dependency2" }, Array.Empty<object>())
+        var assembly = TestAssemblyBuilder.CreateTestAssembly(
+            ("FeatureWithDeps", typeof(IShellFeature), new[] { "Dependency1", "Dependency2" }, Array.Empty<object>())
         );
 
         // Act
@@ -79,8 +79,8 @@ public class FeatureDiscoveryTests
     public void DiscoverFeatures_WithFeatureHavingMetadata_SetsMetadata()
     {
         // Arrange - use assembly with feature that has metadata
-        var assembly = CreateTestAssembly(
-            ("FeatureWithMeta", typeof(IShellStartup), Array.Empty<string>(), new object[] { "key1", "value1", "key2", "value2" })
+        var assembly = TestAssemblyBuilder.CreateTestAssembly(
+            ("FeatureWithMeta", typeof(IShellFeature), Array.Empty<string>(), new object[] { "key1", "value1", "key2", "value2" })
         );
 
         // Act
@@ -97,7 +97,7 @@ public class FeatureDiscoveryTests
     public void DiscoverFeatures_WithTypeMissingIShellStartup_ThrowsInvalidOperationException()
     {
         // Arrange - create assembly with a type that has ShellFeature but doesn't implement IShellStartup
-        var assembly = CreateTestAssembly(
+        var assembly = TestAssemblyBuilder.CreateTestAssembly(
             ("InvalidFeature", null, Array.Empty<string>(), Array.Empty<object>())
         );
 
@@ -110,9 +110,9 @@ public class FeatureDiscoveryTests
     public void DiscoverFeatures_WithDuplicateFeatureNames_ThrowsInvalidOperationException()
     {
         // Arrange - create assembly with two features having the same name
-        var assembly = CreateTestAssembly(
-            ("DuplicateFeatureName", typeof(IShellStartup), Array.Empty<string>(), Array.Empty<object>()),
-            ("DuplicateFeatureName", typeof(IShellStartup), Array.Empty<string>(), Array.Empty<object>())
+        var assembly = TestAssemblyBuilder.CreateTestAssembly(
+            ("DuplicateFeatureName", typeof(IShellFeature), Array.Empty<string>(), Array.Empty<object>()),
+            ("DuplicateFeatureName", typeof(IShellFeature), Array.Empty<string>(), Array.Empty<object>())
         );
 
         // Act & Assert
@@ -125,9 +125,9 @@ public class FeatureDiscoveryTests
     public void DiscoverFeatures_WithMultipleValidFeatures_ReturnsAllFeatures()
     {
         // Arrange
-        var assembly = CreateTestAssembly(
-            ("Feature1", typeof(IShellStartup), Array.Empty<string>(), Array.Empty<object>()),
-            ("Feature2", typeof(IShellStartup), new[] { "Feature1" }, Array.Empty<object>())
+        var assembly = TestAssemblyBuilder.CreateTestAssembly(
+            ("Feature1", typeof(IShellFeature), Array.Empty<string>(), Array.Empty<object>()),
+            ("Feature2", typeof(IShellFeature), new[] { "Feature1" }, Array.Empty<object>())
         );
 
         // Act
@@ -143,75 +143,13 @@ public class FeatureDiscoveryTests
     public void DiscoverFeatures_WithOddMetadataElements_ThrowsInvalidOperationException()
     {
         // Arrange - create assembly with odd number of metadata elements
-        var assembly = CreateTestAssembly(
-            ("FeatureWithOddMetadata", typeof(IShellStartup), Array.Empty<string>(), new object[] { "key1", "value1", "orphanKey" })
+        var assembly = TestAssemblyBuilder.CreateTestAssembly(
+            ("FeatureWithOddMetadata", typeof(IShellFeature), Array.Empty<string>(), new object[] { "key1", "value1", "orphanKey" })
         );
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() => FeatureDiscovery.DiscoverFeatures(new[] { assembly }).ToList());
         Assert.Contains("odd number of metadata elements", ex.Message);
         Assert.Contains("FeatureWithOddMetadata", ex.Message);
-    }
-
-    /// <summary>
-    /// Creates a dynamic assembly with test feature types for testing purposes.
-    /// </summary>
-    private static Assembly CreateTestAssembly(params (string FeatureName, Type? ImplementInterface, string[] Dependencies, object[] Metadata)[] featureDefinitions)
-    {
-        var assemblyName = new AssemblyName($"TestAssembly_{Guid.NewGuid():N}");
-        var assemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run);
-        var moduleBuilder = assemblyBuilder.DefineDynamicModule("MainModule");
-
-        var uniqueCounter = 0;
-        foreach (var (featureName, implementInterface, dependencies, metadata) in featureDefinitions)
-        {
-            var typeName = $"{featureName}_{uniqueCounter++}";
-            
-            // Create the type, optionally implementing IShellStartup
-            TypeBuilder typeBuilder;
-            if (implementInterface == typeof(IShellStartup))
-            {
-                typeBuilder = moduleBuilder.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class);
-                typeBuilder.AddInterfaceImplementation(typeof(IShellStartup));
-                
-                // Implement ConfigureServices method
-                var configureServicesMethod = typeBuilder.DefineMethod(
-                    "ConfigureServices",
-                    MethodAttributes.Public | MethodAttributes.Virtual,
-                    typeof(void),
-                    [typeof(IServiceCollection)]);
-                var ilConfigureServices = configureServicesMethod.GetILGenerator();
-                ilConfigureServices.Emit(OpCodes.Ret);
-                
-                // Implement Configure method
-                var configureMethod = typeBuilder.DefineMethod(
-                    "Configure",
-                    MethodAttributes.Public | MethodAttributes.Virtual,
-                    typeof(void),
-                    [typeof(IApplicationBuilder), typeof(IHostEnvironment)]);
-                var ilConfigure = configureMethod.GetILGenerator();
-                ilConfigure.Emit(OpCodes.Ret);
-            }
-            else
-            {
-                typeBuilder = moduleBuilder.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class);
-            }
-            
-            // Add the ShellFeatureAttribute
-            var attributeConstructor = typeof(ShellFeatureAttribute).GetConstructor([typeof(string)])!;
-            var attributeBuilder = new CustomAttributeBuilder(
-                attributeConstructor,
-                [featureName],
-                [
-                    typeof(ShellFeatureAttribute).GetProperty("DependsOn")!,
-                    typeof(ShellFeatureAttribute).GetProperty("Metadata")!
-                ],
-                [dependencies, metadata]);
-            typeBuilder.SetCustomAttribute(attributeBuilder);
-            
-            typeBuilder.CreateType();
-        }
-
-        return assemblyBuilder;
     }
 }

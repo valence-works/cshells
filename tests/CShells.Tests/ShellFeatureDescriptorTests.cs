@@ -43,16 +43,6 @@ public class ShellFeatureDescriptorTests
     }
 
     [Fact]
-    public void Id_CanBeInitialized()
-    {
-        // Act
-        var descriptor = new ShellFeatureDescriptor { Id = TestFeatureId };
-
-        // Assert
-        Assert.Equal(TestFeatureId, descriptor.Id);
-    }
-
-    [Fact]
     public void Dependencies_CanBeSet()
     {
         // Arrange
@@ -79,19 +69,5 @@ public class ShellFeatureDescriptorTests
         // Assert
         Assert.Equal("Value1", descriptor.Metadata["Key1"]);
         Assert.Equal(42, descriptor.Metadata["Key2"]);
-    }
-
-    [Fact]
-    public void StartupType_CanBeInitialized()
-    {
-        // Act
-        var descriptor = new ShellFeatureDescriptor(TestFeatureId) { StartupType = typeof(TestStartupClass) };
-
-        // Assert
-        Assert.Equal(typeof(TestStartupClass), descriptor.StartupType);
-    }
-
-    private class TestStartupClass
-    {
     }
 }

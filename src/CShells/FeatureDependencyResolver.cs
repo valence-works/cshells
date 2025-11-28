@@ -77,6 +77,20 @@ public class FeatureDependencyResolver
         return result;
     }
 
+    /// <summary>
+    /// Performs a depth-first topological sort to resolve feature dependencies.
+    /// Uses three-color algorithm: white (unvisited), gray (visiting), black (visited).
+    /// </summary>
+    /// <remarks>
+    /// Algorithm:
+    /// 1. Skip if already processed (black/visited)
+    /// 2. Detect cycles by checking if currently being processed (gray/visiting)
+    /// 3. Mark as being processed (gray)
+    /// 4. Recursively process all dependencies first (depth-first)
+    /// 5. Mark as fully processed (black) and add to result
+    ///
+    /// Result order: dependencies appear before their dependents (topological order).
+    /// </remarks>
     private static void ResolveDependenciesRecursive(
         string featureName,
         IReadOnlyDictionary<string, ShellFeatureDescriptor> features,
@@ -84,34 +98,34 @@ public class FeatureDependencyResolver
         HashSet<string> visiting,
         List<string> result)
     {
-        // Check if already fully processed
+        // Already fully processed - skip
         if (visited.Contains(featureName))
             return;
 
-        // Check for circular dependency
+        // Currently being processed in this call stack - circular dependency!
         if (visiting.Contains(featureName))
         {
             throw new InvalidOperationException(
                 $"Circular dependency detected involving feature '{featureName}'.");
         }
 
-        // Mark as currently being visited (for cycle detection)
-        visiting.Add(featureName);
-
-        // Get the feature descriptor
+        // Validate feature exists
         if (!features.TryGetValue(featureName, out var descriptor))
         {
             throw new InvalidOperationException(
                 $"Feature '{featureName}' not found in the feature dictionary.");
         }
 
-        // Recursively process all dependencies first
+        // Mark as being processed (gray)
+        visiting.Add(featureName);
+
+        // Process all dependencies first (depth-first traversal)
         foreach (var dependency in descriptor.Dependencies)
         {
             ResolveDependenciesRecursive(dependency, features, visited, visiting, result);
         }
 
-        // Mark as fully visited and add to result
+        // Done processing this feature - mark as complete (black) and add to result
         visiting.Remove(featureName);
         visited.Add(featureName);
         result.Add(featureName);
