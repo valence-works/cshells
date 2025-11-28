@@ -37,7 +37,7 @@ public readonly struct ShellId : IEquatable<ShellId>
     /// Returns the hash code for this <see cref="ShellId"/>.
     /// </summary>
     /// <returns>A 32-bit signed integer hash code.</returns>
-    public override int GetHashCode() => StringComparer.OrdinalIgnoreCase.GetHashCode(Name ?? string.Empty);
+    public override int GetHashCode() => Name is null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(Name);
 
     /// <summary>
     /// Returns the string representation of the <see cref="ShellId"/>.

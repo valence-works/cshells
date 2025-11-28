@@ -88,4 +88,20 @@ public class ShellSettingsTests
         // Assert
         settings.EnabledFeatures.Should().BeEquivalentTo(features);
     }
+
+    [Fact]
+    public void EnabledFeatures_CreatesDefensiveCopy()
+    {
+        // Arrange
+        var settings = new ShellSettings();
+        var features = new List<string> { "Feature1", "Feature2" };
+
+        // Act
+        settings.EnabledFeatures = features;
+        features.Add("Feature3"); // Modify original list
+
+        // Assert - EnabledFeatures should not be affected by modifications to the original list
+        settings.EnabledFeatures.Should().HaveCount(2);
+        settings.EnabledFeatures.Should().NotContain("Feature3");
+    }
 }
