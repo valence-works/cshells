@@ -158,24 +158,14 @@ public class DefaultShellHost : IShellHost, IDisposable
 
             _logger.LogInformation("Building shell context for '{ShellId}'", id);
 
-            // Validate and resolve feature dependencies
-            var enabledFeatures = settings.EnabledFeatures;
-            foreach (var featureName in enabledFeatures)
-            {
-                if (!_featureMap.ContainsKey(featureName))
-                {
-                    _logger.LogWarning("Unknown feature '{FeatureName}' configured for shell '{ShellId}'",
-                        featureName, id);
-                    throw new InvalidOperationException(
-                        $"Feature '{featureName}' configured for shell '{id}' was not found in discovered features.");
-                }
-            }
+            // Validate configured features exist
+            ValidateEnabledFeatures(settings);
 
             // Resolve dependencies and get ordered list of features
             List<string> orderedFeatures;
             try
             {
-                orderedFeatures = _dependencyResolver.GetOrderedFeatures(enabledFeatures, _featureMap);
+                orderedFeatures = _dependencyResolver.GetOrderedFeatures(settings.EnabledFeatures, _featureMap);
             }
             catch (InvalidOperationException ex)
             {
@@ -200,6 +190,25 @@ public class DefaultShellHost : IShellHost, IDisposable
     }
 
     /// <summary>
+    /// Validates that all enabled features in the shell settings are known/discovered features.
+    /// </summary>
+    /// <param name="settings">The shell settings to validate.</param>
+    /// <exception cref="InvalidOperationException">Thrown when an unknown feature is configured.</exception>
+    private void ValidateEnabledFeatures(ShellSettings settings)
+    {
+        foreach (var featureName in settings.EnabledFeatures)
+        {
+            if (!_featureMap.ContainsKey(featureName))
+            {
+                _logger.LogWarning("Unknown feature '{FeatureName}' configured for shell '{ShellId}'",
+                    featureName, settings.Id);
+                throw new InvalidOperationException(
+                    $"Feature '{featureName}' configured for shell '{settings.Id}' was not found in discovered features.");
+            }
+        }
+    }
+
+    /// <summary>
     /// Builds an <see cref="IServiceProvider"/> for a shell with the specified features.
     /// </summary>
     /// <param name="settings">The shell settings.</param>
@@ -216,11 +225,17 @@ public class DefaultShellHost : IShellHost, IDisposable
         // The holder will be populated after the service provider is built
         services.AddSingleton(contextHolder);
         services.AddSingleton<ShellContext>(sp => sp.GetRequiredService<ShellContextHolder>().Context 
-            ?? throw new InvalidOperationException("ShellContext has not been initialized yet."));
+            ?? throw new InvalidOperationException($"ShellContext for shell '{settings.Id}' has not been initialized yet. This may indicate a service is being resolved during shell construction."));
+
+        // If there are no features to configure, build and return immediately
+        if (orderedFeatures.Count == 0)
+        {
+            return services.BuildServiceProvider();
+        }
 
         // Create a temporary service provider for startup activation
         // This allows startups to have constructor dependencies resolved
-        var tempProvider = services.BuildServiceProvider();
+        using var tempProvider = services.BuildServiceProvider();
 
         // Configure services from each feature's startup in dependency order
         foreach (var featureName in orderedFeatures)
@@ -247,9 +262,6 @@ public class DefaultShellHost : IShellHost, IDisposable
                     $"Failed to configure services for feature '{featureName}': {ex.Message}", ex);
             }
         }
-
-        // Dispose temporary provider
-        tempProvider.Dispose();
 
         return services.BuildServiceProvider();
     }
