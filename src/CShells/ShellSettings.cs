@@ -30,7 +30,6 @@ public class ShellSettings
     /// <param name="enabledFeatures">The list of enabled features.</param>
     public ShellSettings(ShellId id, IReadOnlyList<string> enabledFeatures)
     {
-        ArgumentNullException.ThrowIfNull(enabledFeatures);
         Id = id;
         EnabledFeatures = enabledFeatures;
     }

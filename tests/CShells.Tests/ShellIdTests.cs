@@ -14,38 +14,21 @@ public class ShellIdTests
         Assert.Equal(TestName, shellId.Name);
     }
 
-    [Fact]
-    public void Constructor_WithNullName_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellId(null!));
-        Assert.Equal("Name", ex.ParamName);
-    }
-
-    [Fact]
-    public void Equals_WithSameNameDifferentCase_ReturnsTrue()
+    [Theory]
+    [InlineData("TestShell", "TESTSHELL", true)]
+    [InlineData("TestShell", "testshell", true)]
+    [InlineData("Shell1", "Shell2", false)]
+    [InlineData("Shell1", "Shell1", true)]
+    public void Equals_WithVariousNames_ReturnsExpectedResult(string name1, string name2, bool expectedEqual)
     {
         // Arrange
-        var shellId1 = new ShellId(TestName);
-        var shellId2 = new ShellId(TestName.ToUpperInvariant());
+        var shellId1 = new ShellId(name1);
+        var shellId2 = new ShellId(name2);
 
         // Act & Assert
-        Assert.Equal(shellId1, shellId2);
-        Assert.True(shellId1 == shellId2);
-        Assert.False(shellId1 != shellId2);
-    }
-
-    [Fact]
-    public void Equals_WithDifferentNames_ReturnsFalse()
-    {
-        // Arrange
-        var shellId1 = new ShellId("Shell1");
-        var shellId2 = new ShellId("Shell2");
-
-        // Act & Assert
-        Assert.NotEqual(shellId1, shellId2);
-        Assert.False(shellId1 == shellId2);
-        Assert.True(shellId1 != shellId2);
+        Assert.Equal(expectedEqual, shellId1.Equals(shellId2));
+        Assert.Equal(expectedEqual, shellId1 == shellId2);
+        Assert.Equal(!expectedEqual, shellId1 != shellId2);
     }
 
     [Fact]

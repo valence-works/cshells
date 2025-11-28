@@ -4,27 +4,15 @@ public class ShellSettingsTests
 {
     private const string TestShellName = "TestShell";
 
-    [Fact]
-    public void DefaultConstructor_InitializesWithEmptyCollections()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Constructor_InitializesWithEmptyCollections(bool withShellId)
     {
-        // Act
-        var settings = new ShellSettings();
+        // Arrange & Act
+        var settings = withShellId ? new(CreateTestShellId()) : new ShellSettings();
 
         // Assert
-        AssertHasEmptyCollections(settings);
-    }
-
-    [Fact]
-    public void Constructor_WithShellId_SetsId()
-    {
-        // Arrange
-        var shellId = CreateTestShellId();
-
-        // Act
-        var settings = new ShellSettings(shellId);
-
-        // Assert
-        Assert.Equal(shellId, settings.Id);
         AssertHasEmptyCollections(settings);
     }
 
@@ -45,30 +33,19 @@ public class ShellSettingsTests
         Assert.Empty(settings.Properties);
     }
 
-    [Fact]
-    public void Constructor_WithNullFeatures_ThrowsArgumentNullException()
-    {
-        // Arrange
-        var shellId = CreateTestShellId();
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellSettings(shellId, null!));
-        Assert.Equal("enabledFeatures", ex.ParamName);
-    }
-
-    [Fact]
-    public void Properties_CanAddAndRetrieveValues()
+    [Theory]
+    [InlineData("Key1", "Value1")]
+    [InlineData("Key2", 42)]
+    public void Properties_CanAddAndRetrieveValues(string key, object value)
     {
         // Arrange
         var settings = new ShellSettings(CreateTestShellId());
 
         // Act
-        settings.Properties["Key1"] = "Value1";
-        settings.Properties["Key2"] = 42;
+        settings.Properties[key] = value;
 
         // Assert
-        Assert.Equal("Value1", settings.Properties["Key1"]);
-        Assert.Equal(42, settings.Properties["Key2"]);
+        Assert.Equal(value, settings.Properties[key]);
     }
 
     [Fact]

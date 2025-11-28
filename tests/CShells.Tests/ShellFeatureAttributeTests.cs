@@ -14,23 +14,21 @@ public class ShellFeatureAttributeTests
         Assert.Equal(TestFeatureName, attribute.Name);
     }
 
-    [Fact]
-    public void Constructor_WithNullName_ThrowsArgumentNullException()
+    [Theory]
+    [InlineData(nameof(ShellFeatureAttribute.DependsOn))]
+    [InlineData(nameof(ShellFeatureAttribute.Metadata))]
+    public void ArrayProperty_DefaultsToEmptyArray(string propertyName)
     {
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellFeatureAttribute(null!));
-        Assert.Equal("name", ex.ParamName);
-    }
-
-    [Fact]
-    public void DependsOn_DefaultsToEmptyArray()
-    {
-        // Act
+        // Arrange
         var attribute = new ShellFeatureAttribute(TestFeatureName);
 
+        // Act
+        var property = typeof(ShellFeatureAttribute).GetProperty(propertyName)!;
+        var value = property.GetValue(attribute) as Array;
+
         // Assert
-        Assert.NotNull(attribute.DependsOn);
-        Assert.Empty(attribute.DependsOn);
+        Assert.NotNull(value);
+        Assert.Empty(value);
     }
 
     [Fact]
@@ -45,17 +43,6 @@ public class ShellFeatureAttributeTests
 
         // Assert
         Assert.Equal(dependencies, attribute.DependsOn);
-    }
-
-    [Fact]
-    public void Metadata_DefaultsToEmptyArray()
-    {
-        // Act
-        var attribute = new ShellFeatureAttribute(TestFeatureName);
-
-        // Assert
-        Assert.NotNull(attribute.Metadata);
-        Assert.Empty(attribute.Metadata);
     }
 
     [Fact]

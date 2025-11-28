@@ -4,42 +4,21 @@ public class ShellFeatureDescriptorTests
 {
     private const string TestFeatureId = "TestFeature";
 
-    [Fact]
-    public void DefaultConstructor_InitializesWithDefaults()
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData(TestFeatureId, TestFeatureId)]
+    public void Constructor_InitializesWithDefaultsAndSetsId(string? id, string expectedId)
     {
         // Act
-        var descriptor = new ShellFeatureDescriptor();
+        var descriptor = id == null ? new() : new ShellFeatureDescriptor(id);
 
         // Assert
-        Assert.Equal(string.Empty, descriptor.Id);
+        Assert.Equal(expectedId, descriptor.Id);
         Assert.NotNull(descriptor.Dependencies);
         Assert.Empty(descriptor.Dependencies);
         Assert.NotNull(descriptor.Metadata);
         Assert.Empty(descriptor.Metadata);
         Assert.Null(descriptor.StartupType);
-    }
-
-    [Fact]
-    public void Constructor_WithId_SetsId()
-    {
-        // Act
-        var descriptor = new ShellFeatureDescriptor(TestFeatureId);
-
-        // Assert
-        Assert.Equal(TestFeatureId, descriptor.Id);
-        Assert.NotNull(descriptor.Dependencies);
-        Assert.Empty(descriptor.Dependencies);
-        Assert.NotNull(descriptor.Metadata);
-        Assert.Empty(descriptor.Metadata);
-        Assert.Null(descriptor.StartupType);
-    }
-
-    [Fact]
-    public void Constructor_WithNullId_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellFeatureDescriptor(null!));
-        Assert.Equal("id", ex.ParamName);
     }
 
     [Fact]
@@ -70,26 +49,7 @@ public class ShellFeatureDescriptorTests
     }
 
     [Fact]
-    public void Metadata_CanBeSet()
-    {
-        // Arrange
-        var descriptor = new ShellFeatureDescriptor(TestFeatureId);
-        var metadata = new Dictionary<string, object>
-        {
-            { "Key1", "Value1" },
-            { "Key2", 42 }
-        };
-
-        // Act
-        descriptor.Metadata = metadata;
-
-        // Assert
-        Assert.Equal("Value1", descriptor.Metadata["Key1"]);
-        Assert.Equal(42, descriptor.Metadata["Key2"]);
-    }
-
-    [Fact]
-    public void Metadata_CanAddAndRetrieveValues()
+    public void Metadata_CanBeSetAndRetrieveValues()
     {
         // Arrange
         var descriptor = new ShellFeatureDescriptor(TestFeatureId);

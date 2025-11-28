@@ -18,7 +18,7 @@ public class ShellFeatureDescriptor
     /// <param name="id">The unique identifier for the feature.</param>
     public ShellFeatureDescriptor(string id)
     {
-        Id = id ?? throw new ArgumentNullException(nameof(id));
+        Id = id;
     }
 
     /// <summary>

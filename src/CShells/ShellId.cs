@@ -8,7 +8,7 @@ public readonly record struct ShellId(string Name)
     /// <summary>
     /// Gets the name of the shell.
     /// </summary>
-    public string Name { get; } = Name ?? throw new ArgumentNullException(nameof(Name));
+    public string Name { get; } = Name;
 
     /// <summary>
     /// Returns the string representation of the <see cref="ShellId"/>.
