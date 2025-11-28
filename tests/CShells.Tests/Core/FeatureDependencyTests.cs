@@ -99,49 +99,29 @@ public class FeatureDependencyTests
 
     #region Cycle Detection
 
-    [Fact]
-    public void GetOrderedFeatures_WithDirectCycle_ThrowsInvalidOperationException()
+    [Theory]
+    [InlineData("DirectCycle", "A:B", "B:A")] // A -> B -> A
+    [InlineData("IndirectCycle", "A:B", "B:C", "C:A")] // A -> B -> C -> A
+    [InlineData("SelfReference", "A:A")] // A -> A
+    public void GetOrderedFeatures_WithCircularDependency_ThrowsInvalidOperationException(string scenario, params string[] featureDependencies)
     {
-        // Arrange: A depends on B, B depends on A (direct cycle)
-        var features = CreateFeatureDictionary(
-            ("A", new[] { "B" }),
-            ("B", new[] { "A" })
-        );
+        // Arrange: Parse dependencies from format "Feature:Dep1,Dep2"
+        var featureList = featureDependencies.Select(fd =>
+        {
+            var parts = fd.Split(':');
+            var name = parts[0];
+            var deps = parts.Length > 1 && !string.IsNullOrEmpty(parts[1])
+                ? parts[1].Split(',')
+                : Array.Empty<string>();
+            return (name, deps);
+        }).ToArray();
+
+        var features = CreateFeatureDictionary(featureList);
 
         // Act & Assert
         var act = () => _resolver.GetOrderedFeatures(new[] { "A" }, features);
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Circular dependency*");
-    }
-
-    [Fact]
-    public void GetOrderedFeatures_WithIndirectCycle_ThrowsInvalidOperationException()
-    {
-        // Arrange: A -> B -> C -> A (indirect cycle)
-        var features = CreateFeatureDictionary(
-            ("A", new[] { "B" }),
-            ("B", new[] { "C" }),
-            ("C", new[] { "A" })
-        );
-
-        // Act & Assert
-        var act = () => _resolver.GetOrderedFeatures(new[] { "A" }, features);
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Circular dependency*");
-    }
-
-    [Fact]
-    public void GetOrderedFeatures_WithSelfReferentialDependency_ThrowsInvalidOperationException()
-    {
-        // Arrange: A depends on itself
-        var features = CreateFeatureDictionary(
-            ("A", new[] { "A" })
-        );
-
-        // Act & Assert
-        var act = () => _resolver.GetOrderedFeatures(new[] { "A" }, features);
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Circular dependency*");
+            .WithMessage("*Circular dependency*", $"scenario '{scenario}' should detect circular dependency");
     }
 
     [Fact]
@@ -166,32 +146,26 @@ public class FeatureDependencyTests
 
     #region Unknown Feature Dependency Handling
 
-    [Fact]
-    public void GetOrderedFeatures_WithUnknownDependency_ThrowsInvalidOperationException()
-    {
-        // Arrange: A depends on "NonExistent" which is not in the features dictionary
-        var features = CreateFeatureDictionary(
-            ("A", new[] { "NonExistent" })
-        );
-
-        // Act & Assert
-        var act = () => _resolver.GetOrderedFeatures(new[] { "A" }, features);
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*not found*");
-    }
-
-    [Fact]
-    public void GetOrderedFeatures_WithUnknownDependency_MessageContainsFeatureName()
+    [Theory]
+    [InlineData("DirectDependency", "NonExistent", "A:NonExistent")]
+    [InlineData("TransitiveDependency", "NonExistent", "A:B", "B:NonExistent")]
+    [InlineData("MissingFeatureName", "MissingFeature", "A:MissingFeature")]
+    public void GetOrderedFeatures_WithUnknownDependency_ThrowsWithFeatureName(string scenario, string missingFeature, params string[] featureDependencies)
     {
         // Arrange
-        var features = CreateFeatureDictionary(
-            ("A", new[] { "MissingFeature" })
-        );
+        var featureList = featureDependencies.Select(fd =>
+        {
+            var parts = fd.Split(':');
+            return (parts[0], parts.Length > 1 ? parts[1].Split(',') : Array.Empty<string>());
+        }).ToArray();
+
+        var features = CreateFeatureDictionary(featureList);
 
         // Act & Assert
         var act = () => _resolver.GetOrderedFeatures(new[] { "A" }, features);
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*MissingFeature*");
+            .WithMessage($"*{missingFeature}*", $"scenario '{scenario}' should include missing feature name in error")
+            .WithMessage("*not found*");
     }
 
     [Fact]
@@ -206,22 +180,6 @@ public class FeatureDependencyTests
         var act = () => _resolver.ResolveDependencies("NonExistentFeature", features);
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*NonExistentFeature*")
-            .WithMessage("*not found*");
-    }
-
-    [Fact]
-    public void GetOrderedFeatures_WithUnknownTransitiveDependency_ThrowsInvalidOperationException()
-    {
-        // Arrange: A -> B -> NonExistent
-        var features = CreateFeatureDictionary(
-            ("A", new[] { "B" }),
-            ("B", new[] { "NonExistent" })
-        );
-
-        // Act & Assert
-        var act = () => _resolver.GetOrderedFeatures(new[] { "A" }, features);
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*NonExistent*")
             .WithMessage("*not found*");
     }
 

@@ -148,48 +148,27 @@ public class ShellHostTests : IDisposable
 
     #region Shell Host Integration Tests
 
-    [Fact]
-    public void GetShell_WithWeatherFeature_ResolvesWeatherService()
+    [Theory]
+    [InlineData(typeof(IWeatherService), "Weather feature should register IWeatherService")]
+    [InlineData(typeof(ITimeService), "Core feature (dependency of Weather) should register ITimeService")]
+    public void GetShell_WithWeatherFeature_ResolvesExpectedServices(Type serviceType, string reason)
     {
         // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
 
         // Act
         var shell = host.GetShell(new ShellId("Default"));
-        var weatherService = shell.ServiceProvider.GetService<IWeatherService>();
+        var service = shell.ServiceProvider.GetService(serviceType);
 
         // Assert
-        weatherService.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void GetShell_WithWeatherFeature_ResolvesTimeServiceDependency()
-    {
-        // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
-
-        // Act
-        var shell = host.GetShell(new ShellId("Default"));
-        var timeService = shell.ServiceProvider.GetService<ITimeService>();
-
-        // Assert
-        timeService.Should().NotBeNull("Core feature (dependency of Weather) should register ITimeService");
+        service.Should().NotBeNull(reason);
     }
 
     [Fact]
     public void GetShell_WeatherService_CanAccessTimeService()
     {
         // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
 
         // Act
         var shell = host.GetShell(new ShellId("Default"));
@@ -204,10 +183,7 @@ public class ShellHostTests : IDisposable
     public void GetShell_TimeService_ReturnsRecentTime()
     {
         // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
         // Use a larger buffer to avoid flakiness in CI environments
         var beforeTime = DateTime.UtcNow.AddSeconds(-5);
 
@@ -226,10 +202,7 @@ public class ShellHostTests : IDisposable
     public void GetShell_WeatherService_GeneratesValidWeatherReport()
     {
         // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
 
         // Act
         var shell = host.GetShell(new ShellId("Default"));
@@ -250,10 +223,7 @@ public class ShellHostTests : IDisposable
     public void DefaultShell_ReturnsSameContextAsGetShellWithDefaultId()
     {
         // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
 
         // Act
         var defaultShell = host.DefaultShell;
@@ -288,10 +258,7 @@ public class ShellHostTests : IDisposable
     public void DefaultShell_MultipleCalls_ReturnsSameInstance()
     {
         // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
 
         // Act
         var firstCall = host.DefaultShell;
@@ -311,14 +278,11 @@ public class ShellHostTests : IDisposable
     public void ServiceProvider_ResolvesServicesFromDependencyFeatures()
     {
         // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
 
         // Act
         var shell = host.GetShell(new ShellId("Default"));
-        
+
         // Assert: Both Core (ITimeService) and Weather (IWeatherService) services should be available
         var timeService = shell.ServiceProvider.GetService<ITimeService>();
         var weatherService = shell.ServiceProvider.GetService<IWeatherService>();
@@ -327,39 +291,47 @@ public class ShellHostTests : IDisposable
         weatherService.Should().NotBeNull();
     }
 
-    [Fact]
-    public void ServiceProvider_CanResolveShellContext()
+    [Theory]
+    [InlineData(typeof(ShellContext), "ShellContext")]
+    [InlineData(typeof(ShellSettings), "ShellSettings")]
+    public void ServiceProvider_CanResolveShellInfrastructure(Type serviceType, string serviceName)
     {
         // Arrange
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
 
         // Act
         var shell = host.GetShell(new ShellId("Default"));
-        var resolvedContext = shell.ServiceProvider.GetRequiredService<ShellContext>();
+        var resolvedService = shell.ServiceProvider.GetRequiredService(serviceType);
 
         // Assert
-        resolvedContext.Should().BeSameAs(shell);
+        resolvedService.Should().NotBeNull($"{serviceName} should be resolvable from service provider");
+
+        if (serviceType == typeof(ShellContext))
+        {
+            resolvedService.Should().BeSameAs(shell);
+        }
+        else if (serviceType == typeof(ShellSettings))
+        {
+            var settings = (ShellSettings)resolvedService;
+            settings.Id.Name.Should().Be("Default");
+            settings.EnabledFeatures.Should().Contain("Weather");
+        }
     }
 
-    [Fact]
-    public void ServiceProvider_CanResolveShellSettings()
+    #endregion
+
+    #region Helper Methods
+
+    /// <summary>
+    /// Creates a DefaultShellHost configured with the Weather feature for testing.
+    /// </summary>
+    private DefaultShellHost CreateDefaultHostWithWeatherFeature()
     {
-        // Arrange
         var assembly = typeof(ShellHostTests).Assembly;
         var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
         var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
         _hostsToDispose.Add(host);
-
-        // Act
-        var shell = host.GetShell(new ShellId("Default"));
-        var resolvedSettings = shell.ServiceProvider.GetRequiredService<ShellSettings>();
-
-        // Assert
-        resolvedSettings.Id.Name.Should().Be("Default");
-        resolvedSettings.EnabledFeatures.Should().Contain("Weather");
+        return host;
     }
 
     #endregion
@@ -371,14 +343,11 @@ public class ShellHostTests : IDisposable
     {
         // Arrange: This test ensures that even though only "Weather" is enabled,
         // "Core" (its dependency) is also configured, and in the correct order
-        var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
-        _hostsToDispose.Add(host);
+        var host = CreateDefaultHostWithWeatherFeature();
 
         // Act
         var shell = host.GetShell(new ShellId("Default"));
-        
+
         // Assert: WeatherService requires ITimeService in its constructor
         // If Core wasn't configured first, this would fail
         var weatherService = shell.ServiceProvider.GetRequiredService<IWeatherService>();
