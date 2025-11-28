@@ -85,7 +85,7 @@ public class ShellHostTests : IDisposable
     /// Weather feature startup that depends on Core and registers <see cref="IWeatherService"/>.
     /// The <see cref="IWeatherService"/> implementation depends on <see cref="ITimeService"/>.
     /// </summary>
-    [ShellFeature("Weather", DependsOn = new[] { "Core" })]
+    [ShellFeature("Weather", DependsOn = ["Core"])]
     public class WeatherFeatureStartup : IShellFeature
     {
         public void ConfigureServices(IServiceCollection services)
@@ -105,7 +105,7 @@ public class ShellHostTests : IDisposable
         var assembly = typeof(ShellHostTests).Assembly;
 
         // Act
-        var features = FeatureDiscovery.DiscoverFeatures(new[] { assembly }).ToList();
+        var features = FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
 
         // Assert
         features.Should().Contain(f => f.Id == "Core");
@@ -122,7 +122,7 @@ public class ShellHostTests : IDisposable
         var assembly = typeof(ShellHostTests).Assembly;
 
         // Act
-        var features = FeatureDiscovery.DiscoverFeatures(new[] { assembly }).ToList();
+        var features = FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
 
         // Assert
         var coreFeature = features.Single(f => f.Id == "Core");
@@ -136,7 +136,7 @@ public class ShellHostTests : IDisposable
         var assembly = typeof(ShellHostTests).Assembly;
 
         // Act
-        var features = FeatureDiscovery.DiscoverFeatures(new[] { assembly }).ToList();
+        var features = FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
 
         // Assert
         var weatherFeature = features.Single(f => f.Id == "Weather");
@@ -240,10 +240,10 @@ public class ShellHostTests : IDisposable
         var assembly = typeof(ShellHostTests).Assembly;
         var shellSettings = new[]
         {
-            new ShellSettings(new ShellId("Default"), new[] { "Weather" }),
-            new ShellSettings(new ShellId("Other"), new[] { "Core" })
+            new ShellSettings(new ShellId("Default"), ["Weather"]),
+            new ShellSettings(new ShellId("Other"), ["Core"])
         };
-        var host = new DefaultShellHost(shellSettings, new[] { assembly });
+        var host = new DefaultShellHost(shellSettings, [assembly]);
         _hostsToDispose.Add(host);
 
         // Act
@@ -328,8 +328,8 @@ public class ShellHostTests : IDisposable
     private DefaultShellHost CreateDefaultHostWithWeatherFeature()
     {
         var assembly = typeof(ShellHostTests).Assembly;
-        var shellSettings = new ShellSettings(new ShellId("Default"), new[] { "Weather" });
-        var host = new DefaultShellHost(new[] { shellSettings }, new[] { assembly });
+        var shellSettings = new ShellSettings(new ShellId("Default"), ["Weather"]);
+        var host = new DefaultShellHost([shellSettings], [assembly]);
         _hostsToDispose.Add(host);
         return host;
     }

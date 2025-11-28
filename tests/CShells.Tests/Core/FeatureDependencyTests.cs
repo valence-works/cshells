@@ -17,13 +17,13 @@ public class FeatureDependencyTests
     {
         // Arrange: A -> B -> C (A depends on B, B depends on C)
         var features = CreateFeatureDictionary(
-            ("A", new[] { "B" }),
-            ("B", new[] { "C" }),
-            ("C", Array.Empty<string>())
+            ("A", ["B"]),
+            ("B", ["C"]),
+            ("C", [])
         );
 
         // Act
-        var result = _resolver.GetOrderedFeatures(new[] { "A" }, features);
+        var result = _resolver.GetOrderedFeatures(["A"], features);
 
         // Assert: Dependencies should come before dependents [C, B, A]
         result.Should().HaveCount(3);
@@ -35,15 +35,15 @@ public class FeatureDependencyTests
     {
         // Arrange: A -> B -> C -> D -> E
         var features = CreateFeatureDictionary(
-            ("A", new[] { "B" }),
-            ("B", new[] { "C" }),
-            ("C", new[] { "D" }),
-            ("D", new[] { "E" }),
-            ("E", Array.Empty<string>())
+            ("A", ["B"]),
+            ("B", ["C"]),
+            ("C", ["D"]),
+            ("D", ["E"]),
+            ("E", [])
         );
 
         // Act
-        var result = _resolver.GetOrderedFeatures(new[] { "A" }, features);
+        var result = _resolver.GetOrderedFeatures(["A"], features);
 
         // Assert
         result.Should().HaveCount(5);
@@ -60,13 +60,13 @@ public class FeatureDependencyTests
     {
         // Arrange: A depends on both B and C, which have no dependencies
         var features = CreateFeatureDictionary(
-            ("A", new[] { "B", "C" }),
-            ("B", Array.Empty<string>()),
-            ("C", Array.Empty<string>())
+            ("A", ["B", "C"]),
+            ("B", []),
+            ("C", [])
         );
 
         // Act
-        var result = _resolver.GetOrderedFeatures(new[] { "A" }, features);
+        var result = _resolver.GetOrderedFeatures(["A"], features);
 
         // Assert
         result.Should().HaveCount(3);
@@ -79,14 +79,14 @@ public class FeatureDependencyTests
     {
         // Arrange: Diamond pattern A -> B, A -> C, B -> D, C -> D
         var features = CreateFeatureDictionary(
-            ("A", new[] { "B", "C" }),
-            ("B", new[] { "D" }),
-            ("C", new[] { "D" }),
-            ("D", Array.Empty<string>())
+            ("A", ["B", "C"]),
+            ("B", ["D"]),
+            ("C", ["D"]),
+            ("D", [])
         );
 
         // Act
-        var result = _resolver.GetOrderedFeatures(new[] { "A" }, features);
+        var result = _resolver.GetOrderedFeatures(["A"], features);
 
         // Assert: D should appear only once and before B and C
         result.Should().HaveCount(4);
@@ -112,14 +112,14 @@ public class FeatureDependencyTests
             var name = parts[0];
             var deps = parts.Length > 1 && !string.IsNullOrEmpty(parts[1])
                 ? parts[1].Split(',')
-                : Array.Empty<string>();
+                : [];
             return (name, deps);
         }).ToArray();
 
         var features = CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var act = () => _resolver.GetOrderedFeatures(new[] { "A" }, features);
+        var act = () => _resolver.GetOrderedFeatures(["A"], features);
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*Circular dependency*", $"scenario '{scenario}' should detect circular dependency");
     }
@@ -129,8 +129,8 @@ public class FeatureDependencyTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("A", new[] { "B" }),
-            ("B", new[] { "A" })
+            ("A", ["B"]),
+            ("B", ["A"])
         );
 
         // Act & Assert
@@ -156,13 +156,13 @@ public class FeatureDependencyTests
         var featureList = featureDependencies.Select(fd =>
         {
             var parts = fd.Split(':');
-            return (parts[0], parts.Length > 1 ? parts[1].Split(',') : Array.Empty<string>());
+            return (parts[0], parts.Length > 1 ? parts[1].Split(',') : []);
         }).ToArray();
 
         var features = CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var act = () => _resolver.GetOrderedFeatures(new[] { "A" }, features);
+        var act = () => _resolver.GetOrderedFeatures(["A"], features);
         act.Should().Throw<InvalidOperationException>()
             .WithMessage($"*{missingFeature}*", $"scenario '{scenario}' should include missing feature name in error")
             .WithMessage("*not found*");
@@ -173,7 +173,7 @@ public class FeatureDependencyTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("A", Array.Empty<string>())
+            ("A", [])
         );
 
         // Act & Assert

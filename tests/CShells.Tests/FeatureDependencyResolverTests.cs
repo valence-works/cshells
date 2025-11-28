@@ -34,7 +34,7 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", Array.Empty<string>())
+            ("Feature1", [])
         );
 
         // Act
@@ -49,8 +49,8 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", new[] { "Feature2" }),
-            ("Feature2", Array.Empty<string>())
+            ("Feature1", ["Feature2"]),
+            ("Feature2", [])
         );
 
         // Act
@@ -66,9 +66,9 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", new[] { "Feature2" }),
-            ("Feature2", new[] { "Feature3" }),
-            ("Feature3", Array.Empty<string>())
+            ("Feature1", ["Feature2"]),
+            ("Feature2", ["Feature3"]),
+            ("Feature3", [])
         );
 
         // Act
@@ -85,8 +85,8 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", new[] { "Feature2" }),
-            ("Feature2", new[] { "Feature1" })
+            ("Feature1", ["Feature2"]),
+            ("Feature2", ["Feature1"])
         );
 
         // Act & Assert
@@ -99,7 +99,7 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", new[] { "NonExistent" })
+            ("Feature1", ["NonExistent"])
         );
 
         // Act & Assert
@@ -116,7 +116,7 @@ public class FeatureDependencyResolverTests
         // Act & Assert
         if (withFeatureNames)
         {
-            var ex = Assert.Throws<ArgumentNullException>(() => _resolver.GetOrderedFeatures(new[] { "Feature1" }, null!));
+            var ex = Assert.Throws<ArgumentNullException>(() => _resolver.GetOrderedFeatures(["Feature1"], null!));
             Assert.Equal("features", ex.ParamName);
         }
         else
@@ -144,8 +144,8 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", Array.Empty<string>()),
-            ("Feature2", Array.Empty<string>())
+            ("Feature1", []),
+            ("Feature2", [])
         );
 
         // Act
@@ -162,9 +162,9 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", new[] { "Feature2" }),
-            ("Feature2", new[] { "Feature3" }),
-            ("Feature3", Array.Empty<string>())
+            ("Feature1", ["Feature2"]),
+            ("Feature2", ["Feature3"]),
+            ("Feature3", [])
         );
 
         // Act
@@ -181,9 +181,9 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", new[] { "Feature2" }),
-            ("Feature2", new[] { "Feature3" }),
-            ("Feature3", new[] { "Feature1" })
+            ("Feature1", ["Feature2"]),
+            ("Feature2", ["Feature3"]),
+            ("Feature3", ["Feature1"])
         );
 
         // Act & Assert
@@ -207,14 +207,14 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", new[] { "Feature2" }),
-            ("Feature2", Array.Empty<string>()),
-            ("Feature3", Array.Empty<string>()),  // Not selected
-            ("Feature4", new[] { "Feature3" })     // Not selected
+            ("Feature1", ["Feature2"]),
+            ("Feature2", []),
+            ("Feature3", []),  // Not selected
+            ("Feature4", ["Feature3"])     // Not selected
         );
 
         // Act
-        var result = _resolver.GetOrderedFeatures(new[] { "Feature1" }, features);
+        var result = _resolver.GetOrderedFeatures(["Feature1"], features);
 
         // Assert
         Assert.Equal(2, result.Count);
@@ -229,13 +229,13 @@ public class FeatureDependencyResolverTests
     {
         // Arrange
         var features = CreateFeatureDictionary(
-            ("Feature1", new[] { "Feature2" }),
-            ("Feature2", new[] { "Feature3" }),
-            ("Feature3", Array.Empty<string>())
+            ("Feature1", ["Feature2"]),
+            ("Feature2", ["Feature3"]),
+            ("Feature3", [])
         );
 
         // Act
-        var result = _resolver.GetOrderedFeatures(new[] { "Feature1" }, features);
+        var result = _resolver.GetOrderedFeatures(["Feature1"], features);
 
         // Assert
         Assert.Equal(3, result.Count);
@@ -248,10 +248,10 @@ public class FeatureDependencyResolverTests
     {
         // Arrange: Diamond pattern A -> B, A -> C, B -> D, C -> D
         var features = CreateFeatureDictionary(
-            ("A", new[] { "B", "C" }),
-            ("B", new[] { "D" }),
-            ("C", new[] { "D" }),
-            ("D", Array.Empty<string>())
+            ("A", ["B", "C"]),
+            ("B", ["D"]),
+            ("C", ["D"]),
+            ("D", [])
         );
 
         // Act
