@@ -59,7 +59,7 @@ public static class FeatureDiscovery
                 if (attribute.Metadata.Length > 0)
                 {
                     var metadata = new Dictionary<string, object>();
-                    for (var i = 0; i < attribute.Metadata.Length - 1; i += 2)
+                    for (var i = 0; i + 1 < attribute.Metadata.Length; i += 2)
                     {
                         var key = attribute.Metadata[i]?.ToString();
                         if (!string.IsNullOrEmpty(key))
@@ -92,7 +92,7 @@ public static class FeatureDiscovery
         catch (ReflectionTypeLoadException ex)
         {
             // Return the types that were successfully loaded
-            return ex.Types.Where(t => t != null)!;
+            return ex.Types.OfType<Type>();
         }
     }
 }
