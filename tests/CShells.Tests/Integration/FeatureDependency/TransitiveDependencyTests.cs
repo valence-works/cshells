@@ -1,5 +1,3 @@
-using FluentAssertions;
-
 namespace CShells.Tests.Integration.FeatureDependency;
 
 /// <summary>
@@ -23,8 +21,8 @@ public class TransitiveDependencyTests
         var result = _resolver.GetOrderedFeatures(["A"], features);
 
         // Assert: Dependencies should come before dependents [C, B, A]
-        result.Should().HaveCount(3);
-        result.Should().ContainInOrder("C", "B", "A");
+        Assert.Equal(3, result.Count);
+        Assert.Equal(new[] { "C", "B", "A" }, result);
     }
 
     [Fact(DisplayName = "GetOrderedFeatures with deep transitive dependencies returns dependencies first")]
@@ -43,13 +41,13 @@ public class TransitiveDependencyTests
         var result = _resolver.GetOrderedFeatures(["A"], features);
 
         // Assert
-        result.Should().HaveCount(5);
+        Assert.Equal(5, result.Count);
 
         // Each feature should come after its dependencies
-        result.IndexOf("E").Should().BeLessThan(result.IndexOf("D"));
-        result.IndexOf("D").Should().BeLessThan(result.IndexOf("C"));
-        result.IndexOf("C").Should().BeLessThan(result.IndexOf("B"));
-        result.IndexOf("B").Should().BeLessThan(result.IndexOf("A"));
+        Assert.True(result.IndexOf("E") < result.IndexOf("D"));
+        Assert.True(result.IndexOf("D") < result.IndexOf("C"));
+        Assert.True(result.IndexOf("C") < result.IndexOf("B"));
+        Assert.True(result.IndexOf("B") < result.IndexOf("A"));
     }
 
     [Fact(DisplayName = "GetOrderedFeatures with multiple dependencies returns dependencies first")]
@@ -66,9 +64,9 @@ public class TransitiveDependencyTests
         var result = _resolver.GetOrderedFeatures(["A"], features);
 
         // Assert
-        result.Should().HaveCount(3);
-        result.IndexOf("B").Should().BeLessThan(result.IndexOf("A"));
-        result.IndexOf("C").Should().BeLessThan(result.IndexOf("A"));
+        Assert.Equal(3, result.Count);
+        Assert.True(result.IndexOf("B") < result.IndexOf("A"));
+        Assert.True(result.IndexOf("C") < result.IndexOf("A"));
     }
 
     [Fact(DisplayName = "GetOrderedFeatures with diamond dependency handles duplicates correctly")]
@@ -86,10 +84,10 @@ public class TransitiveDependencyTests
         var result = _resolver.GetOrderedFeatures(["A"], features);
 
         // Assert: D should appear only once and before B and C
-        result.Should().HaveCount(4);
-        result.Should().ContainSingle(f => f == "D");
-        result.IndexOf("D").Should().BeLessThan(result.IndexOf("B"));
-        result.IndexOf("D").Should().BeLessThan(result.IndexOf("C"));
+        Assert.Equal(4, result.Count);
+        Assert.Single(result.Where(f => f == "D"));
+        Assert.True(result.IndexOf("D") < result.IndexOf("B"));
+        Assert.True(result.IndexOf("D") < result.IndexOf("C"));
     }
 
     /// <summary>

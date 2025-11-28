@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Integration.ShellHost;
@@ -31,8 +30,8 @@ public class ServiceProviderTests : IDisposable
         var timeService = shell.ServiceProvider.GetService<TestFixtures.ITimeService>();
         var weatherService = shell.ServiceProvider.GetService<TestFixtures.IWeatherService>();
 
-        timeService.Should().NotBeNull();
-        weatherService.Should().NotBeNull();
+        Assert.NotNull(timeService);
+        Assert.NotNull(weatherService);
     }
 
     [Theory(DisplayName = "ServiceProvider can resolve shell infrastructure")]
@@ -48,17 +47,17 @@ public class ServiceProviderTests : IDisposable
         var resolvedService = shell.ServiceProvider.GetRequiredService(serviceType);
 
         // Assert
-        resolvedService.Should().NotBeNull($"{serviceName} should be resolvable from service provider");
+        Assert.NotNull(resolvedService);
 
         if (serviceType == typeof(ShellContext))
         {
-            resolvedService.Should().BeSameAs(shell);
+            Assert.Same(shell, resolvedService);
         }
         else if (serviceType == typeof(ShellSettings))
         {
             var settings = (ShellSettings)resolvedService;
-            settings.Id.Name.Should().Be("Default");
-            settings.EnabledFeatures.Should().Contain("Weather");
+            Assert.Equal("Default", settings.Id.Name);
+            Assert.Contains("Weather", settings.EnabledFeatures);
         }
     }
 }

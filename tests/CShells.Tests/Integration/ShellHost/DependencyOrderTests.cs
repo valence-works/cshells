@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Integration.ShellHost;
@@ -31,7 +30,7 @@ public class DependencyOrderTests : IDisposable
         // Assert: WeatherService requires ITimeService in its constructor
         // If Core wasn't configured first, this would fail
         var weatherService = shell.ServiceProvider.GetRequiredService<TestFixtures.IWeatherService>();
-        weatherService.Should().NotBeNull();
-        weatherService.TimeService.Should().NotBeNull();
+        Assert.NotNull(weatherService);
+        Assert.NotNull(weatherService.TimeService);
     }
 }

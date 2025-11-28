@@ -1,5 +1,3 @@
-using FluentAssertions;
-
 namespace CShells.Tests.Integration.FeatureDependency;
 
 /// <summary>
@@ -25,10 +23,9 @@ public class UnknownFeatureDependencyTests
         var features = CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var act = () => _resolver.GetOrderedFeatures(["A"], features);
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage($"*{missingFeature}*", $"scenario '{scenario}' should include missing feature name in error")
-            .WithMessage("*not found*");
+        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(["A"], features));
+        Assert.Contains(missingFeature, ex.Message);
+        Assert.Contains("not found", ex.Message);
     }
 
     [Fact(DisplayName = "ResolveDependencies with unknown feature throws InvalidOperationException")]
@@ -40,10 +37,9 @@ public class UnknownFeatureDependencyTests
         );
 
         // Act & Assert
-        var act = () => _resolver.ResolveDependencies("NonExistentFeature", features);
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*NonExistentFeature*")
-            .WithMessage("*not found*");
+        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies("NonExistentFeature", features));
+        Assert.Contains("NonExistentFeature", ex.Message);
+        Assert.Contains("not found", ex.Message);
     }
 
     /// <summary>

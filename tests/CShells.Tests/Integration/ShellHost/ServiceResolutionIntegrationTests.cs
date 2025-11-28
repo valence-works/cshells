@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Integration.ShellHost;
@@ -31,7 +30,7 @@ public class ServiceResolutionIntegrationTests : IDisposable
         var service = shell.ServiceProvider.GetService(serviceType);
 
         // Assert
-        service.Should().NotBeNull(reason);
+        Assert.NotNull(service);
     }
 
     [Fact(DisplayName = "GetShell WeatherService can access TimeService")]
@@ -45,8 +44,8 @@ public class ServiceResolutionIntegrationTests : IDisposable
         var weatherService = shell.ServiceProvider.GetRequiredService<TestFixtures.IWeatherService>();
 
         // Assert: WeatherService should have ITimeService injected
-        weatherService.TimeService.Should().NotBeNull();
-        weatherService.TimeService.Should().BeOfType<TestFixtures.TimeService>();
+        Assert.NotNull(weatherService.TimeService);
+        Assert.IsType<TestFixtures.TimeService>(weatherService.TimeService);
     }
 
     [Fact(DisplayName = "GetShell TimeService returns recent time")]
@@ -64,8 +63,8 @@ public class ServiceResolutionIntegrationTests : IDisposable
         var afterTime = DateTime.UtcNow.AddSeconds(5);
 
         // Assert: The time should be recent (within reasonable bounds)
-        currentTime.Should().BeAfter(beforeTime);
-        currentTime.Should().BeBefore(afterTime);
+        Assert.True(currentTime > beforeTime);
+        Assert.True(currentTime < afterTime);
     }
 
     [Fact(DisplayName = "GetShell WeatherService generates valid weather report")]
@@ -80,8 +79,8 @@ public class ServiceResolutionIntegrationTests : IDisposable
         var report = weatherService.GetWeatherReport();
 
         // Assert
-        report.Should().NotBeNullOrEmpty();
-        report.Should().Contain("Weather report generated at");
-        report.Should().Contain("UTC");
+        Assert.False(string.IsNullOrEmpty(report));
+        Assert.Contains("Weather report generated at", report);
+        Assert.Contains("UTC", report);
     }
 }

@@ -1,5 +1,3 @@
-using FluentAssertions;
-
 namespace CShells.Tests.Integration.ShellHost;
 
 /// <summary>
@@ -28,7 +26,7 @@ public class DefaultShellTests : IDisposable
         var getShellResult = host.GetShell(new("Default"));
 
         // Assert
-        defaultShell.Should().BeSameAs(getShellResult);
+        Assert.Same(defaultShell, getShellResult);
     }
 
     [Fact(DisplayName = "DefaultShell with Default ID returns correct shell context")]
@@ -48,8 +46,8 @@ public class DefaultShellTests : IDisposable
         var defaultShell = host.DefaultShell;
 
         // Assert
-        defaultShell.Id.Name.Should().Be("Default");
-        defaultShell.Settings.EnabledFeatures.Should().Contain("Weather");
+        Assert.Equal("Default", defaultShell.Id.Name);
+        Assert.Contains("Weather", defaultShell.Settings.EnabledFeatures);
     }
 
     [Fact(DisplayName = "DefaultShell multiple calls return same instance")]
@@ -64,7 +62,7 @@ public class DefaultShellTests : IDisposable
         var thirdCall = host.DefaultShell;
 
         // Assert
-        firstCall.Should().BeSameAs(secondCall);
-        secondCall.Should().BeSameAs(thirdCall);
+        Assert.Same(firstCall, secondCall);
+        Assert.Same(secondCall, thirdCall);
     }
 }

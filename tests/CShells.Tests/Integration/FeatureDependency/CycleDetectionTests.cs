@@ -1,5 +1,3 @@
-using FluentAssertions;
-
 namespace CShells.Tests.Integration.FeatureDependency;
 
 /// <summary>
@@ -29,9 +27,8 @@ public class CycleDetectionTests
         var features = CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var act = () => _resolver.GetOrderedFeatures(["A"], features);
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Circular dependency*", $"scenario '{scenario}' should detect circular dependency");
+        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(["A"], features));
+        Assert.Contains("Circular dependency", ex.Message);
     }
 
     [Fact(DisplayName = "ResolveDependencies with cycle throws with feature name")]
@@ -44,11 +41,9 @@ public class CycleDetectionTests
         );
 
         // Act & Assert
-        var act = () => _resolver.ResolveDependencies("A", features);
-        var exception = act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Circular dependency*")
-            .Which;
-        (exception.Message.Contains("A") || exception.Message.Contains("B")).Should().BeTrue(
+        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies("A", features));
+        Assert.Contains("Circular dependency", ex.Message);
+        Assert.True(ex.Message.Contains("A") || ex.Message.Contains("B"),
             "exception message should contain the feature name involved in the cycle");
     }
 

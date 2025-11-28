@@ -1,5 +1,3 @@
-using FluentAssertions;
-
 namespace CShells.Tests.Integration.ShellHost;
 
 /// <summary>
@@ -17,11 +15,11 @@ public class FeatureDiscoveryIntegrationTests
         var features = FeatureDiscovery.DiscoverFeatures([assembly]).ToList();
 
         // Assert
-        features.Should().Contain(f => f.Id == "Core");
-        features.Should().Contain(f => f.Id == "Weather");
+        Assert.Contains(features, f => f.Id == "Core");
+        Assert.Contains(features, f => f.Id == "Weather");
 
         var weatherFeature = features.Single(f => f.Id == "Weather");
-        weatherFeature.Dependencies.Should().Contain("Core");
+        Assert.Contains("Core", weatherFeature.Dependencies);
     }
 
     [Fact(DisplayName = "FeatureDiscovery Core feature has correct startup type")]
@@ -35,7 +33,7 @@ public class FeatureDiscoveryIntegrationTests
 
         // Assert
         var coreFeature = features.Single(f => f.Id == "Core");
-        coreFeature.StartupType.Should().Be(typeof(TestFixtures.CoreFeatureStartup));
+        Assert.Equal(typeof(TestFixtures.CoreFeatureStartup), coreFeature.StartupType);
     }
 
     [Fact(DisplayName = "FeatureDiscovery Weather feature has dependency on Core")]
@@ -49,7 +47,8 @@ public class FeatureDiscoveryIntegrationTests
 
         // Assert
         var weatherFeature = features.Single(f => f.Id == "Weather");
-        weatherFeature.StartupType.Should().Be(typeof(TestFixtures.WeatherFeatureStartup));
-        weatherFeature.Dependencies.Should().ContainSingle().Which.Should().Be("Core");
+        Assert.Equal(typeof(TestFixtures.WeatherFeatureStartup), weatherFeature.StartupType);
+        Assert.Single(weatherFeature.Dependencies);
+        Assert.Equal("Core", weatherFeature.Dependencies[0]);
     }
 }
