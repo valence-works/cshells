@@ -58,18 +58,19 @@ public class ShellMiddleware
         _logger.LogDebug("Resolved shell '{ShellId}' for request", shellId.Value);
 
         var shellContext = _host.GetShell(shellId.Value);
-        var scope = shellContext.ServiceProvider.CreateScope();
         var originalRequestServices = context.RequestServices;
 
-        try
+        using (var scope = shellContext.ServiceProvider.CreateScope())
         {
-            context.RequestServices = scope.ServiceProvider;
-            await _next(context);
-        }
-        finally
-        {
-            context.RequestServices = originalRequestServices;
-            scope.Dispose();
+            try
+            {
+                context.RequestServices = scope.ServiceProvider;
+                await _next(context);
+            }
+            finally
+            {
+                context.RequestServices = originalRequestServices;
+            }
         }
     }
 }
