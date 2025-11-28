@@ -60,11 +60,15 @@ public class ShellFeatureDescriptorTests
     public void Metadata_CanBeSetAndRetrieveValues()
     {
         // Arrange
-        var descriptor = new ShellFeatureDescriptor(TestFeatureId);
-
-        // Act
-        descriptor.Metadata["Key1"] = "Value1";
-        descriptor.Metadata["Key2"] = 42;
+        var descriptor = new ShellFeatureDescriptor(TestFeatureId)
+        {
+            Metadata =
+            {
+                // Act
+                ["Key1"] = "Value1",
+                ["Key2"] = 42
+            }
+        };
 
         // Assert
         Assert.Equal("Value1", descriptor.Metadata["Key1"]);

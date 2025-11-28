@@ -25,8 +25,8 @@ namespace CShells
             string sectionName = "CShells",
             IEnumerable<Assembly>? assemblies = null)
         {
-            if (services is null) throw new ArgumentNullException(nameof(services));
-            if (configuration is null) throw new ArgumentNullException(nameof(configuration));
+            ArgumentNullException.ThrowIfNull(services);
+            ArgumentNullException.ThrowIfNull(configuration);
 
             var options = new CShellsOptions();
             configuration.GetSection(sectionName).Bind(options);
@@ -45,7 +45,7 @@ namespace CShells
             {
                 var logger = sp.GetService<ILogger<DefaultShellHost>>();
                 return assemblies is null
-                    ? new DefaultShellHost(shells, logger)
+                    ? new(shells, logger)
                     : new DefaultShellHost(shells, assemblies, logger);
             });
 

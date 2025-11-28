@@ -1,6 +1,4 @@
-@CShells.SampleApp_HostAddress = http://localhost:5031
-
-GET {{CShells.SampleApp_HostAddress}}/weatherforecast/
+GET {{SampleApp_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###

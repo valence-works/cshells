@@ -10,4 +10,8 @@
         <PackageReference Include="Microsoft.Extensions.Configuration.Json"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App"/>
+    </ItemGroup>
+
 </Project>
