@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi"/>
+        <PackageReference Include="Swashbuckle.AspNetCore"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\CShells\CShells.csproj" />
-    <ProjectReference Include="..\..\src\CShells.AspNetCore\CShells.AspNetCore.csproj" />
-  </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\CShells\CShells.csproj"/>
+        <ProjectReference Include="..\..\src\CShells.AspNetCore\CShells.AspNetCore.csproj"/>
+    </ItemGroup>
 
 </Project>
