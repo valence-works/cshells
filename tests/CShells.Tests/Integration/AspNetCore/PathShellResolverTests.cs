@@ -126,4 +126,29 @@ public class PathShellResolverTests
         var ex = Assert.Throws<ArgumentNullException>(() => resolver.Resolve(null!));
         Assert.Equal("httpContext", ex.ParamName);
     }
+
+    [Fact(DisplayName = "Resolve with different case path segment returns correct ShellId")]
+    public void Resolve_WithDifferentCasePathSegment_ReturnsCorrectShellId()
+    {
+        // Arrange
+        var pathMap = new Dictionary<string, ShellId>
+        {
+            ["tenant1"] = new("Tenant1Shell")
+        };
+        var resolver = new PathShellResolver(pathMap);
+        var httpContext = new DefaultHttpContext
+        {
+            Request =
+            {
+                Path = "/TENANT1/some/path"
+            }
+        };
+
+        // Act
+        var result = resolver.Resolve(httpContext);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(new("Tenant1Shell"), result.Value);
+    }
 }

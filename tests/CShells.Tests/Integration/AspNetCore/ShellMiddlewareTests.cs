@@ -180,6 +180,22 @@ public class ShellMiddlewareTests
         Assert.Equal("host", ex.ParamName);
     }
 
+    [Fact(DisplayName = "InvokeAsync with non-existent ShellId throws KeyNotFoundException")]
+    public async Task InvokeAsync_WithNonExistentShellId_ThrowsKeyNotFoundException()
+    {
+        // Arrange
+        var resolver = new FixedShellResolver(new("NonExistent"));
+        var host = new TestShellHost(); // Empty host with no shells
+        var middleware = new ShellMiddleware(
+            next: ctx => Task.CompletedTask,
+            resolver: resolver,
+            host: host);
+        var httpContext = new DefaultHttpContext();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => middleware.InvokeAsync(httpContext));
+    }
+
     // Test helpers
     private interface ITestService { }
     private class TestService : ITestService { }

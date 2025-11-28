@@ -103,4 +103,29 @@ public class HostShellResolverTests
         var ex = Assert.Throws<ArgumentNullException>(() => resolver.Resolve(null!));
         Assert.Equal("httpContext", ex.ParamName);
     }
+
+    [Fact(DisplayName = "Resolve with different case host returns correct ShellId")]
+    public void Resolve_WithDifferentCaseHost_ReturnsCorrectShellId()
+    {
+        // Arrange
+        var hostMap = new Dictionary<string, ShellId>
+        {
+            ["tenant1.example.com"] = new("Tenant1Shell")
+        };
+        var resolver = new HostShellResolver(hostMap);
+        var httpContext = new DefaultHttpContext
+        {
+            Request =
+            {
+                Host = new("TENANT1.EXAMPLE.COM")
+            }
+        };
+
+        // Act
+        var result = resolver.Resolve(httpContext);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(new("Tenant1Shell"), result.Value);
+    }
 }

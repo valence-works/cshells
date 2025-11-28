@@ -7,7 +7,7 @@ namespace CShells.AspNetCore.Resolvers;
 /// </summary>
 public class PathShellResolver : IShellResolver
 {
-    private readonly IReadOnlyDictionary<string, ShellId> _pathMap;
+    private readonly Dictionary<string, ShellId> _pathMap;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PathShellResolver"/> class.
@@ -18,7 +18,7 @@ public class PathShellResolver : IShellResolver
     public PathShellResolver(IReadOnlyDictionary<string, ShellId> pathMap)
     {
         ArgumentNullException.ThrowIfNull(pathMap);
-        _pathMap = pathMap;
+        _pathMap = new Dictionary<string, ShellId>(pathMap, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />

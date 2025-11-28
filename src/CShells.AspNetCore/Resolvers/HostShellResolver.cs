@@ -7,18 +7,18 @@ namespace CShells.AspNetCore.Resolvers;
 /// </summary>
 public class HostShellResolver : IShellResolver
 {
-    private readonly IReadOnlyDictionary<string, ShellId> _hostMap;
+    private readonly Dictionary<string, ShellId> _hostMap;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HostShellResolver"/> class.
     /// </summary>
     /// <param name="hostMap">A dictionary mapping host names to shell identifiers.
-    /// Keys should be host names (e.g., "tenant1.example.com", "localhost").</param>
+    /// Keys should be host names (e.g., "tenant1.example.com", "localhost"). Matching is case-insensitive.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="hostMap"/> is null.</exception>
     public HostShellResolver(IReadOnlyDictionary<string, ShellId> hostMap)
     {
         ArgumentNullException.ThrowIfNull(hostMap);
-        _hostMap = hostMap;
+        _hostMap = new Dictionary<string, ShellId>(hostMap, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />
