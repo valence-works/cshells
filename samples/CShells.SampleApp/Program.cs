@@ -94,18 +94,10 @@ app.Run();
 /// </summary>
 file class CompositeShellResolver(params IShellResolver[] resolvers) : IShellResolver
 {
-    public ShellId? Resolve(Microsoft.AspNetCore.Http.HttpContext httpContext)
-    {
-        foreach (var resolver in resolvers)
-        {
-            var shellId = resolver.Resolve(httpContext);
-            if (shellId.HasValue)
-            {
-                return shellId;
-            }
-        }
-        return null;
-    }
+    public ShellId? Resolve(Microsoft.AspNetCore.Http.HttpContext httpContext) =>
+        resolvers
+            .Select(resolver => resolver.Resolve(httpContext))
+            .FirstOrDefault(shellId => shellId.HasValue);
 }
 
 /// <summary>
