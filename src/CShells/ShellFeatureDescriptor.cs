@@ -31,7 +31,12 @@ public class ShellFeatureDescriptor
     /// <summary>
     /// Gets or sets the collection of feature IDs that this feature depends on.
     /// </summary>
-    public IReadOnlyList<string> Dependencies { get; set; } = [];
+    private IReadOnlyList<string> _dependencies = [];
+    public IReadOnlyList<string> Dependencies
+    {
+        get => _dependencies;
+        set => _dependencies = value ?? throw new ArgumentNullException(nameof(Dependencies), "Dependencies cannot be set to null.");
+    }
 
     /// <summary>
     /// Gets or sets the metadata associated with this feature.
