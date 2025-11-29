@@ -31,6 +31,9 @@ namespace CShells
 
             // Register the root service collection accessor as early as possible.
             // This allows the shell host to copy root service registrations into each shell's service collection.
+            // Note: The captured 'services' reference remains valid for the lifetime of the application.
+            // Because IServiceCollection is mutable, any services added after AddCShells but before shells are built
+            // will still be inherited by shells. This subtle behavior is correct but worth documenting for future maintainers.
             services.TryAddSingleton<IRootServiceCollectionAccessor>(
                 _ => new RootServiceCollectionAccessor(services));
 
