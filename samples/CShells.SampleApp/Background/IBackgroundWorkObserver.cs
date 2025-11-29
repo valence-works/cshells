@@ -1,5 +1,3 @@
-using CShells;
-
 namespace CShells.SampleApp.Background;
 
 /// <summary>

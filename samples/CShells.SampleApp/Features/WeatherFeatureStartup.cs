@@ -1,6 +1,3 @@
-using CShells;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace CShells.SampleApp.Features;
 
 /// <summary>

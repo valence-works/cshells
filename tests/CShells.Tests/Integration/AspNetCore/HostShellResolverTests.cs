@@ -1,4 +1,3 @@
-using CShells.AspNetCore;
 using CShells.AspNetCore.Resolvers;
 using Microsoft.AspNetCore.Http;
 
