@@ -246,6 +246,11 @@ public class TestWebShellFeature : IWebShellFeature
     /// <inheritdoc />
     public void Configure(IApplicationBuilder app, IHostEnvironment environment)
     {
+        IncrementConfigureCallCount();
+    }
+
+    private static void IncrementConfigureCallCount()
+    {
         lock (_lock) _configureCallCount++;
     }
 }
