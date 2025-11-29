@@ -9,25 +9,21 @@ using CShells.SampleApp.Features.Weather;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Register CShells services from configuration
-builder.Services.AddCShells(
-    builder.Configuration, 
-    assemblies: [typeof(Program).Assembly]);
-
-// Register ASP.NET Core integration for CShells with a custom shell resolver
-// The PathShellResolver maps paths to specific shells, defaults to Default shell otherwise
-builder.Services.AddSingleton<IShellResolver>(sp =>
+// Register CShells services and ASP.NET Core integration using a single entry point
+// and configure a custom shell resolver.
+builder.AddCShells(services =>
 {
     var pathMappings = new Dictionary<string, ShellId>
     {
         ["admin"] = new("Admin"),
         ["tropical"] = new("Tropical")
     };
-    return new CompositeShellResolver(
-        new PathShellResolver(pathMappings),
-        new DefaultShellIdResolver());
-});
-builder.Services.AddCShellsAspNetCore();
+
+    services.AddSingleton<IShellResolver>(_ =>
+        new CompositeShellResolver(
+            new PathShellResolver(pathMappings),
+            new DefaultShellIdResolver()));
+}, assemblies: [typeof(Program).Assembly]);
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -108,21 +104,11 @@ app.Run();
 
 namespace CShells.SampleApp
 {
-    /// <summary>
-    /// A composite shell resolver that tries multiple resolvers in order.
-    /// </summary>
-    file class CompositeShellResolver(params IShellResolver[] resolvers) : IShellResolver
-    {
-        public ShellId? Resolve(HttpContext httpContext) =>
-            resolvers
-                .Select(resolver => resolver.Resolve(httpContext))
-                .FirstOrDefault(shellId => shellId.HasValue);
-    }
 
     /// <summary>
     /// A resolver that always returns the Default shell.
     /// </summary>
-    file class DefaultShellIdResolver : IShellResolver
+    internal sealed class DefaultShellIdResolver : IShellResolver
     {
         public ShellId? Resolve(HttpContext httpContext) 
             => new ShellId("Default");
