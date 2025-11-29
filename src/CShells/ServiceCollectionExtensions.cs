@@ -2,6 +2,7 @@ using System.Reflection;
 using CShells.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace CShells
@@ -28,6 +29,11 @@ namespace CShells
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(configuration);
 
+            // Register the root service collection accessor as early as possible.
+            // This allows the shell host to copy root service registrations into each shell's service collection.
+            services.TryAddSingleton<IRootServiceCollectionAccessor>(
+                _ => new RootServiceCollectionAccessor(services));
+
             var options = new CShellsOptions();
             configuration.GetSection(sectionName).Bind(options);
 
@@ -42,11 +48,13 @@ namespace CShells
 
             // Register IShellHost using the DefaultShellHost.
             // The root IServiceProvider is passed to allow IShellFeature constructors to resolve root-level services.
+            // The root IServiceCollection is passed via the accessor to enable service inheritance in shells.
             services.AddSingleton<IShellHost>(sp =>
             {
                 var logger = sp.GetService<ILogger<DefaultShellHost>>();
+                var rootServicesAccessor = sp.GetRequiredService<IRootServiceCollectionAccessor>();
                 var assembliesToScan = assemblies ?? AppDomain.CurrentDomain.GetAssemblies();
-                return new DefaultShellHost(shells, assembliesToScan, rootProvider: sp, logger);
+                return new DefaultShellHost(shells, assembliesToScan, rootProvider: sp, rootServicesAccessor, logger);
             });
 
             // Register the default shell context scope factory.
