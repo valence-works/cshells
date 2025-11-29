@@ -17,12 +17,20 @@ public class ShellRetrievalTests : IDisposable
         }
     }
 
+    private CShells.DefaultShellHost CreateHost(ShellSettings[] settings)
+    {
+        var (services, provider) = TestFixtures.CreateRootServices();
+        var accessor = TestFixtures.CreateRootServicesAccessor(services);
+        var host = new CShells.DefaultShellHost(settings, [], provider, accessor);
+        _hostsToDispose.Add(host);
+        return host;
+    }
+
     [Fact(DisplayName = "DefaultShell with no shells throws InvalidOperationException")]
     public void DefaultShell_WithNoShells_ThrowsInvalidOperationException()
     {
         // Arrange
-        var host = new CShells.DefaultShellHost([], [], TestFixtures.CreateRootProvider());
-        _hostsToDispose.Add(host);
+        var host = CreateHost([]);
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() => _ = host.DefaultShell);
@@ -38,8 +46,7 @@ public class ShellRetrievalTests : IDisposable
             new ShellSettings(new("Default")),
             new ShellSettings(new("Other"))
         };
-        var host = new CShells.DefaultShellHost(settings, [], TestFixtures.CreateRootProvider());
-        _hostsToDispose.Add(host);
+        var host = CreateHost(settings);
 
         // Act
         var shell = host.DefaultShell;
@@ -57,8 +64,7 @@ public class ShellRetrievalTests : IDisposable
             new ShellSettings(new("First")),
             new ShellSettings(new("Second"))
         };
-        var host = new CShells.DefaultShellHost(settings, [], TestFixtures.CreateRootProvider());
-        _hostsToDispose.Add(host);
+        var host = CreateHost(settings);
 
         // Act
         var shell = host.DefaultShell;
@@ -75,8 +81,7 @@ public class ShellRetrievalTests : IDisposable
         {
             new ShellSettings(new("TestShell"))
         };
-        var host = new CShells.DefaultShellHost(settings, [], TestFixtures.CreateRootProvider());
-        _hostsToDispose.Add(host);
+        var host = CreateHost(settings);
 
         // Act
         var shell = host.GetShell(new("TestShell"));
@@ -96,8 +101,7 @@ public class ShellRetrievalTests : IDisposable
         {
             new ShellSettings(new("TestShell"))
         };
-        var host = new CShells.DefaultShellHost(settings, [], TestFixtures.CreateRootProvider());
-        _hostsToDispose.Add(host);
+        var host = CreateHost(settings);
 
         // Act & Assert
         var ex = Assert.Throws<KeyNotFoundException>(() => host.GetShell(new("NonExistent")));
@@ -112,8 +116,7 @@ public class ShellRetrievalTests : IDisposable
         {
             new ShellSettings(new("TestShell"))
         };
-        var host = new CShells.DefaultShellHost(settings, [], TestFixtures.CreateRootProvider());
-        _hostsToDispose.Add(host);
+        var host = CreateHost(settings);
 
         // Act
         var shell1 = host.GetShell(new("TestShell"));
@@ -133,8 +136,7 @@ public class ShellRetrievalTests : IDisposable
             new ShellSettings(new("Shell2")),
             new ShellSettings(new("Shell3"))
         };
-        var host = new CShells.DefaultShellHost(settings, [], TestFixtures.CreateRootProvider());
-        _hostsToDispose.Add(host);
+        var host = CreateHost(settings);
 
         // Act
         var allShells = host.AllShells;
@@ -154,8 +156,7 @@ public class ShellRetrievalTests : IDisposable
         {
             new ShellSettings(new("TestShell"), ["UnknownFeature"])
         };
-        var host = new CShells.DefaultShellHost(settings, [], TestFixtures.CreateRootProvider());
-        _hostsToDispose.Add(host);
+        var host = CreateHost(settings);
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() => host.GetShell(new("TestShell")));

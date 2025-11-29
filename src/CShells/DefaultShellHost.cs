@@ -34,11 +34,29 @@ public class DefaultShellHost : IShellHost, IDisposable
     private readonly IReadOnlyDictionary<string, ShellFeatureDescriptor> _featureMap;
     private readonly IReadOnlyList<ShellSettings> _shellSettings;
     private readonly IServiceProvider _rootProvider;
+    private readonly IServiceCollection _rootServices;
     private readonly ConcurrentDictionary<ShellId, ShellContext> _shellContexts = new();
     private readonly FeatureDependencyResolver _dependencyResolver = new();
     private readonly ILogger<DefaultShellHost> _logger;
     private readonly Lock _buildLock = new();
     private bool _disposed;
+
+    // Cached copy of root service descriptors for efficient bulk-copy to shell service collections.
+    // This avoids re-enumerating the root IServiceCollection for each shell.
+    private List<ServiceDescriptor>? _cachedRootDescriptors;
+
+    /// <summary>
+    /// CShell infrastructure service types that should NOT be copied into shell containers.
+    /// Copying these would cause shells to resolve a new DefaultShellHost using the shell provider
+    /// as the "root," breaking the documented semantics and fragmenting the shell cache.
+    /// </summary>
+    private static readonly HashSet<Type> ExcludedInfrastructureTypes =
+    [
+        typeof(IShellHost),
+        typeof(IShellContextScopeFactory),
+        typeof(IRootServiceCollectionAccessor),
+        typeof(IReadOnlyCollection<ShellSettings>)
+    ];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultShellHost"/> class.
@@ -48,15 +66,23 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// The application's root <see cref="IServiceProvider"/> used to instantiate <see cref="IShellFeature"/> implementations.
     /// Feature constructors can resolve root-level services (logging, configuration, etc.).
     /// </param>
+    /// <param name="rootServicesAccessor">
+    /// An accessor to the root <see cref="IServiceCollection"/>. Root service registrations
+    /// are copied into each shell's service collection, enabling inheritance of root services.
+    /// </param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/> or <paramref name="rootProvider"/> is null.</exception>
-    public DefaultShellHost(IEnumerable<ShellSettings> shellSettings, IServiceProvider rootProvider, ILogger<DefaultShellHost>? logger = null)
-        : this(shellSettings, AppDomain.CurrentDomain.GetAssemblies(), rootProvider, logger)
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="rootProvider"/>, or <paramref name="rootServicesAccessor"/> is null.</exception>
+    public DefaultShellHost(
+        IEnumerable<ShellSettings> shellSettings,
+        IServiceProvider rootProvider,
+        IRootServiceCollectionAccessor rootServicesAccessor,
+        ILogger<DefaultShellHost>? logger = null)
+        : this(shellSettings, AppDomain.CurrentDomain.GetAssemblies(), rootProvider, rootServicesAccessor, logger)
     {
     }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="DefaultShellHost"/> class with custom assemblies.
+    /// Initializes a new instance of the <see cref="DefaultShellHost"/> class with custom assemblies and root service collection.
     /// </summary>
     /// <param name="shellSettings">The collection of shell settings to manage.</param>
     /// <param name="assemblies">The assemblies to scan for features.</param>
@@ -64,20 +90,27 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// The application's root <see cref="IServiceProvider"/> used to instantiate <see cref="IShellFeature"/> implementations.
     /// Feature constructors can resolve root-level services (logging, configuration, etc.).
     /// </param>
+    /// <param name="rootServicesAccessor">
+    /// An accessor to the root <see cref="IServiceCollection"/>. Root service registrations
+    /// are copied into each shell's service collection, enabling inheritance of root services.
+    /// </param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="assemblies"/>, or <paramref name="rootProvider"/> is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="assemblies"/>, <paramref name="rootProvider"/>, or <paramref name="rootServicesAccessor"/> is null.</exception>
     public DefaultShellHost(
         IEnumerable<ShellSettings> shellSettings,
         IEnumerable<Assembly> assemblies,
         IServiceProvider rootProvider,
+        IRootServiceCollectionAccessor rootServicesAccessor,
         ILogger<DefaultShellHost>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(shellSettings);
         ArgumentNullException.ThrowIfNull(assemblies);
         ArgumentNullException.ThrowIfNull(rootProvider);
+        ArgumentNullException.ThrowIfNull(rootServicesAccessor);
         
         _shellSettings = shellSettings.ToList();
         _rootProvider = rootProvider;
+        _rootServices = rootServicesAccessor.Services;
         _logger = logger ?? NullLogger<DefaultShellHost>.Instance;
 
         // Discover all features from specified assemblies
@@ -262,20 +295,89 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// <param name="settings">The shell settings.</param>
     /// <param name="orderedFeatures">The ordered list of features to configure.</param>
     /// <param name="contextHolder">A holder that will be populated with the ShellContext after the service provider is built.</param>
+    /// <remarks>
+    /// <para>
+    /// The service provider is built by:
+    /// </para>
+    /// <list type="number">
+    ///   <item><description>Creating a fresh <see cref="ServiceCollection"/> for the shell.</description></item>
+    ///   <item><description>Copying all <see cref="ServiceDescriptor"/> entries from the root <see cref="IServiceCollection"/>.</description></item>
+    ///   <item><description>Adding shell-specific core services (ShellSettings, ShellId, ShellContext).</description></item>
+    ///   <item><description>Invoking <see cref="IShellFeature.ConfigureServices"/> for each enabled feature in dependency order.</description></item>
+    ///   <item><description>Building the <see cref="IServiceProvider"/> only after all registrations are complete.</description></item>
+    /// </list>
+    /// <para>
+    /// Because root services are added first and shell-specific services are added after,
+    /// the DI container's "last registration wins" semantics ensure that shell-specific
+    /// registrations override root registrations for the same service type.
+    /// </para>
+    /// </remarks>
     private IServiceProvider BuildServiceProvider(ShellSettings settings, List<string> orderedFeatures, ShellContextHolder contextHolder)
     {
-        var services = new ServiceCollection();
+        var shellServices = new ServiceCollection();
 
-        RegisterCoreServices(services, settings, contextHolder);
+        // Step 1: Copy all root service registrations to the shell's service collection.
+        // This enables inheritance of root services in shells.
+        CopyRootServices(shellServices);
 
-        if (orderedFeatures.Count == 0)
+        // Step 2: Register shell-specific core services (ShellSettings, ShellId, ShellContext).
+        // These are added after root services, so they override any root registrations.
+        RegisterCoreServices(shellServices, settings, contextHolder);
+
+        // Step 3: Configure feature services in dependency order.
+        // Features can override root services by registering the same service type.
+        if (orderedFeatures.Count > 0)
         {
-            return services.BuildServiceProvider();
+            ConfigureFeatureServices(shellServices, orderedFeatures, settings);
         }
 
-        ConfigureFeatureServices(services, orderedFeatures, settings);
+        // Step 4: Build the service provider only after all registrations are complete.
+        // No temporary providers are created during feature configuration.
+        return shellServices.BuildServiceProvider();
+    }
 
-        return services.BuildServiceProvider();
+    /// <summary>
+    /// Copies all service descriptors from the root <see cref="IServiceCollection"/> to the shell's service collection,
+    /// excluding CShell infrastructure types that should not be inherited by shells.
+    /// </summary>
+    /// <param name="shellServices">The shell's service collection to copy to.</param>
+    /// <remarks>
+    /// <para>
+    /// This enables inheritance of root services in shells. Because these registrations are added first,
+    /// shell-specific registrations added later will override them via "last registration wins" semantics.
+    /// </para>
+    /// <para>
+    /// CShell infrastructure types (IShellHost, IShellContextScopeFactory, etc.) are excluded from copying
+    /// to prevent shells from resolving a new DefaultShellHost using the shell provider as the "root,"
+    /// which would break the documented semantics and fragment the shell cache.
+    /// </para>
+    /// <para>
+    /// Performance optimization: The filtered root service descriptors are cached on first access to avoid
+    /// re-enumerating and filtering the root IServiceCollection for each shell.
+    /// </para>
+    /// <para>
+    /// Thread safety: This method is called within BuildServiceProvider, which is invoked inside
+    /// the _buildLock in BuildShellContextInternal, so the caching is thread-safe.
+    /// </para>
+    /// </remarks>
+    private void CopyRootServices(ServiceCollection shellServices)
+    {
+        // Cache the filtered root descriptors on first access for efficient bulk-copy to subsequent shells.
+        // This avoids repeatedly enumerating and filtering the root IServiceCollection.
+        // Thread-safe: This method is always called under _buildLock (see BuildShellContextInternal).
+        _cachedRootDescriptors ??= _rootServices
+            .Where(d => !ExcludedInfrastructureTypes.Contains(d.ServiceType))
+            .ToList();
+
+        // Bulk-copy cached descriptors to the shell's service collection
+        foreach (var descriptor in _cachedRootDescriptors)
+        {
+            shellServices.Add(descriptor);
+        }
+
+        _logger.LogDebug("Copied {Count} service descriptors from root service collection (excluded {ExcludedCount} infrastructure types)",
+            _cachedRootDescriptors.Count,
+            ExcludedInfrastructureTypes.Count);
     }
 
     /// <summary>

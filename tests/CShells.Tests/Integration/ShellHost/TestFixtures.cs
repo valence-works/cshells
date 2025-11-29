@@ -83,13 +83,22 @@ public static class TestFixtures
     #region Helper Methods
 
     /// <summary>
-    /// Creates a minimal root service provider for testing DefaultShellHost.
+    /// Creates a minimal root service collection and provider for testing DefaultShellHost.
     /// </summary>
-    public static IServiceProvider CreateRootProvider()
+    public static (IServiceCollection Services, IServiceProvider Provider) CreateRootServices()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        return services.BuildServiceProvider();
+        var provider = services.BuildServiceProvider();
+        return (services, provider);
+    }
+
+    /// <summary>
+    /// Creates an <see cref="IRootServiceCollectionAccessor"/> for testing.
+    /// </summary>
+    public static IRootServiceCollectionAccessor CreateRootServicesAccessor(IServiceCollection services)
+    {
+        return new TestRootServiceCollectionAccessor(services);
     }
 
     /// <summary>
@@ -99,9 +108,24 @@ public static class TestFixtures
     {
         var assembly = typeof(TestFixtures).Assembly;
         var shellSettings = new ShellSettings(new("Default"), ["Weather"]);
-        var host = new CShells.DefaultShellHost([shellSettings], [assembly], CreateRootProvider());
+        var (services, provider) = CreateRootServices();
+        var accessor = CreateRootServicesAccessor(services);
+        var host = new CShells.DefaultShellHost([shellSettings], [assembly], provider, accessor);
         hostsToDispose.Add(host);
         return host;
+    }
+
+    /// <summary>
+    /// Test implementation of <see cref="IRootServiceCollectionAccessor"/>.
+    /// </summary>
+    private sealed class TestRootServiceCollectionAccessor : IRootServiceCollectionAccessor
+    {
+        public TestRootServiceCollectionAccessor(IServiceCollection services)
+        {
+            Services = services;
+        }
+
+        public IServiceCollection Services { get; }
     }
 
     #endregion
