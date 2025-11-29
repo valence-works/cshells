@@ -382,6 +382,11 @@ public class OrderedWebShellFeatureC : IWebShellFeature
     /// <inheritdoc />
     public void Configure(IApplicationBuilder app, IHostEnvironment environment)
     {
+        SetCallOrder();
+    }
+
+    private static void SetCallOrder()
+    {
         lock (_lock) _callOrder = OrderedFeatureCallOrderCounter.GetNextOrder();
     }
 }
