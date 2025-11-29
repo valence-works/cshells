@@ -41,6 +41,10 @@ public class DefaultShellHost : IShellHost, IDisposable
     private readonly Lock _buildLock = new();
     private bool _disposed;
 
+    // Cached copy of root service descriptors for efficient bulk-copy to shell service collections.
+    // This avoids re-enumerating the root IServiceCollection for each shell.
+    private List<ServiceDescriptor>? _cachedRootDescriptors;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultShellHost"/> class.
     /// </summary>
@@ -324,17 +328,35 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// </summary>
     /// <param name="shellServices">The shell's service collection to copy to.</param>
     /// <remarks>
+    /// <para>
     /// This enables inheritance of root services in shells. Because these registrations are added first,
     /// shell-specific registrations added later will override them via "last registration wins" semantics.
+    /// </para>
+    /// <para>
+    /// Performance optimization: The root service descriptors are cached on first access to avoid
+    /// re-enumerating the root IServiceCollection for each shell. This is safe because the root
+    /// service collection is not modified after shells start being built.
+    /// </para>
+    /// <para>
+    /// Thread safety: This method is called within BuildServiceProvider, which is invoked inside
+    /// the _buildLock in BuildShellContextInternal, so the caching is thread-safe.
+    /// </para>
     /// </remarks>
     private void CopyRootServices(ServiceCollection shellServices)
     {
-        foreach (var descriptor in _rootServices)
+        // Cache the root descriptors on first access for efficient bulk-copy to subsequent shells.
+        // This avoids repeatedly enumerating the root IServiceCollection.
+        // Thread-safe: This method is always called under _buildLock (see BuildShellContextInternal).
+        _cachedRootDescriptors ??= [.. _rootServices];
+        _cachedRootDescriptors ??= [.. _rootServices];
+
+        // Bulk-copy cached descriptors to the shell's service collection
+        foreach (var descriptor in _cachedRootDescriptors)
         {
             shellServices.Add(descriptor);
         }
 
-        _logger.LogDebug("Copied {Count} service descriptors from root service collection", _rootServices.Count);
+        _logger.LogDebug("Copied {Count} service descriptors from root service collection", _cachedRootDescriptors.Count);
     }
 
     /// <summary>
