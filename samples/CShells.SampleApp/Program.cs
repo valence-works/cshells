@@ -1,7 +1,10 @@
 using CShells;
 using CShells.AspNetCore;
 using CShells.AspNetCore.Resolvers;
-using CShells.SampleApp.Features;
+using CShells.SampleApp;
+using CShells.SampleApp.Features.Admin;
+using CShells.SampleApp.Features.Core;
+using CShells.SampleApp.Features.Weather;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,66 +49,68 @@ app.UseCShells();
 
 // Root endpoint - resolves to Default shell with Weather feature
 app.MapGet("/", (HttpContext context) =>
-{
-    var timeService = context.RequestServices.GetRequiredService<ITimeService>();
-    var weatherService = context.RequestServices.GetRequiredService<IWeatherService>();
-    
-    return Results.Ok(new
     {
-        Shell = "Default",
-        CurrentTime = timeService.GetCurrentTime(),
-        Forecast = weatherService.GetForecast()
-    });
-})
-.WithName("GetDefaultHome");
+        var timeService = context.RequestServices.GetRequiredService<ITimeService>();
+        var weatherService = context.RequestServices.GetRequiredService<IWeatherService>();
+    
+        return Results.Ok(new
+        {
+            Shell = "Default",
+            CurrentTime = timeService.GetCurrentTime(),
+            Forecast = weatherService.GetForecast()
+        });
+    })
+    .WithName("GetDefaultHome");
 
 // Tropical endpoint - resolves to Tropical shell with TropicalWeather feature
 app.MapGet("/tropical", (HttpContext context) =>
-{
-    var timeService = context.RequestServices.GetRequiredService<ITimeService>();
-    var weatherService = context.RequestServices.GetRequiredService<IWeatherService>();
-
-    return Results.Ok(new
     {
-        Shell = "Tropical",
-        CurrentTime = timeService.GetCurrentTime(),
-        Forecast = weatherService.GetForecast()
-    });
-})
-.WithName("GetTropicalHome");
+        var timeService = context.RequestServices.GetRequiredService<ITimeService>();
+        var weatherService = context.RequestServices.GetRequiredService<IWeatherService>();
+
+        return Results.Ok(new
+        {
+            Shell = "Tropical",
+            CurrentTime = timeService.GetCurrentTime(),
+            Forecast = weatherService.GetForecast()
+        });
+    })
+    .WithName("GetTropicalHome");
 
 // Admin endpoint - resolves to Admin shell with Admin feature
 app.MapGet("/admin", (HttpContext context) =>
-{
-    var adminService = context.RequestServices.GetRequiredService<IAdminService>();
-
-    return Results.Ok(new
     {
-        Shell = "Admin",
-        AdminInfo = adminService.GetAdminInfo()
-    });
-})
-.WithName("GetAdminHome");
+        var adminService = context.RequestServices.GetRequiredService<IAdminService>();
+
+        return Results.Ok(new
+        {
+            Shell = "Admin",
+            AdminInfo = adminService.GetAdminInfo()
+        });
+    })
+    .WithName("GetAdminHome");
 
 app.Run();
 
-/// <summary>
-/// A composite shell resolver that tries multiple resolvers in order.
-/// </summary>
-file class CompositeShellResolver(params IShellResolver[] resolvers) : IShellResolver
+namespace CShells.SampleApp
 {
-    public ShellId? Resolve(Microsoft.AspNetCore.Http.HttpContext httpContext) =>
-        resolvers
-            .Select(resolver => resolver.Resolve(httpContext))
-            .FirstOrDefault(shellId => shellId.HasValue);
-}
+    /// <summary>
+    /// A composite shell resolver that tries multiple resolvers in order.
+    /// </summary>
+    file class CompositeShellResolver(params IShellResolver[] resolvers) : IShellResolver
+    {
+        public ShellId? Resolve(Microsoft.AspNetCore.Http.HttpContext httpContext) =>
+            resolvers
+                .Select(resolver => resolver.Resolve(httpContext))
+                .FirstOrDefault(shellId => shellId.HasValue);
+    }
 
-/// <summary>
-/// A resolver that always returns the Default shell.
-/// </summary>
-file class DefaultShellIdResolver : IShellResolver
-{
-    public ShellId? Resolve(Microsoft.AspNetCore.Http.HttpContext httpContext) 
-        => new ShellId("Default");
+    /// <summary>
+    /// A resolver that always returns the Default shell.
+    /// </summary>
+    file class DefaultShellIdResolver : IShellResolver
+    {
+        public ShellId? Resolve(Microsoft.AspNetCore.Http.HttpContext httpContext) 
+            => new ShellId("Default");
+    }
 }
-

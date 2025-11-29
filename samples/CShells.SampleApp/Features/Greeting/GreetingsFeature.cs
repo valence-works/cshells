@@ -1,31 +1,6 @@
 using CShells.AspNetCore;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.Extensions.Hosting;
 
-namespace CShells.SampleApp.Features;
-
-/// <summary>
-/// Greeting service interface for generating shell-specific greetings.
-/// </summary>
-public interface IGreetingService
-{
-    /// <summary>
-    /// Gets a greeting message specific to the current shell.
-    /// </summary>
-    string GetGreeting();
-}
-
-/// <summary>
-/// Implementation of the greeting service that includes the shell name in greetings.
-/// </summary>
-public class GreetingService(ShellSettings shellSettings) : IGreetingService
-{
-    /// <inheritdoc />
-    public string GetGreeting()
-    {
-        return $"Hello from the {shellSettings.Id.Name} shell!";
-    }
-}
+namespace CShells.SampleApp.Features.Greeting;
 
 /// <summary>
 /// Greetings feature that demonstrates both <see cref="IShellFeature"/> and <see cref="IWebShellFeature"/>.
