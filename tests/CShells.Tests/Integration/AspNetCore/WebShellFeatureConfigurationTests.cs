@@ -300,7 +300,7 @@ public class TestWebShellFeature : IWebShellFeature
     }
 
     /// <inheritdoc />
-    public void Configure(IApplicationBuilder app, IHostEnvironment environment)
+    public void Configure(IApplicationBuilder app, IHostEnvironment? environment)
     {
         IncrementConfigureCallCount();
     }
@@ -333,6 +333,11 @@ public class NonWebShellFeature : IShellFeature
 
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services)
+    {
+        IncrementConfigureServicesCallCount();
+    }
+
+    private static void IncrementConfigureServicesCallCount()
     {
         lock (_lock) _configureServicesCallCount++;
     }
@@ -378,7 +383,12 @@ public class OrderedWebShellFeatureA : IWebShellFeature
     public void ConfigureServices(IServiceCollection services) { }
 
     /// <inheritdoc />
-    public void Configure(IApplicationBuilder app, IHostEnvironment environment)
+    public void Configure(IApplicationBuilder app, IHostEnvironment? environment)
+    {
+        SetCallOrderA();
+    }
+
+    private static void SetCallOrderA()
     {
         lock (_lock) _callOrder = OrderedFeatureCallOrderCounter.GetNextOrder();
     }
@@ -407,7 +417,12 @@ public class OrderedWebShellFeatureB : IWebShellFeature
     public void ConfigureServices(IServiceCollection services) { }
 
     /// <inheritdoc />
-    public void Configure(IApplicationBuilder app, IHostEnvironment environment)
+    public void Configure(IApplicationBuilder app, IHostEnvironment? environment)
+    {
+        SetCallOrderB();
+    }
+
+    private static void SetCallOrderB()
     {
         lock (_lock) _callOrder = OrderedFeatureCallOrderCounter.GetNextOrder();
     }
@@ -436,7 +451,7 @@ public class OrderedWebShellFeatureC : IWebShellFeature
     public void ConfigureServices(IServiceCollection services) { }
 
     /// <inheritdoc />
-    public void Configure(IApplicationBuilder app, IHostEnvironment environment)
+    public void Configure(IApplicationBuilder app, IHostEnvironment? environment)
     {
         SetCallOrder();
     }

@@ -109,42 +109,46 @@ public static class ApplicationBuilderExtensions
             // Get enabled features from all shells to only configure web features that are actually used
             var (enabledFeatureIds, shouldFilterFeatures) = GetEnabledFeatureIds(rootProvider, logger);
 
-            // Apply deterministic ordering by feature Id (case-insensitive)
-            var orderedDescriptors = descriptors
+            // Apply deterministic ordering by feature Id (case-insensitive) and filter explicitly
+            var webShellFeatureDescriptors = descriptors
+                .Where(d => d.StartupType is not null)
+                .Where(d => typeof(IWebShellFeature).IsAssignableFrom(d.StartupType))
+                .Where(d => !shouldFilterFeatures || enabledFeatureIds.Contains(d.Id))
                 .OrderBy(d => d.Id, StringComparer.OrdinalIgnoreCase);
 
-            foreach (var descriptor in orderedDescriptors)
+            // Log skipped features for debugging
+            if (shouldFilterFeatures)
             {
-                // Skip features without a startup type
-                if (descriptor.StartupType is null)
-                    continue;
+                var skippedFeatures = descriptors
+                    .Where(d => d.StartupType is not null)
+                    .Where(d => typeof(IWebShellFeature).IsAssignableFrom(d.StartupType))
+                    .Where(d => !enabledFeatureIds.Contains(d.Id));
 
-                // Only process types implementing IWebShellFeature
-                if (!typeof(IWebShellFeature).IsAssignableFrom(descriptor.StartupType))
-                    continue;
-
-                // Skip features that are not enabled for any shell (only if we should filter)
-                if (shouldFilterFeatures && !enabledFeatureIds.Contains(descriptor.Id))
+                foreach (var skipped in skippedFeatures)
                 {
-                    logger.LogDebug("Skipping web shell feature '{FeatureId}' as it is not enabled for any shell", descriptor.Id);
-                    continue;
+                    logger.LogDebug("Skipping web shell feature '{FeatureId}' as it is not enabled for any shell", skipped.Id);
                 }
+            }
 
+            foreach (var descriptor in webShellFeatureDescriptors)
+            {
                 try
                 {
                     // Instantiate using root provider (feature can depend on root-level services)
-                    var feature = (IWebShellFeature)ActivatorUtilities.CreateInstance(rootProvider, descriptor.StartupType);
+                    var feature = (IWebShellFeature)ActivatorUtilities.CreateInstance(rootProvider, descriptor.StartupType!);
 
-                    // Configure the application pipeline for this web feature
-                    feature.Configure(app, environment!);
+                    // Configure the application pipeline for this web feature.
+                    // Note: environment may be null if IHostEnvironment is not registered;
+                    // features must handle null environments gracefully.
+                    feature.Configure(app, environment);
 
                     logger.LogDebug("Configured web shell feature '{FeatureId}' from type '{FeatureType}'",
-                        descriptor.Id, descriptor.StartupType.FullName);
+                        descriptor.Id, descriptor.StartupType!.FullName);
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Failed to configure web shell feature '{FeatureId}' from type '{FeatureType}'",
-                        descriptor.Id, descriptor.StartupType.FullName);
+                        descriptor.Id, descriptor.StartupType!.FullName);
                     throw;
                 }
             }

@@ -33,7 +33,7 @@ public class GreetingsFeature : IWebShellFeature
     }
 
     /// <inheritdoc />
-    public void Configure(IApplicationBuilder app, IHostEnvironment environment)
+    public void Configure(IApplicationBuilder app, IHostEnvironment? environment)
     {
         // Map a simple endpoint that uses the shell-scoped greeting service.
         // The service is resolved from the current shell's service provider
