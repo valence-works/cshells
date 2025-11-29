@@ -12,6 +12,6 @@ public interface IWebShellFeature : IShellFeature
     /// Configures the application pipeline for the shell feature.
     /// </summary>
     /// <param name="app">The application builder.</param>
-    /// <param name="environment">The hosting environment.</param>
-    void Configure(IApplicationBuilder app, IHostEnvironment environment);
+    /// <param name="environment">The hosting environment, or null if not registered in the service provider.</param>
+    void Configure(IApplicationBuilder app, IHostEnvironment? environment);
 }
