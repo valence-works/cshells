@@ -51,7 +51,7 @@ public class ConstructorTests
     {
         // Arrange
         var settings = new[] { new ShellSettings(new("Test")) };
-        var (services, provider) = TestFixtures.CreateRootServices();
+        var (_, provider) = TestFixtures.CreateRootServices();
 
         // Act & Assert
         var ex = Assert.Throws<ArgumentNullException>(() => new CShells.DefaultShellHost(settings, [], provider, null!));
