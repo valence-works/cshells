@@ -73,7 +73,7 @@ public class TropicalWeatherService : IWeatherService
 public class WeatherFeature : IShellFeature
 {
     /// <inheritdoc />
-    public void ConfigureServices(IServiceCollection services, ShellSettings shellSettings)
+    public void ConfigureServices(IServiceCollection services)
     {
         services.AddSingleton<IWeatherService, StandardWeatherService>();
     }
@@ -86,7 +86,7 @@ public class WeatherFeature : IShellFeature
 public class TropicalWeatherFeature : IShellFeature
 {
     /// <inheritdoc />
-    public void ConfigureServices(IServiceCollection services, ShellSettings shellSettings)
+    public void ConfigureServices(IServiceCollection services)
     {
         services.AddSingleton<IWeatherService, TropicalWeatherService>();
     }

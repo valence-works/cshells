@@ -30,12 +30,12 @@ public static class TestAssemblyBuilder
                 typeBuilder = moduleBuilder.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class);
                 typeBuilder.AddInterfaceImplementation(typeof(IShellFeature));
 
-                // Implement ConfigureServices method with new signature (IServiceCollection, ShellSettings)
+                // Implement ConfigureServices method with signature (IServiceCollection)
                 var configureServicesMethod = typeBuilder.DefineMethod(
                     "ConfigureServices",
                     MethodAttributes.Public | MethodAttributes.Virtual,
                     typeof(void),
-                    [typeof(IServiceCollection), typeof(ShellSettings)]);
+                    [typeof(IServiceCollection)]);
                 var ilConfigureServices = configureServicesMethod.GetILGenerator();
                 ilConfigureServices.Emit(OpCodes.Ret);
             }
@@ -78,12 +78,12 @@ public static class TestAssemblyBuilder
             var typeBuilder = moduleBuilder.DefineType(typeName, TypeAttributes.Public | TypeAttributes.Class);
             typeBuilder.AddInterfaceImplementation(typeof(IShellFeature));
 
-            // Implement ConfigureServices method with new signature (IServiceCollection, ShellSettings)
+            // Implement ConfigureServices method with signature (IServiceCollection)
             var configureServicesMethod = typeBuilder.DefineMethod(
                 "ConfigureServices",
                 MethodAttributes.Public | MethodAttributes.Virtual,
                 typeof(void),
-                [typeof(IServiceCollection), typeof(ShellSettings)]);
+                [typeof(IServiceCollection)]);
             var ilConfigureServices = configureServicesMethod.GetILGenerator();
             ilConfigureServices.Emit(OpCodes.Ret);
 
@@ -131,12 +131,12 @@ public static class TestAssemblyBuilder
     /// </summary>
     public static void DefineConfigureServicesWithService(TypeBuilder typeBuilder, Type serviceInterface, Type serviceImplementation)
     {
-        // ConfigureServices now takes (IServiceCollection services, ShellSettings shellSettings)
+        // ConfigureServices takes (IServiceCollection services)
         var configureServicesMethod = typeBuilder.DefineMethod(
             "ConfigureServices",
             MethodAttributes.Public | MethodAttributes.Virtual,
             typeof(void),
-            [typeof(IServiceCollection), typeof(ShellSettings)]);
+            [typeof(IServiceCollection)]);
 
         var il = configureServicesMethod.GetILGenerator();
 

@@ -263,12 +263,12 @@ public class ServiceResolutionTests : IDisposable
         ctorIl.Emit(OpCodes.Ret);
 
         // Implement ConfigureServices method that registers the service
-        // ConfigureServices(IServiceCollection services, ShellSettings shellSettings)
+        // ConfigureServices(IServiceCollection services)
         var configureServicesMethod = typeBuilder.DefineMethod(
             "ConfigureServices",
             MethodAttributes.Public | MethodAttributes.Virtual,
             typeof(void),
-            [typeof(IServiceCollection), typeof(ShellSettings)]);
+            [typeof(IServiceCollection)]);
 
         var il = configureServicesMethod.GetILGenerator();
         il.Emit(OpCodes.Ldarg_1); // services
@@ -321,12 +321,12 @@ public class ServiceResolutionTests : IDisposable
         ctorIl.Emit(OpCodes.Ret);
 
         // Implement ConfigureServices method that registers the service
-        // ConfigureServices(IServiceCollection services, ShellSettings shellSettings)
+        // ConfigureServices(IServiceCollection services)
         var configureServicesMethod = typeBuilder.DefineMethod(
             "ConfigureServices",
             MethodAttributes.Public | MethodAttributes.Virtual,
             typeof(void),
-            [typeof(IServiceCollection), typeof(ShellSettings)]);
+            [typeof(IServiceCollection)]);
 
         var il = configureServicesMethod.GetILGenerator();
         il.Emit(OpCodes.Ldarg_1); // services

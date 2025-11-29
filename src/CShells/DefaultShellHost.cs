@@ -333,7 +333,7 @@ public class DefaultShellHost : IShellHost, IDisposable
             // Create the feature instance using the root provider with ShellSettings as explicit parameter.
             // This ensures features can only depend on root-level services and ShellSettings, not shell services.
             var startup = CreateFeatureInstance(descriptor.StartupType!, settings);
-            startup.ConfigureServices(services, settings);
+            startup.ConfigureServices(services);
 
             _logger.LogDebug("Configured services from feature '{FeatureName}' startup type '{StartupType}'",
                 featureName, descriptor.StartupType!.FullName);

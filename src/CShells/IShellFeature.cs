@@ -38,12 +38,13 @@ public interface IShellFeature
     /// Configures the services for the shell feature.
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
-    /// <param name="shellSettings">The settings for the shell being configured.</param>
     /// <remarks>
     /// This method is called in topological order based on feature dependencies.
     /// The order ensures that dependencies are configured before dependents,
     /// but this is purely for registration order - features should not consume
     /// services from other features during configuration.
+    /// If a feature needs access to <see cref="ShellSettings"/>, it should inject
+    /// it via its constructor.
     /// </remarks>
-    void ConfigureServices(IServiceCollection services, ShellSettings shellSettings);
+    void ConfigureServices(IServiceCollection services);
 }
