@@ -1,0 +1,220 @@
+name: Packages
+
+on:
+  push:
+    branches:
+      - main
+  release:
+    types:
+      - published
+
+jobs:
+  preview:
+    name: Build, Test, Pack preview (Feedz)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    env:
+      FEEDZ_SOURCE: "https://f.feedz.io/sfmskywalker/cshells/nuget/index.json"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Show dotnet version
+        run: dotnet --version
+
+      - name: Compute preview package version from Directory.Build.props
+        run: |
+          # Evaluate the solution to pick up Directory.Build.props and read Version
+          BASE_VERSION=$(dotnet msbuild CShells.sln -nologo -t:Evaluate -v:q | grep -m 1 "<Version>" | sed -E 's/.*<Version>([^<]+)<.*/\1/')
+          if [ -z "$BASE_VERSION" ]; then
+            echo "Failed to read base Version from Directory.Build.props via CShells.sln"
+            exit 1
+          fi
+
+          PACKAGE_VERSION="${BASE_VERSION}-preview.${GITHUB_RUN_NUMBER}"
+          echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> "$GITHUB_ENV"
+          echo "Using preview package version: $PACKAGE_VERSION"
+
+      - name: Restore
+        run: dotnet restore CShells.sln
+
+      - name: Build
+        run: dotnet build CShells.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test CShells.sln --configuration Release --no-build --verbosity normal
+
+      - name: Pack CShells
+        run: |
+          dotnet pack src/CShells/CShells.csproj \
+            --configuration Release \
+            --no-build \
+            -o ./artifacts \
+            /p:Version=${{ env.PACKAGE_VERSION }}
+
+      - name: Pack CShells.AspNetCore
+        run: |
+          dotnet pack src/CShells.AspNetCore/CShells.AspNetCore.csproj \
+            --configuration Release \
+            --no-build \
+            -o ./artifacts \
+            /p:Version=${{ env.PACKAGE_VERSION }}
+
+      - name: Push packages to Feedz.io
+        env:
+          FEEDZ_API_KEY: ${{ secrets.FEEDZ_API_KEY }}
+        run: |
+          if [ -z "$FEEDZ_API_KEY" ]; then
+            echo "FEEDZ_API_KEY secret is not set."
+            exit 1
+          fi
+
+          dotnet nuget add source "$FEEDZ_SOURCE" \
+            --name Feedz \
+            --username "token" \
+            --password "$FEEDZ_API_KEY" \
+            --store-password-in-clear-text
+
+          shopt -s nullglob
+          nupkgs=(./artifacts/*.nupkg)
+          if [ ${#nupkgs[@]} -eq 0 ]; then
+            echo "No .nupkg files found in ./artifacts/"
+            exit 1
+          fi
+          for nupkg in "${nupkgs[@]}"; do
+            echo "Pushing $nupkg to Feedz..."
+            dotnet nuget push "$nupkg" \
+              --source Feedz \
+              --api-key "$FEEDZ_API_KEY" \
+              --skip-duplicate
+          done
+
+  release:
+    name: Build, Test, Pack release (Feedz + NuGet)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+    permissions:
+      contents: read
+    env:
+      FEEDZ_SOURCE: "https://f.feedz.io/sfmskywalker/cshells/nuget/index.json"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Show dotnet version
+        run: dotnet --version
+
+      - name: Compute release package version from Directory.Build.props and tag
+        run: |
+          # Read base version from Directory.Build.props via the solution
+          BASE_VERSION=$(dotnet msbuild CShells.sln -nologo -t:Evaluate -v:q | grep -m 1 "<Version>" | sed -E 's/.*<Version>([^<]+)<.*/\1/')
+          if [ -z "$BASE_VERSION" ]; then
+            echo "Failed to read base Version from Directory.Build.props via CShells.sln"
+            exit 1
+          fi
+
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          VERSION="${TAG_NAME#v}"
+
+          if [ -z "$VERSION" ]; then
+            echo "Release tag name is empty; cannot determine version."
+            exit 1
+          fi
+
+          if [ "$VERSION" != "$BASE_VERSION" ]; then
+            echo "Warning: Tag version ($VERSION) does not match base version from Directory.Build.props ($BASE_VERSION). Using tag version."
+          fi
+
+          echo "PACKAGE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Using release package version: $VERSION"
+
+      - name: Restore
+        run: dotnet restore CShells.sln
+
+      - name: Build
+        run: dotnet build CShells.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test CShells.sln --configuration Release --no-build --verbosity normal
+
+      - name: Pack CShells
+        run: |
+          dotnet pack src/CShells/CShells.csproj \
+            --configuration Release \
+            --no-build \
+            -o ./artifacts \
+            /p:Version=${{ env.PACKAGE_VERSION }}
+
+      - name: Pack CShells.AspNetCore
+        run: |
+          dotnet pack src/CShells.AspNetCore/CShells.AspNetCore.csproj \
+            --configuration Release \
+            --no-build \
+            -o ./artifacts \
+            /p:Version=${{ env.PACKAGE_VERSION }}
+
+      - name: Push packages to Feedz.io
+        env:
+          FEEDZ_API_KEY: ${{ secrets.FEEDZ_API_KEY }}
+        run: |
+          if [ -z "$FEEDZ_API_KEY" ]; then
+            echo "FEEDZ_API_KEY secret is not set."
+            exit 1
+          fi
+
+          dotnet nuget add source "$FEEDZ_SOURCE" \
+            --name Feedz \
+            --username "token" \
+            --password "$FEEDZ_API_KEY" \
+            --store-password-in-clear-text
+
+          shopt -s nullglob
+          nupkgs=(./artifacts/*.nupkg)
+          if [ ${#nupkgs[@]} -eq 0 ]; then
+            echo "No .nupkg files found in ./artifacts/"
+            exit 1
+          fi
+          for nupkg in "${nupkgs[@]}"; do
+            echo "Pushing $nupkg to Feedz..."
+            dotnet nuget push "$nupkg" \
+              --source Feedz \
+              --api-key "$FEEDZ_API_KEY" \
+              --skip-duplicate
+          done
+
+      - name: Push packages to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "NUGET_API_KEY secret is not set."
+            exit 1
+          fi
+
+          NUGET_SOURCE="https://api.nuget.org/v3/index.json"
+
+          shopt -s nullglob
+          nupkgs=(./artifacts/*.nupkg)
+          if [ ${#nupkgs[@]} -eq 0 ]; then
+            echo "No .nupkg files found in ./artifacts/"
+            exit 1
+          fi
+          for nupkg in "${nupkgs[@]}"; do
+            echo "Pushing $nupkg to NuGet.org..."
+            dotnet nuget push "$nupkg" \
+              --source "$NUGET_SOURCE" \
+              --api-key "$NUGET_API_KEY" \
+              --skip-duplicate
+          done

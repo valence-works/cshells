@@ -3,5 +3,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- Central base version for all packages; preview builds will append a suffix like -preview.{runNumber} -->
+    <Version>0.0.1</Version>
   </PropertyGroup>
 </Project>
