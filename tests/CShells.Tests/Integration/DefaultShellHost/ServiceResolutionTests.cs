@@ -100,6 +100,12 @@ public class ServiceResolutionTests : IDisposable
         // Act & Assert - This should throw because IBaseService is not available from root provider
         var ex = Assert.Throws<InvalidOperationException>(() => host.GetShell(new("TestShell")));
         Assert.Contains("DependentFeature", ex.Message);
+        
+        // Verify the inner exception is from ActivatorUtilities indicating constructor dependency resolution failure
+        // The inner exception message indicates the service could not be resolved
+        Assert.NotNull(ex.InnerException);
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
+        Assert.Contains("Unable to resolve service", ex.InnerException.Message);
     }
 
     [Fact(DisplayName = "GetShell returns ShellSettings from service provider")]
