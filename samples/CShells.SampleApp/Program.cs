@@ -4,6 +4,7 @@ using CShells.AspNetCore.Resolvers;
 using CShells.SampleApp;
 using CShells.SampleApp.Features.Admin;
 using CShells.SampleApp.Features.Core;
+using CShells.SampleApp.Features.Greeting;
 using CShells.SampleApp.Features.Weather;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -89,6 +90,19 @@ app.MapGet("/admin", (HttpContext context) =>
         });
     })
     .WithName("GetAdminHome");
+
+// Greet endpoint - uses IGreetingService from the resolved shell
+app.MapGetWithShellPrefix("greet", (HttpContext context, string shellPath) =>
+    {
+        var greetingService = context.RequestServices.GetRequiredService<IGreetingService>();
+
+        return Results.Ok(new
+        {
+            ShellPath = shellPath,
+            Greeting = greetingService.GetGreeting()
+        });
+    })
+    .WithName("GetGreeting");
 
 app.Run();
 

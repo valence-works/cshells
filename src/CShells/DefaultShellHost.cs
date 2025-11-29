@@ -289,6 +289,9 @@ public class DefaultShellHost : IShellHost, IDisposable
         // rather than through AddSingleton<T>() which requires a reference type
         services.Add(ServiceDescriptor.Singleton(typeof(ShellId), settings.Id));
 
+        // Add logging services so shell containers work with ASP.NET Core infrastructure
+        services.AddLogging();
+
         // Register the ShellContext using the holder pattern
         // The holder will be populated after the service provider is built
         services.AddSingleton<ShellContext>(sp => contextHolder.Context
