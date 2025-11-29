@@ -18,7 +18,7 @@ public class HostShellResolver : IShellResolver
     public HostShellResolver(IReadOnlyDictionary<string, ShellId> hostMap)
     {
         ArgumentNullException.ThrowIfNull(hostMap);
-        _hostMap = new Dictionary<string, ShellId>(hostMap, StringComparer.OrdinalIgnoreCase);
+        _hostMap = new(hostMap, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />

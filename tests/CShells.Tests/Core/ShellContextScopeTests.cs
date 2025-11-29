@@ -24,7 +24,7 @@ public class ShellContextScopeTests
         // Arrange
         var services = new ServiceCollection();
         using var serviceProvider = services.BuildServiceProvider();
-        var settings = new ShellSettings(new ShellId("TestShell"));
+        var settings = new ShellSettings(new("TestShell"));
         var shellContext = new ShellContext(settings, serviceProvider);
         var factory = new DefaultShellContextScopeFactory();
 
@@ -43,7 +43,7 @@ public class ShellContextScopeTests
         var services = new ServiceCollection();
         services.AddScoped<IScopedService, ScopedService>();
         using var serviceProvider = services.BuildServiceProvider();
-        var settings = new ShellSettings(new ShellId("TestShell"));
+        var settings = new ShellSettings(new("TestShell"));
         var shellContext = new ShellContext(settings, serviceProvider);
         var factory = new DefaultShellContextScopeFactory();
 
@@ -63,7 +63,7 @@ public class ShellContextScopeTests
         var services = new ServiceCollection();
         services.AddScoped<DisposableService>();
         using var serviceProvider = services.BuildServiceProvider();
-        var settings = new ShellSettings(new ShellId("TestShell"));
+        var settings = new ShellSettings(new("TestShell"));
         var shellContext = new ShellContext(settings, serviceProvider);
         var factory = new DefaultShellContextScopeFactory();
 
@@ -87,7 +87,7 @@ public class ShellContextScopeTests
         var services = new ServiceCollection();
         services.AddScoped<IScopedService, ScopedService>();
         using var serviceProvider = services.BuildServiceProvider();
-        var settings = new ShellSettings(new ShellId("TestShell"));
+        var settings = new ShellSettings(new("TestShell"));
         var shellContext = new ShellContext(settings, serviceProvider);
         var factory = new DefaultShellContextScopeFactory();
 
@@ -108,7 +108,7 @@ public class ShellContextScopeTests
         // Arrange
         var services = new ServiceCollection();
         using var serviceProvider = services.BuildServiceProvider();
-        var settings = new ShellSettings(new ShellId("TestShell"));
+        var settings = new ShellSettings(new("TestShell"));
         var shellContext = new ShellContext(settings, serviceProvider);
         var factory = new DefaultShellContextScopeFactory();
 

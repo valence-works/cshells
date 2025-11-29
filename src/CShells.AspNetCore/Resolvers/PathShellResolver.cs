@@ -18,7 +18,7 @@ public class PathShellResolver : IShellResolver
     public PathShellResolver(IReadOnlyDictionary<string, ShellId> pathMap)
     {
         ArgumentNullException.ThrowIfNull(pathMap);
-        _pathMap = new Dictionary<string, ShellId>(pathMap, StringComparer.OrdinalIgnoreCase);
+        _pathMap = new(pathMap, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />

@@ -16,8 +16,8 @@ builder.Services.AddSingleton<IShellResolver>(sp =>
 {
     var pathMappings = new Dictionary<string, ShellId>
     {
-        ["admin"] = new ShellId("Admin"),
-        ["tropical"] = new ShellId("Tropical")
+        ["admin"] = new("Admin"),
+        ["tropical"] = new("Tropical")
     };
     return new CompositeShellResolver(
         new PathShellResolver(pathMappings),

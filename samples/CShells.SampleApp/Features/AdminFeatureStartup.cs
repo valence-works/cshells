@@ -24,7 +24,7 @@ public class AdminService(ITimeService timeService, ShellSettings shellSettings)
     /// <inheritdoc />
     public AdminInfo GetAdminInfo()
     {
-        return new AdminInfo(
+        return new(
             Status: "Running",
             ShellName: shellSettings.Id.Name,
             ServerTime: timeService.GetCurrentTime()
