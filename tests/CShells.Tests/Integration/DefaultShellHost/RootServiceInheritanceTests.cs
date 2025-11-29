@@ -1,3 +1,4 @@
+using CShells;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Integration.DefaultShellHost;

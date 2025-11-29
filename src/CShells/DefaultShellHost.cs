@@ -34,7 +34,7 @@ public class DefaultShellHost : IShellHost, IDisposable
     private readonly IReadOnlyDictionary<string, ShellFeatureDescriptor> _featureMap;
     private readonly IReadOnlyList<ShellSettings> _shellSettings;
     private readonly IServiceProvider _rootProvider;
-    private readonly IServiceCollection? _rootServices;
+    private readonly IServiceCollection _rootServices;
     private readonly ConcurrentDictionary<ShellId, ShellContext> _shellContexts = new();
     private readonly FeatureDependencyResolver _dependencyResolver = new();
     private readonly ILogger<DefaultShellHost> _logger;
@@ -49,30 +49,18 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// The application's root <see cref="IServiceProvider"/> used to instantiate <see cref="IShellFeature"/> implementations.
     /// Feature constructors can resolve root-level services (logging, configuration, etc.).
     /// </param>
-    /// <param name="logger">Optional logger for diagnostic output.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/> or <paramref name="rootProvider"/> is null.</exception>
-    public DefaultShellHost(IEnumerable<ShellSettings> shellSettings, IServiceProvider rootProvider, ILogger<DefaultShellHost>? logger = null)
-        : this(shellSettings, AppDomain.CurrentDomain.GetAssemblies(), rootProvider, rootServicesAccessor: null, logger)
-    {
-    }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="DefaultShellHost"/> class with custom assemblies.
-    /// </summary>
-    /// <param name="shellSettings">The collection of shell settings to manage.</param>
-    /// <param name="assemblies">The assemblies to scan for features.</param>
-    /// <param name="rootProvider">
-    /// The application's root <see cref="IServiceProvider"/> used to instantiate <see cref="IShellFeature"/> implementations.
-    /// Feature constructors can resolve root-level services (logging, configuration, etc.).
+    /// <param name="rootServicesAccessor">
+    /// An accessor to the root <see cref="IServiceCollection"/>. Root service registrations
+    /// are copied into each shell's service collection, enabling inheritance of root services.
     /// </param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="assemblies"/>, or <paramref name="rootProvider"/> is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="rootProvider"/>, or <paramref name="rootServicesAccessor"/> is null.</exception>
     public DefaultShellHost(
         IEnumerable<ShellSettings> shellSettings,
-        IEnumerable<Assembly> assemblies,
         IServiceProvider rootProvider,
+        IRootServiceCollectionAccessor rootServicesAccessor,
         ILogger<DefaultShellHost>? logger = null)
-        : this(shellSettings, assemblies, rootProvider, rootServicesAccessor: null, logger)
+        : this(shellSettings, AppDomain.CurrentDomain.GetAssemblies(), rootProvider, rootServicesAccessor, logger)
     {
     }
 
@@ -86,25 +74,26 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// Feature constructors can resolve root-level services (logging, configuration, etc.).
     /// </param>
     /// <param name="rootServicesAccessor">
-    /// An optional accessor to the root <see cref="IServiceCollection"/>. When provided, root service registrations
+    /// An accessor to the root <see cref="IServiceCollection"/>. Root service registrations
     /// are copied into each shell's service collection, enabling inheritance of root services.
     /// </param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="assemblies"/>, or <paramref name="rootProvider"/> is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="assemblies"/>, <paramref name="rootProvider"/>, or <paramref name="rootServicesAccessor"/> is null.</exception>
     public DefaultShellHost(
         IEnumerable<ShellSettings> shellSettings,
         IEnumerable<Assembly> assemblies,
         IServiceProvider rootProvider,
-        IRootServiceCollectionAccessor? rootServicesAccessor,
+        IRootServiceCollectionAccessor rootServicesAccessor,
         ILogger<DefaultShellHost>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(shellSettings);
         ArgumentNullException.ThrowIfNull(assemblies);
         ArgumentNullException.ThrowIfNull(rootProvider);
+        ArgumentNullException.ThrowIfNull(rootServicesAccessor);
         
         _shellSettings = shellSettings.ToList();
         _rootProvider = rootProvider;
-        _rootServices = rootServicesAccessor?.Services;
+        _rootServices = rootServicesAccessor.Services;
         _logger = logger ?? NullLogger<DefaultShellHost>.Instance;
 
         // Discover all features from specified assemblies
@@ -340,11 +329,6 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// </remarks>
     private void CopyRootServices(ServiceCollection shellServices)
     {
-        if (_rootServices == null)
-        {
-            return;
-        }
-
         foreach (var descriptor in _rootServices)
         {
             shellServices.Add(descriptor);

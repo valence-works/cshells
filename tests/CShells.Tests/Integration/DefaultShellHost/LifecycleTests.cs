@@ -15,7 +15,9 @@ public class LifecycleTests
         {
             new ShellSettings(new("TestShell"))
         };
-        var host = new CShells.DefaultShellHost(settings, [], TestFixtures.CreateRootProvider());
+        var (services, provider) = TestFixtures.CreateRootServices();
+        var accessor = TestFixtures.CreateRootServicesAccessor(services);
+        var host = new CShells.DefaultShellHost(settings, [], provider, accessor);
         _ = host.GetShell(new("TestShell")); // Ensure the shell is built
 
         // Act
