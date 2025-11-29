@@ -1,4 +1,5 @@
 using CShells;
+using CShells.Tests.Integration.ShellHost;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Integration.DefaultShellHost;
@@ -112,7 +113,7 @@ public class RootServiceInheritanceTests : IDisposable
         IServiceProvider rootProvider,
         params ShellSettings[] shellSettings)
     {
-        var accessor = new RootServiceCollectionAccessor(rootServices);
+        var accessor = TestFixtures.CreateRootServicesAccessor(rootServices);
         var host = new CShells.DefaultShellHost(
             shellSettings,
             [typeof(RootServiceInheritanceTests).Assembly],
@@ -120,19 +121,6 @@ public class RootServiceInheritanceTests : IDisposable
             accessor);
         _hostsToDispose.Add(host);
         return host;
-    }
-
-    /// <summary>
-    /// Internal implementation of <see cref="IRootServiceCollectionAccessor"/> for testing.
-    /// </summary>
-    private sealed class RootServiceCollectionAccessor : IRootServiceCollectionAccessor
-    {
-        public RootServiceCollectionAccessor(IServiceCollection services)
-        {
-            Services = services;
-        }
-
-        public IServiceCollection Services { get; }
     }
 
     #endregion
