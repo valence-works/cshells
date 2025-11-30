@@ -1,3 +1,11 @@
+[![Packages](https://github.com/sfmskywalker/cshells/actions/workflows/publish.yml/badge.svg)](https://github.com/sfmskywalker/cshells/actions/workflows/publish.yml)
+[![NuGet CShells](https://img.shields.io/nuget/v/CShells.svg)](https://www.nuget.org/packages/CShells)
+[![Docs](https://img.shields.io/badge/docs-cshells.io-blue)](https://www.cshells.io/)
+
+![Target Framework](https://img.shields.io/badge/.NET-10-blueviolet)
+[![License](https://img.shields.io/github/license/sfmskywalker/cshells.svg)](https://github.com/sfmskywalker/cshells/blob/main/LICENSE)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/CShells.svg)](https://www.nuget.org/packages/CShells)
+
 # CShells
 
 A lightweight, extensible shell and feature system for .NET projects that lets you build modular and multi-tenant apps with per-shell DI containers and config-driven features.
