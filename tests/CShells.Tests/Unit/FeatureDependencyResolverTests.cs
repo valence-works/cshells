@@ -1,3 +1,5 @@
+using CShells.Tests.TestHelpers;
+
 namespace CShells.Tests.Unit;
 
 public class FeatureDependencyResolverTests
@@ -33,7 +35,7 @@ public class FeatureDependencyResolverTests
     public void ResolveDependencies_WithNoDependencies_ReturnsEmptyList()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", [])
         );
 
@@ -48,7 +50,7 @@ public class FeatureDependencyResolverTests
     public void ResolveDependencies_WithSingleDependency_ReturnsDependency()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", ["Feature2"]),
             ("Feature2", [])
         );
@@ -65,7 +67,7 @@ public class FeatureDependencyResolverTests
     public void ResolveDependencies_WithTransitiveDependencies_ReturnsAllDependenciesInOrder()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", ["Feature2"]),
             ("Feature2", ["Feature3"]),
             ("Feature3", [])
@@ -84,7 +86,7 @@ public class FeatureDependencyResolverTests
     public void ResolveDependencies_WithCircularDependency_ThrowsInvalidOperationException()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", ["Feature2"]),
             ("Feature2", ["Feature1"])
         );
@@ -98,7 +100,7 @@ public class FeatureDependencyResolverTests
     public void ResolveDependencies_WithMissingDependency_ThrowsInvalidOperationException()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", ["NonExistent"])
         );
 
@@ -143,7 +145,7 @@ public class FeatureDependencyResolverTests
     public void GetOrderedFeatures_WithNoDependencies_ReturnsAllFeatures()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", []),
             ("Feature2", [])
         );
@@ -161,7 +163,7 @@ public class FeatureDependencyResolverTests
     public void GetOrderedFeatures_WithDependencies_ReturnsDependenciesFirst()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", ["Feature2"]),
             ("Feature2", ["Feature3"]),
             ("Feature3", [])
@@ -180,7 +182,7 @@ public class FeatureDependencyResolverTests
     public void GetOrderedFeatures_WithCircularDependency_ThrowsInvalidOperationException()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", ["Feature2"]),
             ("Feature2", ["Feature3"]),
             ("Feature3", ["Feature1"])
@@ -206,7 +208,7 @@ public class FeatureDependencyResolverTests
     public void GetOrderedFeatures_WithSelectedFeatures_ReturnsOnlySelectedFeaturesAndDependencies()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", ["Feature2"]),
             ("Feature2", []),
             ("Feature3", []),  // Not selected
@@ -228,7 +230,7 @@ public class FeatureDependencyResolverTests
     public void GetOrderedFeatures_WithSelectedFeatures_ReturnsDependenciesFirst()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("Feature1", ["Feature2"]),
             ("Feature2", ["Feature3"]),
             ("Feature3", [])
@@ -247,7 +249,7 @@ public class FeatureDependencyResolverTests
     public void GetOrderedFeatures_WithDiamondDependency_HandlesCorrectly()
     {
         // Arrange: Diamond pattern A -> B, A -> C, B -> D, C -> D
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("A", ["B", "C"]),
             ("B", ["D"]),
             ("C", ["D"]),
@@ -265,14 +267,4 @@ public class FeatureDependencyResolverTests
         Assert.True(result.IndexOf("C") < result.IndexOf("A"));
     }
 
-    private static Dictionary<string, ShellFeatureDescriptor> CreateFeatureDictionary(
-        params (string Name, string[] Dependencies)[] features)
-    {
-        var dict = new Dictionary<string, ShellFeatureDescriptor>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, dependencies) in features)
-        {
-            dict[name] = new(name) { Dependencies = dependencies };
-        }
-        return dict;
-    }
 }

@@ -1,3 +1,5 @@
+using CShells.Tests.TestHelpers;
+
 namespace CShells.Tests.Integration.FeatureDependency;
 
 /// <summary>
@@ -14,17 +16,8 @@ public class CycleDetectionTests
     public void GetOrderedFeatures_WithCircularDependency_ThrowsInvalidOperationException(string scenario, params string[] featureDependencies)
     {
         // Arrange: Parse dependencies from format "Feature:Dep1,Dep2"
-        var featureList = featureDependencies.Select(fd =>
-        {
-            var parts = fd.Split(':');
-            var name = parts[0];
-            var deps = parts.Length > 1 && !string.IsNullOrEmpty(parts[1])
-                ? parts[1].Split(',')
-                : [];
-            return (name, deps);
-        }).ToArray();
-
-        var features = CreateFeatureDictionary(featureList);
+        var featureList = FeatureTestHelpers.ParseFeatureDependencies(featureDependencies);
+        var features = FeatureTestHelpers.CreateFeatureDictionary(featureList);
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(["A"], features));
@@ -35,7 +28,7 @@ public class CycleDetectionTests
     public void ResolveDependencies_WithCycle_ThrowsInvalidOperationExceptionWithFeatureName()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("A", ["B"]),
             ("B", ["A"])
         );
@@ -47,19 +40,4 @@ public class CycleDetectionTests
             "exception message should contain the feature name involved in the cycle");
     }
 
-    /// <summary>
-    /// Creates a minimal feature dictionary for testing dependency resolution.
-    /// Only populates the Id and Dependencies properties since those are what
-    /// the FeatureDependencyResolver operates on.
-    /// </summary>
-    private static Dictionary<string, ShellFeatureDescriptor> CreateFeatureDictionary(
-        params (string Name, string[] Dependencies)[] features)
-    {
-        var dict = new Dictionary<string, ShellFeatureDescriptor>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, dependencies) in features)
-        {
-            dict[name] = new(name) { Dependencies = dependencies };
-        }
-        return dict;
-    }
 }

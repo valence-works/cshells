@@ -1,3 +1,5 @@
+using CShells.Tests.TestHelpers;
+
 namespace CShells.Tests.Integration.FeatureDependency;
 
 /// <summary>
@@ -14,13 +16,8 @@ public class UnknownFeatureDependencyTests
     public void GetOrderedFeatures_WithUnknownDependency_ThrowsWithFeatureName(string scenario, string missingFeature, params string[] featureDependencies)
     {
         // Arrange
-        var featureList = featureDependencies.Select(fd =>
-        {
-            var parts = fd.Split(':');
-            return (parts[0], parts.Length > 1 ? parts[1].Split(',') : []);
-        }).ToArray();
-
-        var features = CreateFeatureDictionary(featureList);
+        var featureList = FeatureTestHelpers.ParseFeatureDependencies(featureDependencies);
+        var features = FeatureTestHelpers.CreateFeatureDictionary(featureList);
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(["A"], features));
@@ -32,7 +29,7 @@ public class UnknownFeatureDependencyTests
     public void ResolveDependencies_WithUnknownFeature_ThrowsInvalidOperationException()
     {
         // Arrange
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("A", [])
         );
 
@@ -42,19 +39,4 @@ public class UnknownFeatureDependencyTests
         Assert.Contains("not found", ex.Message);
     }
 
-    /// <summary>
-    /// Creates a minimal feature dictionary for testing dependency resolution.
-    /// Only populates the Id and Dependencies properties since those are what
-    /// the FeatureDependencyResolver operates on.
-    /// </summary>
-    private static Dictionary<string, ShellFeatureDescriptor> CreateFeatureDictionary(
-        params (string Name, string[] Dependencies)[] features)
-    {
-        var dict = new Dictionary<string, ShellFeatureDescriptor>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, dependencies) in features)
-        {
-            dict[name] = new(name) { Dependencies = dependencies };
-        }
-        return dict;
-    }
 }

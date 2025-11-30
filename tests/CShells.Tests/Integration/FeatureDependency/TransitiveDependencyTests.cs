@@ -1,3 +1,5 @@
+using CShells.Tests.TestHelpers;
+
 namespace CShells.Tests.Integration.FeatureDependency;
 
 /// <summary>
@@ -11,7 +13,7 @@ public class TransitiveDependencyTests
     public void GetOrderedFeatures_WithTransitiveDependencies_ReturnsTopologicalOrder()
     {
         // Arrange: A -> B -> C (A depends on B, B depends on C)
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("A", ["B"]),
             ("B", ["C"]),
             ("C", [])
@@ -29,7 +31,7 @@ public class TransitiveDependencyTests
     public void GetOrderedFeatures_WithDeepTransitiveDependencies_ReturnsDependenciesBeforeDependents()
     {
         // Arrange: A -> B -> C -> D -> E
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("A", ["B"]),
             ("B", ["C"]),
             ("C", ["D"]),
@@ -54,7 +56,7 @@ public class TransitiveDependencyTests
     public void GetOrderedFeatures_WithMultipleDependencies_ReturnsDependenciesFirst()
     {
         // Arrange: A depends on both B and C, which have no dependencies
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("A", ["B", "C"]),
             ("B", []),
             ("C", [])
@@ -73,7 +75,7 @@ public class TransitiveDependencyTests
     public void GetOrderedFeatures_WithDiamondDependency_HandlesDuplicatesCorrectly()
     {
         // Arrange: Diamond pattern A -> B, A -> C, B -> D, C -> D
-        var features = CreateFeatureDictionary(
+        var features = FeatureTestHelpers.CreateFeatureDictionary(
             ("A", ["B", "C"]),
             ("B", ["D"]),
             ("C", ["D"]),
@@ -90,19 +92,4 @@ public class TransitiveDependencyTests
         Assert.True(result.IndexOf("D") < result.IndexOf("C"));
     }
 
-    /// <summary>
-    /// Creates a minimal feature dictionary for testing dependency resolution.
-    /// Only populates the Id and Dependencies properties since those are what
-    /// the FeatureDependencyResolver operates on.
-    /// </summary>
-    private static Dictionary<string, ShellFeatureDescriptor> CreateFeatureDictionary(
-        params (string Name, string[] Dependencies)[] features)
-    {
-        var dict = new Dictionary<string, ShellFeatureDescriptor>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, dependencies) in features)
-        {
-            dict[name] = new(name) { Dependencies = dependencies };
-        }
-        return dict;
-    }
 }
