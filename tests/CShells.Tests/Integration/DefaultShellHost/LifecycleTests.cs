@@ -1,3 +1,4 @@
+using CShells.Configuration;
 using CShells.Hosting;
 using CShells.Tests.Integration.ShellHost;
 
@@ -16,10 +17,12 @@ public class LifecycleTests
         {
             new ShellSettings(new("TestShell"))
         };
+        var cache = new ShellSettingsCache();
+        cache.Load(settings);
         var (services, provider) = TestFixtures.CreateRootServices();
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost(settings, [], provider, accessor, factory);
+        var host = new Hosting.DefaultShellHost(cache, [], provider, accessor, factory);
         _ = host.GetShell(new("TestShell")); // Ensure the shell is built
 
         // Act

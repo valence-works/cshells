@@ -1,5 +1,4 @@
 using CShells.AspNetCore;
-using CShells.AspNetCore.Configuration;
 using CShells.AspNetCore.Resolution;
 using CShells.Configuration;
 using CShells.Resolution;

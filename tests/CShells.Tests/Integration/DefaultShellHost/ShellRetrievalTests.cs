@@ -1,3 +1,4 @@
+using CShells.Configuration;
 using CShells.Hosting;
 using CShells.Tests.Integration.ShellHost;
 
@@ -20,10 +21,12 @@ public class ShellRetrievalTests : IDisposable
 
     private Hosting.DefaultShellHost CreateHost(ShellSettings[] settings)
     {
+        var cache = new ShellSettingsCache();
+        cache.Load(settings);
         var (services, provider) = TestFixtures.CreateRootServices();
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost(settings, [], provider, accessor, factory);
+        var host = new Hosting.DefaultShellHost(cache, [], provider, accessor, factory);
         _hostsToDispose.Add(host);
         return host;
     }

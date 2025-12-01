@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Reflection.Emit;
+using CShells.Configuration;
 using CShells.Features;
 using CShells.Hosting;
 using CShells.Tests.Integration.ShellHost;
@@ -25,10 +26,12 @@ public class ServiceResolutionTests : IDisposable
 
     private Hosting.DefaultShellHost CreateHost(ShellSettings[] settings, Assembly[] assemblies)
     {
+        var cache = new ShellSettingsCache();
+        cache.Load(settings);
         var (services, provider) = TestFixtures.CreateRootServices();
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost(settings, assemblies, provider, accessor, factory);
+        var host = new Hosting.DefaultShellHost(cache, assemblies, provider, accessor, factory);
         _hostsToDispose.Add(host);
         return host;
     }

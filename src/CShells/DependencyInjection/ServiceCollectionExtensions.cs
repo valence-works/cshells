@@ -36,22 +36,31 @@ namespace CShells.DependencyInjection
             // Register the feature factory for consistent feature instantiation across the framework
             services.TryAddSingleton<IShellFeatureFactory, DefaultShellFeatureFactory>();
 
+            // Register the shell settings cache
+            var cache = new ShellSettingsCache();
+            services.TryAddSingleton<ShellSettingsCache>(cache);
+            services.TryAddSingleton<IShellSettingsCache>(cache);
+
+            // Register a hosted service that will populate the cache at startup
+            // This ensures the cache is loaded when the application starts normally (via IHost.Run)
+            services.AddHostedService<ShellSettingsCacheInitializer>();
+
             // Register IShellHost using the DefaultShellHost.
             // The root IServiceProvider is passed to allow IShellFeature constructors to resolve root-level services.
             // The root IServiceCollection is passed via the accessor to enable service inheritance in shells.
+            // The cache is passed directly, and DefaultShellHost will call GetAll() at runtime.
+            //
+            // Note: The cache may be empty when IShellHost is constructed. This is OK - shells can be
+            // loaded later via the hosted service or dynamically at runtime via the cache.
             services.AddSingleton<IShellHost>(sp =>
             {
-                var provider = sp.GetRequiredService<IShellSettingsProvider>();
+                var shellCache = sp.GetRequiredService<ShellSettingsCache>();
                 var logger = sp.GetService<ILogger<DefaultShellHost>>();
                 var rootServicesAccessor = sp.GetRequiredService<IRootServiceCollectionAccessor>();
                 var featureFactory = sp.GetRequiredService<IShellFeatureFactory>();
                 var assembliesToScan = assemblies ?? AppDomain.CurrentDomain.GetAssemblies();
 
-                // Load shell settings from the provider
-                var shellSettings = provider.GetShellSettingsAsync().GetAwaiter().GetResult();
-                var shells = ValidateAndConvertToList(shellSettings);
-
-                return new DefaultShellHost(shells, assembliesToScan, rootProvider: sp, rootServicesAccessor, featureFactory, logger);
+                return new DefaultShellHost(shellCache, assembliesToScan, rootProvider: sp, rootServicesAccessor, featureFactory, logger);
             });
 
             // Register the default shell context scope factory.
@@ -78,32 +87,6 @@ namespace CShells.DependencyInjection
             var builder = services.AddCShells(assemblies);
             configure(builder);
             return builder;
-        }
-
-        /// <summary>
-        /// Validates shell settings for duplicate names and converts to a list.
-        /// </summary>
-        private static List<ShellSettings> ValidateAndConvertToList(IEnumerable<ShellSettings> shellSettings)
-        {
-            var shells = shellSettings.ToList();
-
-            if (shells.Count == 0)
-            {
-                throw new InvalidOperationException("No shells were returned by the shell settings provider.");
-            }
-
-            var duplicates = shells
-                .GroupBy(s => s.Id.Name, StringComparer.OrdinalIgnoreCase)
-                .Where(g => g.Count() > 1)
-                .Select(g => g.Key)
-                .ToArray();
-
-            if (duplicates.Length > 0)
-            {
-                throw new InvalidOperationException($"Duplicate shell name(s) found: {string.Join(", ", duplicates)}");
-            }
-
-            return shells;
         }
     }
 }

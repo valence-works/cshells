@@ -1,3 +1,4 @@
+using CShells.Configuration;
 using CShells.DependencyInjection;
 using CShells.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -110,10 +111,12 @@ public static class TestFixtures
     {
         var assembly = typeof(TestFixtures).Assembly;
         var shellSettings = new ShellSettings(new("Default"), ["Weather"]);
+        var cache = new ShellSettingsCache();
+        cache.Load([shellSettings]);
         var (services, provider) = CreateRootServices();
         var accessor = CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost([shellSettings], [assembly], provider, accessor, factory);
+        var host = new Hosting.DefaultShellHost(cache, [assembly], provider, accessor, factory);
         hostsToDispose.Add(host);
         return host;
     }

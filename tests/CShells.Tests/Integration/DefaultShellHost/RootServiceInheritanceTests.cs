@@ -1,4 +1,5 @@
 using CShells;
+using CShells.Configuration;
 using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Hosting;
@@ -118,8 +119,13 @@ public class RootServiceInheritanceTests : IDisposable
     {
         var accessor = TestFixtures.CreateRootServicesAccessor(rootServices);
         var factory = new CShells.Features.DefaultShellFeatureFactory(rootProvider);
+
+        // Create and populate cache with shell settings
+        var cache = new ShellSettingsCache();
+        cache.Load(shellSettings);
+
         var host = new Hosting.DefaultShellHost(
-            shellSettings,
+            cache,
             [typeof(RootServiceInheritanceTests).Assembly],
             rootProvider,
             accessor,

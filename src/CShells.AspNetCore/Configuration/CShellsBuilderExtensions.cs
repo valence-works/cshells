@@ -1,4 +1,3 @@
-using CShells.Configuration;
 using CShells.DependencyInjection;
 using CShells.AspNetCore.Resolution;
 using CShells.Resolution;
@@ -13,28 +12,21 @@ namespace CShells.AspNetCore.Configuration;
 public static class CShellsBuilderExtensions
 {
     /// <summary>
-    /// Automatically registers shell resolution strategies that read shell properties at runtime.
-    /// Resolvers query Path and Host properties from the shell settings cache.
+    /// Registers ASP.NET Core shell resolution strategies that query Path and Host properties from shell settings.
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
     /// <returns>The builder for method chaining.</returns>
     /// <remarks>
     /// This method registers:
     /// <list type="bullet">
-    /// <item><see cref="IShellSettingsCache"/> as a hosted service that loads shells at startup</item>
     /// <item><see cref="PathShellResolver"/> to resolve shells by URL path segment</item>
     /// <item><see cref="HostShellResolver"/> to resolve shells by HTTP host name</item>
     /// </list>
-    /// The resolvers query shell properties at runtime from the cache, enabling dynamic shell configuration.
+    /// The resolvers query shell properties at runtime from the shell settings cache.
     /// </remarks>
     public static CShellsBuilder WithAutoResolvers(this CShellsBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
-
-        // Register the shell settings cache as a hosted service
-        // This loads shells at startup and keeps them cached for runtime resolution
-        builder.Services.TryAddSingleton<IShellSettingsCache, DefaultShellSettingsCache>();
-        builder.Services.AddHostedService(sp => (DefaultShellSettingsCache)sp.GetRequiredService<IShellSettingsCache>());
 
         // Register resolvers that read from the cache at runtime
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, PathShellResolver>());

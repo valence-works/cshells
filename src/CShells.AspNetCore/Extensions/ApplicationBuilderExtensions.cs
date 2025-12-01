@@ -1,6 +1,7 @@
 using CShells.AspNetCore.Features;
 using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Resolution;
+using CShells.Configuration;
 using CShells.Features;
 using CShells.Hosting;
 using CShells.Resolution;
@@ -288,32 +289,44 @@ public static class ApplicationBuilderExtensions
     /// </returns>
     private static (HashSet<string> EnabledFeatureIds, bool ShouldFilter) GetEnabledFeatureIds(IServiceProvider rootProvider, ILogger logger)
     {
-        var shellHost = rootProvider.GetService<IShellHost>();
-        if (shellHost is null)
+        // Access the cache directly to check if shells are available yet
+        // This avoids triggering shell construction before the cache is populated
+        var cache = rootProvider.GetService<IShellSettingsCache>();
+        if (cache is null)
         {
-            logger.LogWarning("IShellHost not registered in service provider. All discovered web features will be configured.");
+            logger.LogWarning("IShellSettingsCache not registered in service provider. All discovered web features will be configured.");
             // Don't filter - configure all features (backwards compatibility)
             return ([], false);
         }
 
         try
         {
+            var allSettings = cache.GetAll();
+
+            // If no shells are configured yet (cache is empty), don't filter features
+            // This allows the application to start before shells are loaded by the hosted service
+            if (allSettings.Count == 0)
+            {
+                logger.LogInformation("No shells configured yet. All discovered web features will be configured.");
+                return ([], false);
+            }
+
             // Collect all enabled feature IDs from all shells
             var enabledFeatureIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var shell in shellHost.AllShells)
+            foreach (var settings in allSettings)
             {
-                foreach (var featureId in shell.Settings.EnabledFeatures)
+                foreach (var featureId in settings.EnabledFeatures)
                 {
                     enabledFeatureIds.Add(featureId);
                 }
             }
 
-            logger.LogDebug("Found {Count} unique enabled features across all shells", enabledFeatureIds.Count);
+            logger.LogDebug("Found {Count} unique enabled features across {ShellCount} shell(s)", enabledFeatureIds.Count, allSettings.Count);
             return (enabledFeatureIds, true);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to retrieve enabled features from shell host. All discovered web features will be configured.");
+            logger.LogWarning(ex, "Failed to retrieve enabled features from shell settings cache. All discovered web features will be configured.");
             // Don't filter - configure all features (backwards compatibility)
             return ([], false);
         }

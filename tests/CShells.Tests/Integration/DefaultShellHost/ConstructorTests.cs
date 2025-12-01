@@ -1,3 +1,4 @@
+using CShells.Configuration;
 using CShells.Hosting;
 using CShells.Tests.Integration.ShellHost;
 
@@ -18,7 +19,7 @@ public class ConstructorTests
 
         // Act & Assert
         var ex = Assert.Throws<ArgumentNullException>(() => new Hosting.DefaultShellHost(null!, provider, accessor, factory));
-        Assert.Equal("shellSettings", ex.ParamName);
+        Assert.Equal("shellSettingsCache", ex.ParamName);
     }
 
     [Fact(DisplayName = "Constructor with null assemblies throws ArgumentNullException")]
@@ -26,13 +27,15 @@ public class ConstructorTests
     {
         // Arrange
         var settings = new[] { new ShellSettings(new("Test")) };
+        var cache = new ShellSettingsCache();
+        cache.Load(settings);
         IEnumerable<System.Reflection.Assembly>? nullAssemblies = null;
         var (services, provider) = TestFixtures.CreateRootServices();
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new Hosting.DefaultShellHost(settings, nullAssemblies!, provider, accessor, factory));
+        var ex = Assert.Throws<ArgumentNullException>(() => new Hosting.DefaultShellHost(cache, nullAssemblies!, provider, accessor, factory));
         Assert.Equal("assemblies", ex.ParamName);
     }
 
@@ -41,12 +44,14 @@ public class ConstructorTests
     {
         // Arrange
         var settings = new[] { new ShellSettings(new("Test")) };
+        var cache = new ShellSettingsCache();
+        cache.Load(settings);
         var (services, provider) = TestFixtures.CreateRootServices();
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new Hosting.DefaultShellHost(settings, [], null!, accessor, factory));
+        var ex = Assert.Throws<ArgumentNullException>(() => new Hosting.DefaultShellHost(cache, [], null!, accessor, factory));
         Assert.Equal("rootProvider", ex.ParamName);
     }
 
@@ -55,11 +60,13 @@ public class ConstructorTests
     {
         // Arrange
         var settings = new[] { new ShellSettings(new("Test")) };
+        var cache = new ShellSettingsCache();
+        cache.Load(settings);
         var (_, provider) = TestFixtures.CreateRootServices();
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new Hosting.DefaultShellHost(settings, [], provider, null!, factory));
+        var ex = Assert.Throws<ArgumentNullException>(() => new Hosting.DefaultShellHost(cache, [], provider, null!, factory));
         Assert.Equal("rootServicesAccessor", ex.ParamName);
     }
 }

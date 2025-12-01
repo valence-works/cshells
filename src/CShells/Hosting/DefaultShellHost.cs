@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using CShells.Configuration;
 using CShells.DependencyInjection;
 using CShells.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,7 +35,7 @@ namespace CShells.Hosting;
 public class DefaultShellHost : IShellHost, IDisposable
 {
     private readonly IReadOnlyDictionary<string, ShellFeatureDescriptor> _featureMap;
-    private readonly IReadOnlyList<ShellSettings> _shellSettings;
+    private readonly IShellSettingsCache _shellSettingsCache;
     private readonly IServiceProvider _rootProvider;
     private readonly IServiceCollection _rootServices;
     private readonly IShellFeatureFactory _featureFactory;
@@ -64,7 +65,7 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultShellHost"/> class.
     /// </summary>
-    /// <param name="shellSettings">The collection of shell settings to manage.</param>
+    /// <param name="shellSettingsCache">The cache providing access to shell settings.</param>
     /// <param name="rootProvider">
     /// The application's root <see cref="IServiceProvider"/> used to instantiate <see cref="IShellFeature"/> implementations.
     /// Feature constructors can resolve root-level services (logging, configuration, etc.).
@@ -75,21 +76,21 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// </param>
     /// <param name="featureFactory">The factory used to create shell feature instances.</param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="rootProvider"/>, <paramref name="rootServicesAccessor"/>, or <paramref name="featureFactory"/> is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettingsCache"/>, <paramref name="rootProvider"/>, <paramref name="rootServicesAccessor"/>, or <paramref name="featureFactory"/> is null.</exception>
     public DefaultShellHost(
-        IEnumerable<ShellSettings> shellSettings,
+        IShellSettingsCache shellSettingsCache,
         IServiceProvider rootProvider,
         IRootServiceCollectionAccessor rootServicesAccessor,
         IShellFeatureFactory featureFactory,
         ILogger<DefaultShellHost>? logger = null)
-        : this(shellSettings, AppDomain.CurrentDomain.GetAssemblies(), rootProvider, rootServicesAccessor, featureFactory, logger)
+        : this(shellSettingsCache, AppDomain.CurrentDomain.GetAssemblies(), rootProvider, rootServicesAccessor, featureFactory, logger)
     {
     }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultShellHost"/> class with custom assemblies and root service collection.
     /// </summary>
-    /// <param name="shellSettings">The collection of shell settings to manage.</param>
+    /// <param name="shellSettingsCache">The cache providing access to shell settings.</param>
     /// <param name="assemblies">The assemblies to scan for features.</param>
     /// <param name="rootProvider">
     /// The application's root <see cref="IServiceProvider"/> used to instantiate <see cref="IShellFeature"/> implementations.
@@ -101,22 +102,22 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// </param>
     /// <param name="featureFactory">The factory used to create shell feature instances.</param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettings"/>, <paramref name="assemblies"/>, <paramref name="rootProvider"/>, <paramref name="rootServicesAccessor"/>, or <paramref name="featureFactory"/> is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettingsCache"/>, <paramref name="assemblies"/>, <paramref name="rootProvider"/>, <paramref name="rootServicesAccessor"/>, or <paramref name="featureFactory"/> is null.</exception>
     public DefaultShellHost(
-        IEnumerable<ShellSettings> shellSettings,
+        IShellSettingsCache shellSettingsCache,
         IEnumerable<Assembly> assemblies,
         IServiceProvider rootProvider,
         IRootServiceCollectionAccessor rootServicesAccessor,
         IShellFeatureFactory featureFactory,
         ILogger<DefaultShellHost>? logger = null)
     {
-        ArgumentNullException.ThrowIfNull(shellSettings);
+        ArgumentNullException.ThrowIfNull(shellSettingsCache);
         ArgumentNullException.ThrowIfNull(assemblies);
         ArgumentNullException.ThrowIfNull(rootProvider);
         ArgumentNullException.ThrowIfNull(rootServicesAccessor);
         ArgumentNullException.ThrowIfNull(featureFactory);
 
-        _shellSettings = shellSettings.ToList();
+        _shellSettingsCache = shellSettingsCache;
         _rootProvider = rootProvider;
         _rootServices = rootServicesAccessor.Services;
         _featureFactory = featureFactory;
@@ -148,8 +149,7 @@ public class DefaultShellHost : IShellHost, IDisposable
             }
 
             // Check if there's a settings entry for "Default"
-            var defaultSettings = _shellSettings.FirstOrDefault(s =>
-                string.Equals(s.Id.Name, ShellConstants.DefaultShellName, StringComparison.OrdinalIgnoreCase));
+            var defaultSettings = _shellSettingsCache.GetById(defaultId);
 
             if (defaultSettings != null)
             {
@@ -157,7 +157,8 @@ public class DefaultShellHost : IShellHost, IDisposable
             }
 
             // Otherwise, return the first shell
-            var firstSettings = _shellSettings.FirstOrDefault();
+            var allSettings = _shellSettingsCache.GetAll();
+            var firstSettings = allSettings.FirstOrDefault();
             if (firstSettings == null)
             {
                 throw new InvalidOperationException("No shells have been configured.");
@@ -190,7 +191,8 @@ public class DefaultShellHost : IShellHost, IDisposable
             ThrowIfDisposed();
 
             // Build all shells that haven't been built yet
-            foreach (var settings in _shellSettings)
+            var allSettings = _shellSettingsCache.GetAll();
+            foreach (var settings in allSettings)
             {
                 // Use GetOrAdd pattern to build each shell only once
                 _shellContexts.GetOrAdd(settings.Id, _ => BuildShellContextInternal(settings));
@@ -206,7 +208,7 @@ public class DefaultShellHost : IShellHost, IDisposable
     private ShellContext BuildShellContext(ShellId id)
     {
         // Find the settings for this shell
-        var settings = _shellSettings.FirstOrDefault(s => s.Id.Equals(id));
+        var settings = _shellSettingsCache.GetById(id);
         if (settings == null)
         {
             throw new KeyNotFoundException($"Shell with Id '{id}' was not found in the configured shell settings.");

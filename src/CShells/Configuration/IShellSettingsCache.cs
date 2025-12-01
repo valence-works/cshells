@@ -1,4 +1,4 @@
-namespace CShells.AspNetCore.Configuration;
+namespace CShells.Configuration;
 
 /// <summary>
 /// Provides cached, synchronous access to shell settings loaded from an <see cref="IShellSettingsProvider"/>.

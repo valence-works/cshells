@@ -1,3 +1,5 @@
+using CShells.Configuration;
+
 namespace CShells.Tests.Integration.ShellHost;
 
 /// <summary>
@@ -39,10 +41,12 @@ public class DefaultShellTests : IDisposable
             new ShellSettings(new("Default"), ["Weather"]),
             new ShellSettings(new("Other"), ["Core"])
         };
+        var cache = new ShellSettingsCache();
+        cache.Load(shellSettings);
         var (services, provider) = TestFixtures.CreateRootServices();
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost(shellSettings, [assembly], provider, accessor, factory);
+        var host = new Hosting.DefaultShellHost(cache, [assembly], provider, accessor, factory);
         _hostsToDispose.Add(host);
 
         // Act

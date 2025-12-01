@@ -1,4 +1,3 @@
-using CShells.AspNetCore.Configuration;
 using CShells.Configuration;
 using CShells.Resolution;
 
