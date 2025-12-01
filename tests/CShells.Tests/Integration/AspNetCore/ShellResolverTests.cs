@@ -208,18 +208,18 @@ public class ShellResolverTests
     {
         var shells = new List<ShellSettings>
         {
-            new ShellSettings
+            new()
             {
-                Id = new ShellId("Tenant1Shell"),
+                Id = new("Tenant1Shell"),
                 EnabledFeatures = [],
                 Properties = new Dictionary<string, object>
                 {
                     [ShellPropertyKeys.Host] = JsonDocument.Parse($"\"{Tenant1Host}\"").RootElement
                 }
             },
-            new ShellSettings
+            new()
             {
-                Id = new ShellId("Tenant2Shell"),
+                Id = new("Tenant2Shell"),
                 EnabledFeatures = [],
                 Properties = new Dictionary<string, object>
                 {
@@ -235,18 +235,18 @@ public class ShellResolverTests
     {
         var shells = new List<ShellSettings>
         {
-            new ShellSettings
+            new()
             {
-                Id = new ShellId("Tenant1Shell"),
+                Id = new("Tenant1Shell"),
                 EnabledFeatures = [],
                 Properties = new Dictionary<string, object>
                 {
                     [ShellPropertyKeys.Path] = JsonDocument.Parse($"\"{Tenant1Path}\"").RootElement
                 }
             },
-            new ShellSettings
+            new()
             {
-                Id = new ShellId("Tenant2Shell"),
+                Id = new("Tenant2Shell"),
                 EnabledFeatures = [],
                 Properties = new Dictionary<string, object>
                 {
@@ -271,18 +271,11 @@ public class ShellResolverTests
         return context;
     }
 
-    private class TestShellSettingsCache : IShellSettingsCache
+    private class TestShellSettingsCache(List<ShellSettings> shells) : IShellSettingsCache
     {
-        private readonly List<ShellSettings> _shells;
+        public IReadOnlyCollection<ShellSettings> GetAll() => shells;
 
-        public TestShellSettingsCache(List<ShellSettings> shells)
-        {
-            _shells = shells;
-        }
-
-        public IReadOnlyCollection<ShellSettings> GetAll() => _shells;
-
-        public ShellSettings? GetById(ShellId id) => _shells.FirstOrDefault(s => s.Id == id);
+        public ShellSettings? GetById(ShellId id) => shells.FirstOrDefault(s => s.Id == id);
     }
 
     #endregion

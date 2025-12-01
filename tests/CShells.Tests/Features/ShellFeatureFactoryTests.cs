@@ -35,7 +35,7 @@ public class ShellFeatureFactoryTests
         services.AddLogging();
         var serviceProvider = services.BuildServiceProvider();
         var factory = new DefaultShellFeatureFactory(serviceProvider);
-        var shellSettings = new ShellSettings(new ShellId("TestShell"), ["Feature1"]);
+        var shellSettings = new ShellSettings(new("TestShell"), ["Feature1"]);
 
         // Act
         var feature = factory.CreateFeature<IShellFeature>(typeof(FeatureWithShellSettings), shellSettings);
@@ -72,7 +72,7 @@ public class ShellFeatureFactoryTests
         services.AddLogging();
         var serviceProvider = services.BuildServiceProvider();
         var factory = new DefaultShellFeatureFactory(serviceProvider);
-        var shellSettings = new ShellSettings(new ShellId("TestShell"), ["Feature1"]);
+        var shellSettings = new ShellSettings(new("TestShell"), ["Feature1"]);
 
         // Act
         var feature = factory.CreateFeature<IShellFeature>(typeof(FeatureWithBoth), shellSettings);

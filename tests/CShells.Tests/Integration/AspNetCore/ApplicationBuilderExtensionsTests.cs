@@ -12,13 +12,17 @@ namespace CShells.Tests.Integration.AspNetCore;
 /// </summary>
 public class ApplicationBuilderExtensionsTests
 {
-    [Fact(DisplayName = "UseCShells with null app throws ArgumentNullException")]
-    public void UseCShells_WithNullApp_ThrowsArgumentNullException()
+    public static IEnumerable<object[]> GuardClauseData() => new[]
     {
-        // Act & Assert
-        IApplicationBuilder app = null!;
-        var ex = Assert.Throws<ArgumentNullException>(() => CShells.AspNetCore.Extensions.ApplicationBuilderExtensions.UseCShells(app));
-        Assert.Equal("app", ex.ParamName);
+        new object?[] { null, "app" }
+    };
+
+    [Theory(DisplayName = "UseCShells guard clauses throw ArgumentNullException")]
+    [MemberData(nameof(GuardClauseData))]
+    public void UseCShells_GuardClauses_ThrowArgumentNullException(IApplicationBuilder? app, string expectedParam)
+    {
+        var exception = Assert.Throws<ArgumentNullException>(() => CShells.AspNetCore.Extensions.ApplicationBuilderExtensions.UseCShells(app!));
+        Assert.Equal(expectedParam, exception.ParamName);
     }
 
     [Fact(DisplayName = "UseCShells returns app for chaining")]

@@ -70,6 +70,22 @@ public class ShellSettingsTests
         Assert.Equal(features, settings.EnabledFeatures);
     }
 
+    [Theory(DisplayName = "Constructor guard clauses throw ArgumentNullException")]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public void Constructor_GuardClauses_ThrowArgumentNullException(string? id)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new ShellSettings(new(id!)));
+    }
+
+    [Fact(DisplayName = "EnabledFeatures returns read-only list")]
+    public void EnabledFeatures_ReturnsReadOnlyList()
+    {
+        var settings = new ShellSettings(new("Test"), ["Feature1"]);
+
+        Assert.Throws<NotSupportedException>(() => ((IList<string>)settings.EnabledFeatures).Add("Feature2"));
+    }
+
     private static ShellId CreateTestShellId() => new(TestShellName);
 
     private static List<string> CreateTestFeatures() => ["Feature1", "Feature2"];

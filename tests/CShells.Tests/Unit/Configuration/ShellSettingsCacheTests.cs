@@ -33,7 +33,7 @@ public class ShellSettingsCacheTests
             : CreateCache();
 
         // Act
-        var result = cache.GetById(new ShellId("Target"));
+        var result = cache.GetById(new("Target"));
 
         // Assert
         Assert.Null(result);
@@ -53,9 +53,9 @@ public class ShellSettingsCacheTests
         cache.Load(shells);
 
         // Assert
-        var result = cache.GetById(new ShellId("Shell1"));
+        var result = cache.GetById(new("Shell1"));
         Assert.NotNull(result);
-        Assert.Equal(new ShellId("Shell1"), result.Id);
+        Assert.Equal(new("Shell1"), result.Id);
     }
 
     [Fact(DisplayName = "Clear removes all shells from cache")]
@@ -85,7 +85,7 @@ public class ShellSettingsCacheTests
 
     private static ShellSettings CreateShell(string id) => new()
     {
-        Id = new ShellId(id),
+        Id = new(id),
         EnabledFeatures = []
     };
 }

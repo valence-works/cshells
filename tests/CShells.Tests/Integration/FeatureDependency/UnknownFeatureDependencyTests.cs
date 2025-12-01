@@ -11,33 +11,30 @@ public class UnknownFeatureDependencyTests
     private readonly FeatureDependencyResolver _resolver = new();
 
     [Theory(DisplayName = "GetOrderedFeatures with unknown dependency throws with feature name")]
-    [InlineData("DirectDependency", "NonExistent", "A:NonExistent")]
-    [InlineData("TransitiveDependency", "NonExistent", "A:B", "B:NonExistent")]
-    [InlineData("MissingFeatureName", "MissingFeature", "A:MissingFeature")]
-    public void GetOrderedFeatures_WithUnknownDependency_ThrowsWithFeatureName(string scenario, string missingFeature, params string[] featureDependencies)
+    [MemberData(nameof(FeatureDependencyData.UnknownDependencyCases), MemberType = typeof(FeatureDependencyData))]
+    public void GetOrderedFeatures_WithUnknownDependency_ThrowsWithFeatureName(IEnumerable<string> roots, string missingFeature, string[] dependencyMap)
     {
         // Arrange
-        var featureList = FeatureTestHelpers.ParseFeatureDependencies(featureDependencies);
+        var featureList = FeatureTestHelpers.ParseFeatureDependencies(dependencyMap);
         var features = FeatureTestHelpers.CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(["A"], features));
+        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(roots, features));
         Assert.Contains(missingFeature, ex.Message);
         Assert.Contains("not found", ex.Message);
     }
 
-    [Fact(DisplayName = "ResolveDependencies with unknown feature throws InvalidOperationException")]
-    public void ResolveDependencies_WithUnknownFeature_ThrowsInvalidOperationException()
+    [Theory(DisplayName = "ResolveDependencies with unknown feature throws InvalidOperationException")]
+    [MemberData(nameof(FeatureDependencyData.UnknownDependencyCases), MemberType = typeof(FeatureDependencyData))]
+    public void ResolveDependencies_WithUnknownFeature_ThrowsInvalidOperationException(IEnumerable<string> roots, string missingFeature, string[] dependencyMap)
     {
         // Arrange
-        var features = FeatureTestHelpers.CreateFeatureDictionary(
-            ("A", [])
-        );
+        var featureList = FeatureTestHelpers.ParseFeatureDependencies(dependencyMap);
+        var features = FeatureTestHelpers.CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies("NonExistentFeature", features));
-        Assert.Contains("NonExistentFeature", ex.Message);
+        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies(missingFeature, features));
+        Assert.Contains(missingFeature, ex.Message);
         Assert.Contains("not found", ex.Message);
     }
-
 }

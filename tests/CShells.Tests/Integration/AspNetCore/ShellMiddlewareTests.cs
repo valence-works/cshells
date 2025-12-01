@@ -11,6 +11,11 @@ namespace CShells.Tests.Integration.AspNetCore;
 /// </summary>
 public class ShellMiddlewareTests
 {
+    private static ShellMiddleware CreateMiddleware(RequestDelegate next, IShellResolver? resolver = null, IShellHost? host = null)
+    {
+        return new(next, resolver ?? new NullShellResolver(), host ?? new TestShellHost());
+    }
+
     [Fact(DisplayName = "InvokeAsync with null ShellId continues without setting scope")]
     public async Task InvokeAsync_WithNullShellId_ContinuesWithoutSettingScope()
     {
@@ -20,14 +25,14 @@ public class ShellMiddlewareTests
         var host = new TestShellHost();
         var nextCalled = false;
 
-        var middleware = new ShellMiddleware(
-            next: ctx =>
+        var middleware = CreateMiddleware(
+            ctx =>
             {
                 nextCalled = true;
                 return Task.CompletedTask;
             },
-            resolver: resolver,
-            host: host);
+            resolver,
+            host);
 
         var httpContext = new DefaultHttpContext
         {
@@ -59,16 +64,16 @@ public class ShellMiddlewareTests
 
         IServiceProvider? capturedRequestServices = null;
         ITestService? capturedTestService = null;
-        var middleware = new ShellMiddleware(
-            next: ctx =>
+        var middleware = CreateMiddleware(
+            ctx =>
             {
                 capturedRequestServices = ctx.RequestServices;
                 // Capture the service while within the scope
                 capturedTestService = ctx.RequestServices.GetService<ITestService>();
                 return Task.CompletedTask;
             },
-            resolver: resolver,
-            host: host);
+            resolver,
+            host);
 
         var httpContext = new DefaultHttpContext
         {
@@ -100,10 +105,7 @@ public class ShellMiddlewareTests
         var resolver = new FixedShellResolver(new("TestShell"));
         var host = new TestShellHost(shellContext);
 
-        var middleware = new ShellMiddleware(
-            next: ctx => Task.CompletedTask,
-            resolver: resolver,
-            host: host);
+        var middleware = CreateMiddleware(ctx => Task.CompletedTask, resolver, host);
 
         var httpContext = new DefaultHttpContext
         {
@@ -131,10 +133,7 @@ public class ShellMiddlewareTests
         var resolver = new FixedShellResolver(new("TestShell"));
         var host = new TestShellHost(shellContext);
 
-        var middleware = new ShellMiddleware(
-            next: ctx => throw new InvalidOperationException("Test exception"),
-            resolver: resolver,
-            host: host);
+        var middleware = CreateMiddleware(_ => throw new InvalidOperationException("Test exception"), resolver, host);
 
         var httpContext = new DefaultHttpContext
         {
@@ -146,40 +145,18 @@ public class ShellMiddlewareTests
         Assert.Same(originalServiceProvider, httpContext.RequestServices);
     }
 
-    [Fact(DisplayName = "Constructor with null next throws ArgumentNullException")]
-    public void Constructor_WithNullNext_ThrowsArgumentNullException()
+    [Theory(DisplayName = "Constructor guard clauses throw ArgumentNullException")]
+    [InlineData(true, false, false, "next")]
+    [InlineData(false, true, false, "resolver")]
+    [InlineData(false, false, true, "host")]
+    public void Constructor_GuardClauses_ThrowArgumentNullException(bool nullNext, bool nullResolver, bool nullHost, string expectedParam)
     {
-        // Arrange
-        var resolver = new NullShellResolver();
-        var host = new TestShellHost();
+        RequestDelegate? next = nullNext ? null : _ => Task.CompletedTask;
+        var resolver = nullResolver ? null : new NullShellResolver();
+        var host = nullHost ? null : new TestShellHost();
 
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellMiddleware(null!, resolver, host));
-        Assert.Equal("next", ex.ParamName);
-    }
-
-    [Fact(DisplayName = "Constructor with null resolver throws ArgumentNullException")]
-    public void Constructor_WithNullResolver_ThrowsArgumentNullException()
-    {
-        // Arrange
-        RequestDelegate next = ctx => Task.CompletedTask;
-        var host = new TestShellHost();
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellMiddleware(next, null!, host));
-        Assert.Equal("resolver", ex.ParamName);
-    }
-
-    [Fact(DisplayName = "Constructor with null host throws ArgumentNullException")]
-    public void Constructor_WithNullHost_ThrowsArgumentNullException()
-    {
-        // Arrange
-        RequestDelegate next = ctx => Task.CompletedTask;
-        var resolver = new NullShellResolver();
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellMiddleware(next, resolver, null!));
-        Assert.Equal("host", ex.ParamName);
+        var exception = Assert.Throws<ArgumentNullException>(() => new ShellMiddleware(next!, resolver!, host!));
+        Assert.Equal(expectedParam, exception.ParamName);
     }
 
     [Fact(DisplayName = "InvokeAsync with non-existent ShellId throws KeyNotFoundException")]
@@ -188,10 +165,7 @@ public class ShellMiddlewareTests
         // Arrange
         var resolver = new FixedShellResolver(new("NonExistent"));
         var host = new TestShellHost(); // Empty host with no shells
-        var middleware = new ShellMiddleware(
-            next: ctx => Task.CompletedTask,
-            resolver: resolver,
-            host: host);
+        var middleware = CreateMiddleware(ctx => Task.CompletedTask, resolver, host);
         var httpContext = new DefaultHttpContext();
 
         // Act & Assert

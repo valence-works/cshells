@@ -1,92 +1,47 @@
-using CShells.Configuration;
 using CShells.Hosting;
 using CShells.Tests.Integration.ShellHost;
+using CShells.Tests.TestHelpers;
 
 namespace CShells.Tests.Integration.DefaultShellHost;
 
 /// <summary>
 /// Tests for <see cref="DefaultShellHost"/> shell retrieval operations (GetShell, DefaultShell, AllShells).
 /// </summary>
-public class ShellRetrievalTests : IDisposable
+[Collection(nameof(DefaultShellHostCollection))]
+public class ShellRetrievalTests(DefaultShellHostFixture fixture)
 {
-    private readonly List<Hosting.DefaultShellHost> _hostsToDispose = [];
-
-    public void Dispose()
-    {
-        foreach (var host in _hostsToDispose)
-        {
-            host.Dispose();
-        }
-    }
-
-    private Hosting.DefaultShellHost CreateHost(ShellSettings[] settings)
-    {
-        var cache = new ShellSettingsCache();
-        cache.Load(settings);
-        var (services, provider) = TestFixtures.CreateRootServices();
-        var accessor = TestFixtures.CreateRootServicesAccessor(services);
-        var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost(cache, [], provider, accessor, factory);
-        _hostsToDispose.Add(host);
-        return host;
-    }
-
     [Fact(DisplayName = "DefaultShell with no shells throws InvalidOperationException")]
     public void DefaultShell_WithNoShells_ThrowsInvalidOperationException()
     {
         // Arrange
-        var host = CreateHost([]);
+        var host = fixture.CreateHost(Array.Empty<ShellSettings>(), typeof(TestFixtures).Assembly);
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() => _ = host.DefaultShell);
         Assert.Contains("No shells have been configured", ex.Message);
     }
 
-    [Fact(DisplayName = "DefaultShell with Default shell configured returns default shell")]
-    public void DefaultShell_WithDefaultShellConfigured_ReturnsDefaultShell()
+    [Theory(DisplayName = "DefaultShell resolves expected shell")]
+    [InlineData("Default", new[] { "Default", "Other" })]
+    [InlineData("First", new[] { "First", "Second" })]
+    public void DefaultShell_ReturnsExpectedShell(string expected, string[] names)
     {
         // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("Default")),
-            new ShellSettings(new("Other"))
-        };
-        var host = CreateHost(settings);
+        var settings = names.Select(name => new ShellSettings(new(name))).ToArray();
+        var host = fixture.CreateHost(settings, typeof(TestFixtures).Assembly);
 
         // Act
         var shell = host.DefaultShell;
 
         // Assert
-        Assert.Equal("Default", shell.Id.Name);
-    }
-
-    [Fact(DisplayName = "DefaultShell without default shell returns first shell")]
-    public void DefaultShell_WithoutDefaultShell_ReturnsFirstShell()
-    {
-        // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("First")),
-            new ShellSettings(new("Second"))
-        };
-        var host = CreateHost(settings);
-
-        // Act
-        var shell = host.DefaultShell;
-
-        // Assert
-        Assert.Equal("First", shell.Id.Name);
+        Assert.Equal(expected, shell.Id.Name);
     }
 
     [Fact(DisplayName = "GetShell with valid ID returns shell context")]
     public void GetShell_WithValidId_ReturnsShellContext()
     {
         // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"))
-        };
-        var host = CreateHost(settings);
+        var host = fixture.CreateHost([new(new("TestShell"))], typeof(TestFixtures).Assembly);
 
         // Act
         var shell = host.GetShell(new("TestShell"));
@@ -102,11 +57,7 @@ public class ShellRetrievalTests : IDisposable
     public void GetShell_WithInvalidId_ThrowsKeyNotFoundException()
     {
         // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"))
-        };
-        var host = CreateHost(settings);
+        var host = fixture.CreateHost([new(new("TestShell"))], typeof(TestFixtures).Assembly);
 
         // Act & Assert
         var ex = Assert.Throws<KeyNotFoundException>(() => host.GetShell(new("NonExistent")));
@@ -117,11 +68,7 @@ public class ShellRetrievalTests : IDisposable
     public void GetShell_CalledMultipleTimes_ReturnsSameInstance()
     {
         // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"))
-        };
-        var host = CreateHost(settings);
+        var host = fixture.CreateHost([new(new("TestShell"))], typeof(TestFixtures).Assembly);
 
         // Act
         var shell1 = host.GetShell(new("TestShell"));
@@ -135,13 +82,11 @@ public class ShellRetrievalTests : IDisposable
     public void AllShells_ReturnsAllConfiguredShells()
     {
         // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("Shell1")),
-            new ShellSettings(new("Shell2")),
-            new ShellSettings(new("Shell3"))
-        };
-        var host = CreateHost(settings);
+        var host = fixture.CreateHost([
+            new(new("Shell1")),
+            new(new("Shell2")),
+            new(new("Shell3"))
+        ], typeof(TestFixtures).Assembly);
 
         // Act
         var allShells = host.AllShells;
@@ -157,11 +102,7 @@ public class ShellRetrievalTests : IDisposable
     public void GetShell_WithUnknownFeature_ThrowsInvalidOperationException()
     {
         // Arrange
-        var settings = new[]
-        {
-            new ShellSettings(new("TestShell"), ["UnknownFeature"])
-        };
-        var host = CreateHost(settings);
+        var host = fixture.CreateHost([new(new("TestShell"), ["UnknownFeature"])], typeof(TestFixtures).Assembly);
 
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(() => host.GetShell(new("TestShell")));

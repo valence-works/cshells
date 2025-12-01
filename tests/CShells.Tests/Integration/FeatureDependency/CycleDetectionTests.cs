@@ -11,34 +11,31 @@ public class CycleDetectionTests
     private readonly FeatureDependencyResolver _resolver = new();
 
     [Theory(DisplayName = "GetOrderedFeatures with circular dependency throws InvalidOperationException")]
-    [InlineData("DirectCycle", "A:B", "B:A")] // A -> B -> A
-    [InlineData("IndirectCycle", "A:B", "B:C", "C:A")] // A -> B -> C -> A
-    [InlineData("SelfReference", "A:A")] // A -> A
-    public void GetOrderedFeatures_WithCircularDependency_ThrowsInvalidOperationException(string scenario, params string[] featureDependencies)
+    [MemberData(nameof(FeatureDependencyData.CircularDependencyCases), MemberType = typeof(FeatureDependencyData))]
+    public void GetOrderedFeatures_WithCircularDependency_ThrowsInvalidOperationException(IEnumerable<string> roots, string[] dependencyMap)
     {
         // Arrange: Parse dependencies from format "Feature:Dep1,Dep2"
-        var featureList = FeatureTestHelpers.ParseFeatureDependencies(featureDependencies);
+        var featureList = FeatureTestHelpers.ParseFeatureDependencies(dependencyMap);
         var features = FeatureTestHelpers.CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(["A"], features));
+        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(roots, features));
         Assert.Contains("Circular dependency", ex.Message);
     }
 
-    [Fact(DisplayName = "ResolveDependencies with cycle throws with feature name")]
-    public void ResolveDependencies_WithCycle_ThrowsInvalidOperationExceptionWithFeatureName()
+    [Theory(DisplayName = "ResolveDependencies with cycle throws with feature name")]
+    [MemberData(nameof(FeatureDependencyData.CircularDependencyCases), MemberType = typeof(FeatureDependencyData))]
+    public void ResolveDependencies_WithCycle_ThrowsInvalidOperationExceptionWithFeatureName(IEnumerable<string> roots, string[] dependencyMap)
     {
         // Arrange
-        var features = FeatureTestHelpers.CreateFeatureDictionary(
-            ("A", ["B"]),
-            ("B", ["A"])
-        );
+        var featureList = FeatureTestHelpers.ParseFeatureDependencies(dependencyMap);
+        var features = FeatureTestHelpers.CreateFeatureDictionary(featureList);
+        var target = roots.First();
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies("A", features));
+        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies(target, features));
         Assert.Contains("Circular dependency", ex.Message);
-        Assert.True(ex.Message.Contains("A") || ex.Message.Contains("B"),
+        Assert.True(ex.Message.Contains(target, StringComparison.OrdinalIgnoreCase),
             "exception message should contain the feature name involved in the cycle");
     }
-
 }
