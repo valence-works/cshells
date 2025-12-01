@@ -10,15 +10,19 @@ namespace CShells.AspNetCore.Resolution;
 public class PathShellResolver : IShellResolverStrategy
 {
     private readonly IShellSettingsCache _cache;
+    private readonly PathShellResolverOptions _options;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PathShellResolver"/> class.
     /// </summary>
     /// <param name="cache">The shell settings cache to read from.</param>
-    public PathShellResolver(IShellSettingsCache cache)
+    /// <param name="options">The options for path-based shell resolution.</param>
+    public PathShellResolver(IShellSettingsCache cache, PathShellResolverOptions options)
     {
         ArgumentNullException.ThrowIfNull(cache);
+        ArgumentNullException.ThrowIfNull(options);
         _cache = cache;
+        _options = options;
     }
 
     /// <inheritdoc />
@@ -30,6 +34,18 @@ public class PathShellResolver : IShellResolverStrategy
         if (string.IsNullOrEmpty(path) || path.Length <= 1)
         {
             return null;
+        }
+
+        // Check if path is excluded from shell resolution
+        if (_options.ExcludePaths != null && _options.ExcludePaths.Length > 0)
+        {
+            foreach (var excludedPath in _options.ExcludePaths)
+            {
+                if (path.StartsWith(excludedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null; // Don't resolve shells for excluded paths
+                }
+            }
         }
 
         // Extract first segment (skip leading slash)

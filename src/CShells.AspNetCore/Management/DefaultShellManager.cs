@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CShells.AspNetCore.Management;
 
+// TODO: Move this to CShells core library, since we no longer have direct coupling with ASP.NET Core (instead, we go through the mediator pattern / notification publisher).
+
 /// <summary>
 /// Default implementation of <see cref="IShellManager"/> that manages shell lifecycle
 /// and integrates with endpoint routing for dynamic shell loading.

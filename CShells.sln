@@ -39,6 +39,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CShells.Workbench", "sample
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CShells.Tests.EndToEnd", "tests\CShells.Tests.EndToEnd\CShells.Tests.EndToEnd.csproj", "{E7478309-4194-4AAC-8E00-EBDBEE668D66}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{09843463-D39C-41EC-BD73-DE2487FCB7B8}"
+	ProjectSection(SolutionItems) = preProject
+		docs\integration-patterns.md = docs\integration-patterns.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

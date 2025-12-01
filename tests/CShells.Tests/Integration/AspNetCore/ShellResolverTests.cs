@@ -66,7 +66,8 @@ public class ShellResolverTests
     {
         // Arrange
         var cache = CreateCacheWithPathShells();
-        var resolver = new PathShellResolver(cache);
+        var options = new PathShellResolverOptions();
+        var resolver = new PathShellResolver(cache, options);
         var context = CreateResolutionContext(path: $"/{Tenant1Path}/api/users");
 
         // Act
@@ -81,7 +82,8 @@ public class ShellResolverTests
     {
         // Arrange
         var cache = CreateCacheWithPathShells();
-        var resolver = new PathShellResolver(cache);
+        var options = new PathShellResolverOptions();
+        var resolver = new PathShellResolver(cache, options);
         var context = CreateResolutionContext(path: "/unknown/api");
 
         // Act
@@ -96,7 +98,8 @@ public class ShellResolverTests
     {
         // Arrange
         var cache = CreateCacheWithPathShells();
-        var resolver = new PathShellResolver(cache);
+        var options = new PathShellResolverOptions();
+        var resolver = new PathShellResolver(cache, options);
         var context = CreateResolutionContext(path: "/TENANT1/api");
 
         // Act
@@ -118,8 +121,85 @@ public class ShellResolverTests
     public void PathShellResolver_Constructor_WithNullCache_ThrowsArgumentNullException()
     {
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new PathShellResolver(null!));
+        var options = new PathShellResolverOptions();
+        var ex = Assert.Throws<ArgumentNullException>(() => new PathShellResolver(null!, options));
         Assert.Equal("cache", ex.ParamName);
+    }
+
+    [Fact(DisplayName = "PathShellResolver with excluded path returns null")]
+    public void PathShellResolver_WithExcludedPath_ReturnsNull()
+    {
+        // Arrange
+        var cache = CreateCacheWithPathShells();
+        var options = new PathShellResolverOptions
+        {
+            ExcludePaths = ["/api", "/admin"]
+        };
+        var resolver = new PathShellResolver(cache, options);
+        var context = CreateResolutionContext(path: "/api/users");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact(DisplayName = "PathShellResolver with excluded path prefix returns null")]
+    public void PathShellResolver_WithExcludedPathPrefix_ReturnsNull()
+    {
+        // Arrange
+        var cache = CreateCacheWithPathShells();
+        var options = new PathShellResolverOptions
+        {
+            ExcludePaths = ["/api"]
+        };
+        var resolver = new PathShellResolver(cache, options);
+        var context = CreateResolutionContext(path: "/api/users/123");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact(DisplayName = "PathShellResolver with non-excluded path resolves normally")]
+    public void PathShellResolver_WithNonExcludedPath_ReturnsShellId()
+    {
+        // Arrange
+        var cache = CreateCacheWithPathShells();
+        var options = new PathShellResolverOptions
+        {
+            ExcludePaths = ["/api", "/admin"]
+        };
+        var resolver = new PathShellResolver(cache, options);
+        var context = CreateResolutionContext(path: $"/{Tenant1Path}/api/users");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Equal(new ShellId("Tenant1Shell"), result);
+    }
+
+    [Fact(DisplayName = "PathShellResolver with excluded paths is case-insensitive")]
+    public void PathShellResolver_WithExcludedPath_IsCaseInsensitive()
+    {
+        // Arrange
+        var cache = CreateCacheWithPathShells();
+        var options = new PathShellResolverOptions
+        {
+            ExcludePaths = ["/api"]
+        };
+        var resolver = new PathShellResolver(cache, options);
+        var context = CreateResolutionContext(path: "/API/users");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Null(result);
     }
 
     #region Helper Methods

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
 
 namespace CShells.AspNetCore.Routing;
@@ -13,6 +15,16 @@ public class DynamicShellEndpointDataSource : EndpointDataSource
     private readonly List<Endpoint> _endpoints = [];
     private readonly Lock _lock = new();
     private CancellationTokenSource _cts = new();
+    private readonly ILogger<DynamicShellEndpointDataSource> _logger;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DynamicShellEndpointDataSource"/> class.
+    /// </summary>
+    /// <param name="logger">Optional logger for diagnostic output.</param>
+    public DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSource>? logger = null)
+    {
+        _logger = logger ?? NullLogger<DynamicShellEndpointDataSource>.Instance;
+    }
 
     /// <summary>
     /// Gets the current collection of endpoints.
@@ -44,9 +56,87 @@ public class DynamicShellEndpointDataSource : EndpointDataSource
     {
         lock (_lock)
         {
-            _endpoints.AddRange(endpoints);
+            var newEndpoints = endpoints.ToList();
+
+            // Check for potential conflicts with existing endpoints
+            DetectPathConflicts(newEndpoints);
+
+            _endpoints.AddRange(newEndpoints);
             NotifyChanged();
         }
+    }
+
+    /// <summary>
+    /// Detects potential path conflicts between new endpoints and existing endpoints.
+    /// Logs warnings when conflicts are detected.
+    /// </summary>
+    /// <param name="newEndpoints">The endpoints being added.</param>
+    private void DetectPathConflicts(List<Endpoint> newEndpoints)
+    {
+        foreach (var newEndpoint in newEndpoints.OfType<RouteEndpoint>())
+        {
+            var newPattern = newEndpoint.RoutePattern.RawText ?? "";
+            var newMethod = newEndpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.FirstOrDefault() ?? "ANY";
+            var newShellMetadata = newEndpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+
+            foreach (var existingEndpoint in _endpoints.OfType<RouteEndpoint>())
+            {
+                var existingPattern = existingEndpoint.RoutePattern.RawText ?? "";
+                var existingMethod = existingEndpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.FirstOrDefault() ?? "ANY";
+                var existingShellMetadata = existingEndpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+
+                // Check if patterns match and methods overlap
+                if (PatternsConflict(newPattern, existingPattern) && MethodsConflict(newMethod, existingMethod))
+                {
+                    if (newShellMetadata != null && existingShellMetadata != null)
+                    {
+                        _logger.LogWarning(
+                            "Path conflict detected: Shell '{NewShell}' endpoint '{NewMethod} {NewPattern}' conflicts with shell '{ExistingShell}' endpoint '{ExistingMethod} {ExistingPattern}'. " +
+                            "This may cause routing ambiguity.",
+                            newShellMetadata.ShellId, newMethod, newPattern,
+                            existingShellMetadata.ShellId, existingMethod, existingPattern);
+                    }
+                    else if (newShellMetadata != null)
+                    {
+                        _logger.LogWarning(
+                            "Path conflict detected: Shell '{NewShell}' endpoint '{NewMethod} {NewPattern}' conflicts with host application endpoint '{ExistingMethod} {ExistingPattern}'. " +
+                            "Shell routes may override host routes.",
+                            newShellMetadata.ShellId, newMethod, newPattern, existingMethod, existingPattern);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Determines if two route patterns conflict (could match the same request).
+    /// </summary>
+    private static bool PatternsConflict(string pattern1, string pattern2)
+    {
+        // Exact match is definitely a conflict
+        if (string.Equals(pattern1, pattern2, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Both empty/root patterns conflict
+        if (string.IsNullOrEmpty(pattern1) && string.IsNullOrEmpty(pattern2))
+            return true;
+
+        // For now, use simple exact matching
+        // A more sophisticated implementation would parse route templates and check parameter patterns
+        return false;
+    }
+
+    /// <summary>
+    /// Determines if two HTTP methods conflict.
+    /// </summary>
+    private static bool MethodsConflict(string method1, string method2)
+    {
+        // ANY matches everything
+        if (method1 == "ANY" || method2 == "ANY")
+            return true;
+
+        // Same method conflicts
+        return string.Equals(method1, method2, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

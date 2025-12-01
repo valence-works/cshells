@@ -1,0 +1,304 @@
+~~~~# CShells Integration Patterns with Host Applications
+
+This guide explains how to safely integrate CShells into existing ASP.NET Core applications without conflicts.
+
+## Overview
+
+CShells uses **endpoint routing** to register shell-specific endpoints dynamically. When integrating CShells into an existing application, you need to ensure that shell routes don't conflict with your host application's routes.
+
+## Safe Integration Patterns
+
+### ✅ Pattern 1: Dedicated Path Prefixes (Recommended)
+
+Use unique path prefixes for each shell to isolate shell routes from host routes:
+
+```json
+// Acme.json
+{
+  "name": "Acme",
+  "features": ["Core", "Payment"],
+  "properties": {
+    "CShells.AspNetCore.Path": "tenants/acme"
+  }
+}
+
+// Contoso.json
+{
+  "name": "Contoso",
+  "features": ["Core", "Payment"],
+  "properties": {
+    "CShells.AspNetCore.Path": "tenants/contoso"
+  }
+}
+```
+
+**Result:**
+- Shell routes: `/tenants/acme/*`, `/tenants/contoso/*`
+- Host routes: Any other paths (e.g., `/api/*`, `/admin/*`, `/`)
+- **No conflicts!**
+
+### ✅ Pattern 2: Subdomain-Based Isolation
+
+Use `HostShellResolver` to isolate shells by subdomain:
+
+```json
+// Acme.json
+{
+  "name": "Acme",
+  "properties": {
+    "CShells.AspNetCore.Host": "acme.example.com"
+  }
+}
+```
+
+```csharp
+// Startup
+builder.AddCShells(cshells =>
+{
+    cshells.WithFluentStorageProvider(blobStorage);
+    cshells.WithHostResolver(); // Resolve by subdomain
+});
+```
+
+**Result:**
+- `acme.example.com` → Acme shell routes
+- `contoso.example.com` → Contoso shell routes
+- `www.example.com` or `example.com` → Host application routes
+- **No conflicts!**
+
+### ✅ Pattern 3: Mixed Mode (Host + Shells)
+
+Combine host routes with shell routes using careful path planning:
+
+```csharp
+var app = builder.Build();
+
+// Register host routes FIRST (before MapCShells)
+app.MapGet("/", () => "Host Home Page");
+app.MapControllers(); // Host API controllers at /api/*
+
+// Register shell routes
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapCShells(); // Shell routes at configured prefixes
+});
+```
+
+**Best Practices:**
+- ✅ Host routes without path prefixes (e.g., `/`, `/api/*`, `/admin/*`)
+- ✅ Shell routes with path prefixes (e.g., `/apps/*`, `/tenants/*`)
+- ✅ Register host routes BEFORE `MapCShells()`
+
+### ⚠️ Pattern 4: Root-Level Shell (Advanced)
+
+Use an empty path prefix when the **entire application** is multi-tenant:
+
+```json
+{
+  "name": "Default",
+  "properties": {
+    "CShells.AspNetCore.Path": ""
+  }
+}
+```
+
+**⚠️ Warning:**
+- Shell routes will match **ALL requests** at the root level
+- Host application routes may be **shadowed** by shell routes
+- Only use this pattern if your entire app is multi-tenant with no shared host routes
+
+## Conflict Detection
+
+CShells automatically detects and warns about path conflicts during endpoint registration:
+
+```
+warn: Path conflict detected: Shell 'Acme' endpoint 'GET /api/users' conflicts with
+      shell 'Contoso' endpoint 'GET /api/users'. This may cause routing ambiguity.
+```
+
+```
+warn: Path conflict detected: Shell 'Default' endpoint 'GET /' conflicts with host
+      application endpoint 'GET /'. Shell routes may override host routes.
+```
+
+**When you see these warnings:**
+1. Review your shell path configurations
+2. Ensure shells use unique path prefixes
+3. Consider subdomain-based routing if path-based routing causes conflicts
+
+## Configuration Options
+
+### Exclude Paths from Shell Resolution
+
+Prevent shell resolution for specific paths (e.g., admin panels, health checks):
+
+```csharp
+builder.AddCShells(cshells =>
+{
+    cshells.WithFluentStorageProvider(blobStorage);
+    cshells.WithPathResolver(options =>
+    {
+        // Exclude these paths from shell resolution
+        options.ExcludePaths = new[] { "/admin", "/health", "/swagger" };
+    });
+});
+```
+
+**Result:**
+- Requests to `/admin/*`, `/health`, `/swagger/*` → Never resolve to shells
+- Other requests → Normal shell resolution applies
+
+## Middleware Ordering
+
+**Correct order is critical:**
+
+```csharp
+var app = builder.Build();
+
+// 1. Exception handling
+app.UseExceptionHandler("/Error");
+
+// 2. HTTPS redirection
+app.UseHttpsRedirection();
+
+// 3. Static files (host application)
+app.UseStaticFiles();
+
+// 4. Routing
+app.UseRouting();
+
+// 5. Authentication/Authorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+// 6. CShells middleware (resolves shell and sets RequestServices)
+app.UseCShells();
+
+// 7. Endpoints
+app.UseEndpoints(endpoints =>
+{
+    // Host routes first
+    app.MapControllers();
+
+    // Shell routes last
+    endpoints.MapCShells();
+});
+```
+
+## Troubleshooting
+
+### Issue: "Ambiguous match" errors
+
+**Symptoms:**
+```
+Microsoft.AspNetCore.Routing.Matching.AmbiguousMatchException:
+The request matched multiple endpoints
+```
+
+**Solutions:**
+1. Check logs for path conflict warnings
+2. Ensure each shell has a unique path prefix
+3. Review shell JSON configurations
+4. Use `options.ExcludePaths` to protect host routes
+
+### Issue: Host routes not working
+
+**Symptoms:**
+- Requests to host routes return 404
+- Shell routes work but host routes don't
+
+**Solutions:**
+1. Verify middleware ordering (`UseCShells()` before `UseEndpoints()`)
+2. Ensure host routes are registered before `MapCShells()`
+3. Check if a root-level shell (`Path: ""`) is shadowing host routes
+4. Use path exclusions to protect host routes
+
+### Issue: Shell routes not working
+
+**Symptoms:**
+- All requests go to host application
+- Shell endpoints return 404
+
+**Solutions:**
+1. Verify `MapCShells()` is called in `UseEndpoints()`
+2. Check shell JSON files have correct path prefixes
+3. Ensure shell settings are loaded (check logs: "Loaded N shell(s)")
+4. Verify shell resolver is configured (`WithPathResolver()` or `WithHostResolver()`)
+
+## Example: Complete Integration
+
+```csharp
+// Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+// Host services
+builder.Services.AddControllers();
+builder.Services.AddSwaggerGen();
+
+// CShells services
+var shellsPath = Path.Combine(builder.Environment.ContentRootPath, "Shells");
+var blobStorage = StorageFactory.Blobs.DirectoryFiles(shellsPath);
+
+builder.AddCShells(cshells =>
+{
+    cshells.WithFluentStorageProvider(blobStorage);
+    cshells.WithPathResolver(options =>
+    {
+        // Protect host routes from shell resolution
+        options.ExcludePaths = new[] { "/api", "/swagger", "/health" };
+    });
+    cshells.WithEndpointRouting();
+}, assemblies: [typeof(Program).Assembly]);
+
+var app = builder.Build();
+
+// Middleware pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
+
+// CShells middleware
+app.UseCShells();
+
+// Endpoints
+app.UseEndpoints(endpoints =>
+{
+    // Host routes
+    endpoints.MapGet("/", () => "Host Home");
+    endpoints.MapControllers(); // /api/*
+    endpoints.MapHealthChecks("/health");
+
+    // Shell routes (under /tenants/*)
+    endpoints.MapCShells();
+});
+
+app.Run();
+```
+
+## Best Practices Summary
+
+✅ **DO:**
+- Use dedicated path prefixes for shells (`/tenants/*`, `/apps/*`)
+- Use subdomain-based routing for complete isolation
+- Register host routes before `MapCShells()`
+- Use path exclusions to protect critical host routes
+- Monitor logs for path conflict warnings
+
+❌ **DON'T:**
+- Use empty path prefixes unless entire app is multi-tenant
+- Mix root-level shell routes with root-level host routes
+- Ignore path conflict warnings in logs
+- Skip middleware ordering best practices
+
+## Further Reading
+
+- [Shell Resolution Strategies](./shell-resolution.md)
+- [Dynamic Shell Management](./shell-management.md)
+- [Endpoint Routing Architecture](./endpoint-routing.md)
