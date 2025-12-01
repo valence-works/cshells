@@ -59,7 +59,7 @@ public class ShellMiddleware
             return;
         }
 
-        _logger.LogDebug("Resolved shell '{ShellId}' for request", shellId.Value);
+        _logger.LogInformation("Resolved shell '{ShellId}' for request path '{Path}'", shellId.Value, context.Request.Path);
 
         var shellContext = _host.GetShell(shellId.Value);
         var originalRequestServices = context.RequestServices;

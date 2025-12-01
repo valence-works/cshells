@@ -7,6 +7,7 @@ namespace CShells.AspNetCore.Resolution;
 /// A shell resolver strategy that determines the shell based on the first segment of the request URL path.
 /// Reads shell settings from the cache at runtime to find matching Path properties.
 /// </summary>
+[ResolverOrder(0)]
 public class PathShellResolver : IShellResolverStrategy
 {
     private readonly IShellSettingsCache _cache;

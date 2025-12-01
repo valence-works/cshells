@@ -7,6 +7,7 @@ namespace CShells.AspNetCore.Resolution;
 /// A shell resolver strategy that determines the shell based on the HTTP host header.
 /// Reads shell settings from the cache at runtime to find matching Host properties.
 /// </summary>
+[ResolverOrder(0)]
 public class HostShellResolver : IShellResolverStrategy
 {
     private readonly IShellSettingsCache _cache;

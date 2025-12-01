@@ -5,6 +5,7 @@ using CShells.Notifications;
 using CShells.Resolution;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace CShells.AspNetCore.Configuration;
 
@@ -18,12 +19,13 @@ public static class CShellsBuilderExtensions
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
     /// <param name="configure">Optional configuration action for path resolver options.</param>
+    /// <param name="order">Optional execution order. If not specified, uses the order from <see cref="ResolverOrderAttribute"/> (default: 0).</param>
     /// <returns>The builder for method chaining.</returns>
     /// <remarks>
     /// This method registers <see cref="PathShellResolver"/> to resolve shells by URL path segment.
     /// The resolver queries shell properties at runtime from the shell settings cache.
     /// </remarks>
-    public static CShellsBuilder WithPathResolver(this CShellsBuilder builder, Action<PathShellResolverOptions>? configure = null)
+    public static CShellsBuilder WithPathResolver(this CShellsBuilder builder, Action<PathShellResolverOptions>? configure = null, int? order = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
@@ -33,6 +35,12 @@ public static class CShellsBuilderExtensions
         builder.Services.TryAddSingleton(options);
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, PathShellResolver>());
 
+        // Configure order if specified
+        if (order.HasValue)
+        {
+            builder.Services.Configure<ShellResolverOptions>(opt => opt.SetOrder<PathShellResolver>(order.Value));
+        }
+
         return builder;
     }
 
@@ -40,16 +48,23 @@ public static class CShellsBuilderExtensions
     /// Registers the host-based shell resolver.
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
+    /// <param name="order">Optional execution order. If not specified, uses the order from <see cref="ResolverOrderAttribute"/> (default: 0).</param>
     /// <returns>The builder for method chaining.</returns>
     /// <remarks>
     /// This method registers <see cref="HostShellResolver"/> to resolve shells by HTTP host name.
     /// The resolver queries shell properties at runtime from the shell settings cache.
     /// </remarks>
-    public static CShellsBuilder WithHostResolver(this CShellsBuilder builder)
+    public static CShellsBuilder WithHostResolver(this CShellsBuilder builder, int? order = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, HostShellResolver>());
+
+        // Configure order if specified
+        if (order.HasValue)
+        {
+            builder.Services.Configure<ShellResolverOptions>(opt => opt.SetOrder<HostShellResolver>(order.Value));
+        }
 
         return builder;
     }
@@ -98,6 +113,7 @@ public static class CShellsBuilderExtensions
     /// </summary>
     /// <typeparam name="TStrategy">The type of the resolver strategy to register.</typeparam>
     /// <param name="builder">The CShells builder.</param>
+    /// <param name="order">Optional execution order. If not specified, uses the order from <see cref="ResolverOrderAttribute"/> (default: 100).</param>
     /// <returns>The builder for method chaining.</returns>
     /// <remarks>
     /// Use this method to register custom resolver strategies such as claim-based, header-based,
@@ -109,16 +125,22 @@ public static class CShellsBuilderExtensions
     /// builder.AddCShells(cshells =>
     /// {
     ///     cshells.WithResolverStrategy&lt;ClaimBasedShellResolver&gt;();
-    ///     cshells.WithResolverStrategy&lt;HeaderBasedShellResolver&gt;();
+    ///     cshells.WithResolverStrategy&lt;HeaderBasedShellResolver&gt;(order: 50);
     /// });
     /// </code>
     /// </example>
-    public static CShellsBuilder WithResolverStrategy<TStrategy>(this CShellsBuilder builder)
+    public static CShellsBuilder WithResolverStrategy<TStrategy>(this CShellsBuilder builder, int? order = null)
         where TStrategy : class, IShellResolverStrategy
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, TStrategy>());
+
+        // Configure order if specified
+        if (order.HasValue)
+        {
+            builder.Services.Configure<ShellResolverOptions>(opt => opt.SetOrder<TStrategy>(order.Value));
+        }
 
         return builder;
     }
@@ -128,6 +150,7 @@ public static class CShellsBuilderExtensions
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
     /// <param name="strategy">The resolver strategy instance to register.</param>
+    /// <param name="order">Optional execution order. If not specified, uses the order from <see cref="ResolverOrderAttribute"/> (default: 100).</param>
     /// <returns>The builder for method chaining.</returns>
     /// <remarks>
     /// Use this method to register a pre-configured instance of a custom resolver strategy.
@@ -138,16 +161,22 @@ public static class CShellsBuilderExtensions
     /// var customResolver = new CustomShellResolver(someConfig);
     /// builder.AddCShells(cshells =>
     /// {
-    ///     cshells.WithResolverStrategy(customResolver);
+    ///     cshells.WithResolverStrategy(customResolver, order: 75);
     /// });
     /// </code>
     /// </example>
-    public static CShellsBuilder WithResolverStrategy(this CShellsBuilder builder, IShellResolverStrategy strategy)
+    public static CShellsBuilder WithResolverStrategy(this CShellsBuilder builder, IShellResolverStrategy strategy, int? order = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(strategy);
 
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy>(strategy));
+
+        // Configure order if specified
+        if (order.HasValue)
+        {
+            builder.Services.Configure<ShellResolverOptions>(opt => opt.SetOrder(strategy.GetType(), order.Value));
+        }
 
         return builder;
     }

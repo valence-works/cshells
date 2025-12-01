@@ -1,5 +1,6 @@
 using CShells.AspNetCore.Configuration;
 using CShells.AspNetCore.Extensions;
+using CShells.DependencyInjection;
 using CShells.Providers.FluentStorage;
 using FluentStorage;
 
@@ -22,12 +23,15 @@ builder.AddCShells(cshells =>
     // Load shell settings from FluentStorage
     cshells.WithFluentStorageProvider(blobStorage);
 
-    // Automatically register Path/Host resolvers from shell properties
-    cshells.WithStandardResolvers();
-
-    // Enable endpoint routing for dynamic shell loading
-    cshells.WithEndpointRouting();
 }, assemblies: [typeof(Program).Assembly]);
+
+// Or simply register shells from configuration (appsettings.json):
+// Register CShells ASP.NET Core integration with defaults (standard resolvers + endpoint routing)
+builder.AddCShells( cshells =>
+{
+    // Load shell settings from appsettings.json
+    cshells.WithConfigurationProvider(builder.Configuration);
+}, [typeof(Program).Assembly]);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
