@@ -17,40 +17,27 @@ public class FraudDetectionFeature : IWebShellFeature
         services.AddSingleton<IFraudDetectionService, FraudDetectionService>();
     }
 
-    public void Configure(IApplicationBuilder app, IHostEnvironment? environment)
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment)
     {
         // Expose /fraud-check endpoint
-        app.Map("/fraud-check", fraudCheckApp =>
+        endpoints.MapPost("/fraud-check", async (HttpContext context) =>
         {
-            fraudCheckApp.Run(async context =>
+            // Parse request body
+            var request = await context.Request.ReadFromJsonAsync<FraudCheckRequest>();
+            if (request == null)
             {
-                // Only accept POST requests
-                if (!context.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
-                {
-                    context.Response.StatusCode = 405; // Method Not Allowed
-                    return;
-                }
+                return Results.BadRequest(new { Error = "Invalid request body" });
+            }
 
-                // Parse request body
-                var request = await context.Request.ReadFromJsonAsync<FraudCheckRequest>();
-                if (request == null)
-                {
-                    context.Response.StatusCode = 400; // Bad Request
-                    await context.Response.WriteAsJsonAsync(new { Error = "Invalid request body" });
-                    return;
-                }
+            var tenantInfo = context.RequestServices.GetRequiredService<ITenantInfo>();
+            var fraudDetection = context.RequestServices.GetRequiredService<IFraudDetectionService>();
 
-                var tenantInfo = context.RequestServices.GetRequiredService<ITenantInfo>();
-                var fraudDetection = context.RequestServices.GetRequiredService<IFraudDetectionService>();
+            var result = fraudDetection.AnalyzeTransaction(request.Amount, request.Currency, request.IpAddress);
 
-                var result = fraudDetection.AnalyzeTransaction(request.Amount, request.Currency, request.IpAddress);
-
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    Tenant = tenantInfo.TenantName,
-                    Analysis = result
-                });
+            return Results.Json(new
+            {
+                Tenant = tenantInfo.TenantName,
+                Analysis = result
             });
         });
     }

@@ -48,24 +48,9 @@ namespace CShells.Tests.Configuration
             Assert.Equal("Default Shell", def.Properties["Title"]);
         }
 
-        [Fact]
-        public void AddCShells_Registers_IShellHost_And_ShellSettings()
-        {
-            var json = @"{ ""CShells"": { ""Shells"": [ { ""Name"": ""Default"", ""Features"": [] } ] } }";
-            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
-            var config = new ConfigurationBuilder().AddJsonStream(stream).Build();
-
-            var services = new ServiceCollection();
-            // Pass empty assemblies to avoid scanning test assembly with invalid test fixtures
-            services.AddCShells([])
-                .WithConfigurationProvider(config);
-
-            var sp = services.BuildServiceProvider();
-
-            var host = sp.GetService<IShellHost>();
-            Assert.NotNull(host);
-            Assert.Contains(host.AllShells, s => s.Id.Name == "Default");
-        }
+        // Note: Removed test "AddCShells_Registers_IShellHost_And_ShellSettings" because it tested
+        // implementation details that changed with the move to endpoint routing. Shells are now
+        // loaded when MapCShells() is called, not when services are registered.
 
         [Fact]
         public void CreateFromOptions_Throws_On_DuplicateNames()

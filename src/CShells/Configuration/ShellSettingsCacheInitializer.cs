@@ -40,10 +40,13 @@ public class ShellSettingsCacheInitializer : IHostedService
         try
         {
             var settings = await _provider.GetShellSettingsAsync(cancellationToken);
-            _cache.Load(settings);
+            var settingsList = settings.ToList();
+            _cache.Load(settingsList);
 
-            var count = _cache.GetAll().Count;
-            _logger.LogInformation("Loaded {Count} shell(s) into cache", count);
+            _logger.LogInformation("Loaded {Count} shell(s) into cache", settingsList.Count);
+
+            // Note: We don't publish ShellsReloadedNotification here because MapCShells() will handle
+            // endpoint registration for shells loaded during startup. This avoids duplicate registrations.
         }
         catch (Exception ex)
         {

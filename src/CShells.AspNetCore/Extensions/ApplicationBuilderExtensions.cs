@@ -1,11 +1,12 @@
-using CShells.AspNetCore.Features;
+using CShells.AspNetCore.Management;
 using CShells.AspNetCore.Middleware;
-using CShells.AspNetCore.Resolution;
+using CShells.AspNetCore.Routing;
 using CShells.Configuration;
 using CShells.Features;
 using CShells.Hosting;
-using CShells.Resolution;
+using CShells.Management;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -14,321 +15,190 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace CShells.AspNetCore.Extensions;
 
 /// <summary>
-/// Extension methods for configuring CShells middleware in the ASP.NET Core pipeline.
+/// Extension methods for configuring CShells middleware and endpoint routing.
 /// </summary>
 public static class ApplicationBuilderExtensions
 {
-    // Static flag to ensure web shell features are only configured once per process.
-    private static bool _webShellFeaturesConfigured;
-
-    // Lock object for thread-safe initialization of web shell features.
-    private static readonly Lock ConfigurationLock = new();
-
     /// <summary>
-    /// Adds the CShells middleware to the application pipeline and configures all discovered
-    /// <see cref="IWebShellFeature"/> implementations that are enabled for at least one shell.
+    /// Adds CShells endpoint routing to the application pipeline.
+    /// This must be called after UseRouting() and before UseEndpoints().
     /// </summary>
+    /// <param name="app">The application builder.</param>
+    /// <returns>The application builder for method chaining.</returns>
     /// <remarks>
     /// <para>
-    /// This method performs two main operations:
-    /// </para>
-    /// <list type="number">
-    ///   <item>
-    ///     <description>
-    ///     Adds <see cref="ShellMiddleware"/> which resolves the current shell for each request
-    ///     and sets the appropriate <see cref="Microsoft.AspNetCore.Http.HttpContext.RequestServices"/> scope.
-    ///     </description>
-    ///   </item>
-    ///   <item>
-    ///     <description>
-    ///     Discovers all feature types implementing <see cref="IWebShellFeature"/> from feature descriptors
-    ///     and calls their <see cref="IWebShellFeature.Configure"/> method to configure the application pipeline,
-    ///     but only for features that are enabled for at least one shell. This prevents runtime errors
-    ///     when endpoints are mapped for features whose services are not registered.
-    ///     </description>
-    ///   </item>
-    /// </list>
-    /// <para>
-    /// <see cref="IWebShellFeature"/> implementations are instantiated using the root <see cref="IServiceProvider"/>
-    /// via <see cref="ActivatorUtilities.CreateInstance"/>, allowing constructors to depend on root-level services.
+    /// This method configures dynamic endpoint routing for multi-tenant shell applications.
+    /// Shells can be loaded at startup from configuration or asynchronously from storage,
+    /// and can be added, removed, or updated at runtime without restarting the application.
     /// </para>
     /// <para>
-    /// Web shell feature configuration is idempotent: even if <c>UseCShells()</c> is called multiple times,
-    /// the <see cref="IWebShellFeature.Configure"/> methods will only be invoked once per process.
-    /// Features are configured in deterministic order (by feature name, case-insensitive ascending).
+    /// Proper usage:
+    /// <code>
+    /// app.UseRouting();
+    /// app.UseCShells();
+    /// app.UseEndpoints(endpoints => { endpoints.MapCShells(); });
+    /// </code>
     /// </para>
     /// </remarks>
-    /// <param name="app">The application builder.</param>
-    /// <returns>The application builder for chaining.</returns>
     public static IApplicationBuilder UseCShells(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
 
+        var logger = app.ApplicationServices.GetService<ILoggerFactory>()
+            ?.CreateLogger(typeof(ApplicationBuilderExtensions))
+            ?? NullLogger.Instance;
+
+        logger.LogInformation("Configuring CShells endpoint routing");
+
+        // Add shell resolution middleware (sets current shell context on request)
         app.UseMiddleware<ShellMiddleware>();
 
-        ConfigureWebShellFeatures(app);
+        logger.LogInformation("CShells endpoint routing configured successfully");
 
         return app;
     }
 
     /// <summary>
-    /// Configures all discovered <see cref="IWebShellFeature"/> implementations that are enabled for at least one shell.
-    /// This method is idempotent and will only execute feature configuration once per process.
+    /// Configures CShells endpoints. This should be called within UseEndpoints().
     /// </summary>
-    /// <param name="app">The application builder.</param>
-    private static void ConfigureWebShellFeatures(IApplicationBuilder app)
+    /// <param name="endpoints">The endpoint route builder.</param>
+    /// <returns>The endpoint convention builder.</returns>
+    /// <example>
+    /// <code>
+    /// app.UseEndpoints(endpoints =>
+    /// {
+    ///     endpoints.MapCShells();
+    ///     endpoints.MapControllers();
+    /// });
+    /// </code>
+    /// </example>
+    public static IEndpointConventionBuilder MapCShells(this IEndpointRouteBuilder endpoints)
     {
-        // Fast path: skip if already configured
-        // ReSharper disable once InconsistentlySynchronizedField
-        if (_webShellFeaturesConfigured)
-            return;
+        var logger = endpoints.ServiceProvider.GetService<ILoggerFactory>()
+            ?.CreateLogger(typeof(ApplicationBuilderExtensions))
+            ?? NullLogger.Instance;
 
-        lock (ConfigurationLock)
+        logger.LogInformation("Mapping CShells endpoints");
+
+        // Capture the endpoint route builder in the accessor so notification handlers can use it
+        var accessor = endpoints.ServiceProvider.GetRequiredService<EndpointRouteBuilderAccessor>();
+        accessor.EndpointRouteBuilder = endpoints;
+
+        // Get the dynamic endpoint data source
+        var endpointDataSource = endpoints.ServiceProvider.GetRequiredService<DynamicShellEndpointDataSource>();
+
+        // Add the data source to the endpoint route builder
+        // This makes all shell endpoints available to the routing system
+        endpoints.DataSources.Add(endpointDataSource);
+
+        // Register endpoints for any shells already in the cache
+        // This handles shells loaded synchronously from configuration at startup
+        RegisterEndpointsForCachedShells(endpoints.ServiceProvider, logger);
+
+        logger.LogInformation("CShells endpoints mapped successfully");
+
+        // Return a convention builder (even though we don't have specific conventions to apply)
+        return new EndpointConventionBuilder(endpointDataSource);
+    }
+
+    /// <summary>
+    /// Registers endpoints for shells by loading them from the provider if not already in cache.
+    /// This is called once during application startup to handle shells loaded from configuration.
+    /// </summary>
+    private static void RegisterEndpointsForCachedShells(IServiceProvider serviceProvider, ILogger logger)
+    {
+        logger.LogDebug("Loading shells for endpoint registration");
+
+        var cache = serviceProvider.GetRequiredService<IShellSettingsCache>();
+        var provider = serviceProvider.GetRequiredService<IShellSettingsProvider>();
+        var notificationPublisher = serviceProvider.GetRequiredService<CShells.Notifications.INotificationPublisher>();
+
+        // Check if cache is already populated
+        var allSettings = cache.GetAll().ToList();
+
+        // If cache is empty, load shells synchronously from the provider
+        // This ensures endpoints are registered before the application starts accepting requests
+        if (allSettings.Count == 0)
         {
-            // Double-check after acquiring lock.
-            if (_webShellFeaturesConfigured)
-                return;
+            logger.LogDebug("Cache is empty, loading shells from provider");
+            var settingsTask = provider.GetShellSettingsAsync(CancellationToken.None);
+            settingsTask.Wait(); // Synchronous wait during startup is acceptable
+            allSettings = settingsTask.Result.ToList();
 
-            _webShellFeaturesConfigured = true;
-
-            var rootProvider = app.ApplicationServices;
-            var environment = rootProvider.GetService<IHostEnvironment>();
-            var loggerFactory = rootProvider.GetService<ILoggerFactory>();
-            var logger = loggerFactory?.CreateLogger(typeof(ApplicationBuilderExtensions)) ?? NullLogger.Instance;
-
-            var descriptors = DiscoverWebShellFeatures(logger);
-            if (descriptors == null)
-                return;
-
-            var (enabledFeatureIds, shouldFilterFeatures) = GetEnabledFeatureIds(rootProvider, logger);
-            var pathMappings = GetPathMappings(rootProvider);
-
-            foreach (var descriptor in descriptors)
+            if (allSettings.Count > 0)
             {
-                if (shouldFilterFeatures && !enabledFeatureIds.Contains(descriptor.Id))
+                // Load shells into cache (cast to concrete type since IShellSettingsCache doesn't expose Load)
+                if (cache is ShellSettingsCache concreteCache)
                 {
-                    logger.LogDebug("Skipping web shell feature '{FeatureId}' as it is not enabled for any shell", descriptor.Id);
-                    continue;
+                    concreteCache.Load(allSettings);
+                    logger.LogInformation("Loaded {Count} shell(s) from provider into cache", allSettings.Count);
                 }
-
-                ConfigureWebShellFeature(app, rootProvider, environment, descriptor, pathMappings, logger);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Discovers and filters web shell features from all loaded assemblies.
-    /// </summary>
-    /// <param name="logger">The logger instance.</param>
-    /// <returns>A list of web shell feature descriptors, or null if discovery fails.</returns>
-    private static IReadOnlyList<ShellFeatureDescriptor>? DiscoverWebShellFeatures(ILogger logger)
-    {
-        try
-        {
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic);
-            var allDescriptors = FeatureDiscovery.DiscoverFeatures(assemblies);
-
-            return allDescriptors
-                .Where(d => d.StartupType is not null && typeof(IWebShellFeature).IsAssignableFrom(d.StartupType))
-                .OrderBy(d => d.Id, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-        }
-        catch (InvalidOperationException ex)
-        {
-            logger.LogWarning(ex, "Failed to discover shell features for web configuration. Web shell features will not be configured.");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Configures a single web shell feature for all applicable shells.
-    /// </summary>
-    private static void ConfigureWebShellFeature(
-        IApplicationBuilder app,
-        IServiceProvider rootProvider,
-        IHostEnvironment? environment,
-        ShellFeatureDescriptor descriptor,
-        Dictionary<string, ShellId> pathMappings,
-        ILogger logger)
-    {
-        try
-        {
-            var featureFactory = rootProvider.GetRequiredService<IShellFeatureFactory>();
-
-            if (pathMappings.Count > 0)
-            {
-                ConfigureFeatureWithPathMappings(app, rootProvider, environment, descriptor, pathMappings, featureFactory);
+                else
+                {
+                    logger.LogWarning("Unable to load shells into cache: cache is not ShellSettingsCache type");
+                    return;
+                }
             }
             else
             {
-                ConfigureFeatureGlobally(app, rootProvider, environment, descriptor, featureFactory);
-            }
-
-            logger.LogDebug("Configured web shell feature '{FeatureId}' from type '{FeatureType}'",
-                descriptor.Id, descriptor.StartupType!.FullName);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to configure web shell feature '{FeatureId}' from type '{FeatureType}'",
-                descriptor.Id, descriptor.StartupType!.FullName);
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Configures a feature for shells with path mappings (e.g., /tenant1, /tenant2).
-    /// </summary>
-    private static void ConfigureFeatureWithPathMappings(
-        IApplicationBuilder app,
-        IServiceProvider rootProvider,
-        IHostEnvironment? environment,
-        ShellFeatureDescriptor descriptor,
-        Dictionary<string, ShellId> pathMappings,
-        IShellFeatureFactory featureFactory)
-    {
-        foreach (var (path, shellId) in pathMappings)
-        {
-            if (!IsFeatureEnabledForShell(rootProvider, shellId, descriptor.Id))
-                continue;
-
-            var shellSettings = GetShellSettings(rootProvider, shellId);
-            var feature = featureFactory.CreateFeature<IWebShellFeature>(descriptor.StartupType!, shellSettings);
-            var pathPrefix = string.IsNullOrEmpty(path) ? "" : "/" + path;
-            app.Map(pathPrefix, branch => feature.Configure(branch, environment));
-        }
-    }
-
-    /// <summary>
-    /// Configures a feature globally for all shells without path mappings.
-    /// </summary>
-    private static void ConfigureFeatureGlobally(
-        IApplicationBuilder app,
-        IServiceProvider rootProvider,
-        IHostEnvironment? environment,
-        ShellFeatureDescriptor descriptor,
-        IShellFeatureFactory featureFactory)
-    {
-        var shellHost = rootProvider.GetService<IShellHost>();
-        if (shellHost != null)
-        {
-            foreach (var shell in shellHost.AllShells)
-            {
-                if (shell.Settings.EnabledFeatures.Contains(descriptor.Id, StringComparer.OrdinalIgnoreCase))
-                {
-                    var feature = featureFactory.CreateFeature<IWebShellFeature>(descriptor.StartupType!, shell.Settings);
-                    feature.Configure(app, environment);
-                }
+                logger.LogDebug("No shells available from provider. Endpoints will be registered when shells are added.");
+                return;
             }
         }
         else
         {
-            // Fallback: No shell host - instantiate without shell settings
-            var feature = featureFactory.CreateFeature<IWebShellFeature>(descriptor.StartupType!, shellSettings: null);
-            feature.Configure(app, environment);
-        }
-    }
-
-    private static Dictionary<string, ShellId> GetPathMappings(IServiceProvider serviceProvider)
-    {
-        var mappings = new Dictionary<string, ShellId>(StringComparer.OrdinalIgnoreCase);
-
-        // Get path mappings from shell properties
-        var shellHost = serviceProvider.GetService<IShellHost>();
-        if (shellHost != null)
-        {
-            foreach (var shell in shellHost.AllShells)
-            {
-                if (shell.Settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathValue))
-                {
-                    // Handle both string and JsonElement values (from JSON deserialization)
-                    var path = pathValue switch
-                    {
-                        string s => s,
-                        System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.String => jsonElement.GetString(),
-                        _ => null
-                    };
-
-                    if (path != null)
-                    {
-                        mappings[path] = shell.Id;
-                    }
-                }
-            }
+            logger.LogDebug("Using {Count} shell(s) already in cache", allSettings.Count);
         }
 
-        return mappings;
-    }
+        logger.LogInformation("Registering endpoints for {Count} shell(s)", allSettings.Count);
 
-    private static ShellContext? GetShellContext(IServiceProvider rootProvider, ShellId shellId)
-    {
-        var shellHost = rootProvider.GetService<IShellHost>();
-        return shellHost?.AllShells.FirstOrDefault(s => s.Id == shellId);
-    }
+        // Publish notification synchronously to register endpoints via the notification handler
+        // This uses the same code path as dynamic shell loading
+        var notification = new CShells.Notifications.ShellsReloadedNotification(allSettings);
+        notificationPublisher.PublishAsync(notification, strategy: null, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
 
-    private static bool IsFeatureEnabledForShell(IServiceProvider rootProvider, ShellId shellId, string featureId)
-    {
-        var shell = GetShellContext(rootProvider, shellId);
-        return shell?.Settings.EnabledFeatures.Contains(featureId, StringComparer.OrdinalIgnoreCase) ?? true;
-    }
-
-    private static ShellSettings? GetShellSettings(IServiceProvider rootProvider, ShellId shellId)
-    {
-        return GetShellContext(rootProvider, shellId)?.Settings;
+        logger.LogInformation("Shell endpoint registration complete");
     }
 
     /// <summary>
-    /// Gets the set of feature IDs that are enabled for at least one shell.
+    /// Gets the path prefix for a shell from its properties.
     /// </summary>
-    /// <param name="rootProvider">The root service provider.</param>
-    /// <param name="logger">The logger instance.</param>
-    /// <returns>
-    /// A tuple containing:
-    /// - A hash set of enabled feature IDs (case-insensitive)
-    /// - A boolean indicating whether features should be filtered (false means configure all features for backwards compatibility)
-    /// </returns>
-    private static (HashSet<string> EnabledFeatureIds, bool ShouldFilter) GetEnabledFeatureIds(IServiceProvider rootProvider, ILogger logger)
+    private static string? GetPathPrefix(ShellSettings settings)
     {
-        // Access the cache directly to check if shells are available yet
-        // This avoids triggering shell construction before the cache is populated
-        var cache = rootProvider.GetService<IShellSettingsCache>();
-        if (cache is null)
+        if (settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathObj) &&
+            pathObj is string path &&
+            !string.IsNullOrWhiteSpace(path))
         {
-            logger.LogWarning("IShellSettingsCache not registered in service provider. All discovered web features will be configured.");
-            // Don't filter - configure all features (backwards compatibility)
-            return ([], false);
+            var trimmedPath = path.Trim();
+            if (!trimmedPath.StartsWith('/'))
+                trimmedPath = "/" + trimmedPath;
+            if (trimmedPath.EndsWith('/') && trimmedPath.Length > 1)
+                trimmedPath = trimmedPath.TrimEnd('/');
+
+            return trimmedPath;
         }
 
-        try
+        return null;
+    }
+
+    /// <summary>
+    /// A simple endpoint convention builder for shell endpoints.
+    /// </summary>
+    private class EndpointConventionBuilder : IEndpointConventionBuilder
+    {
+        private readonly DynamicShellEndpointDataSource _dataSource;
+
+        public EndpointConventionBuilder(DynamicShellEndpointDataSource dataSource)
         {
-            var allSettings = cache.GetAll();
-
-            // If no shells are configured yet (cache is empty), don't filter features
-            // This allows the application to start before shells are loaded by the hosted service
-            if (allSettings.Count == 0)
-            {
-                logger.LogInformation("No shells configured yet. All discovered web features will be configured.");
-                return ([], false);
-            }
-
-            // Collect all enabled feature IDs from all shells
-            var enabledFeatureIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var settings in allSettings)
-            {
-                foreach (var featureId in settings.EnabledFeatures)
-                {
-                    enabledFeatureIds.Add(featureId);
-                }
-            }
-
-            logger.LogDebug("Found {Count} unique enabled features across {ShellCount} shell(s)", enabledFeatureIds.Count, allSettings.Count);
-            return (enabledFeatureIds, true);
+            _dataSource = dataSource;
         }
-        catch (Exception ex)
+
+        public void Add(Action<EndpointBuilder> convention)
         {
-            logger.LogWarning(ex, "Failed to retrieve enabled features from shell settings cache. All discovered web features will be configured.");
-            // Don't filter - configure all features (backwards compatibility)
-            return ([], false);
+            // Conventions can be applied to all endpoints in the data source
+            // For now, we don't need to support this, but it's here for extensibility
         }
     }
 }

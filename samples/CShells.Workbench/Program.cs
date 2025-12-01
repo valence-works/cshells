@@ -24,6 +24,9 @@ builder.AddCShells(cshells =>
 
     // Automatically register Path/Host resolvers from shell properties
     cshells.WithAutoResolvers();
+
+    // Enable endpoint routing for dynamic shell loading
+    cshells.WithEndpointRouting();
 }, assemblies: [typeof(Program).Assembly]);
 
 builder.Services.AddEndpointsApiExplorer();
@@ -39,9 +42,18 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Enable endpoint routing
+app.UseRouting();
+
 // Enable shell resolution middleware - resolves tenant based on request path
 // and activates the appropriate features with their endpoints.
 app.UseCShells();
+
+// Map endpoints including shell endpoints
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapCShells();
+});
 
 app.Run();
 

@@ -22,23 +22,19 @@ public class CoreFeature(ShellSettings shellSettings) : IWebShellFeature
         });
     }
 
-    public void Configure(IApplicationBuilder app, IHostEnvironment? environment)
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment)
     {
         // Expose root endpoint that shows tenant information
-        app.Map("", homeApp =>
+        endpoints.MapGet("", async (HttpContext context) =>
         {
-            homeApp.Run(async context =>
-            {
-                var tenantInfo = context.RequestServices.GetRequiredService<ITenantInfo>();
+            var tenantInfo = context.RequestServices.GetRequiredService<ITenantInfo>();
 
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    Tenant = tenantInfo.TenantName,
-                    TenantId = tenantInfo.TenantId,
-                    Tier = tenantInfo.Tier,
-                    Message = "Welcome to the Payment Processing Platform"
-                });
+            return Results.Json(new
+            {
+                Tenant = tenantInfo.TenantName,
+                TenantId = tenantInfo.TenantId,
+                Tier = tenantInfo.Tier,
+                Message = "Welcome to the Payment Processing Platform"
             });
         });
     }

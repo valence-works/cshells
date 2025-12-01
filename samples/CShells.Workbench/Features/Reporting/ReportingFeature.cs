@@ -16,36 +16,32 @@ public class ReportingFeature : IWebShellFeature
         services.AddSingleton<IReportingService, ReportingService>();
     }
 
-    public void Configure(IApplicationBuilder app, IHostEnvironment? environment)
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment)
     {
         // Expose a /reports endpoint that uses the shell-scoped reporting service
-        app.Map("/reports", reportsApp =>
+        endpoints.MapGet("/reports", async (HttpContext context) =>
         {
-            reportsApp.Run(async context =>
+            var reportingService = context.RequestServices.GetRequiredService<IReportingService>();
+
+            // Get optional date range from query string, default to last 30 days
+            var endDate = DateTime.UtcNow;
+            var startDate = endDate.AddDays(-30);
+
+            if (context.Request.Query.TryGetValue("startDate", out var startDateStr) &&
+                DateTime.TryParse(startDateStr, out var parsedStartDate))
             {
-                var reportingService = context.RequestServices.GetRequiredService<IReportingService>();
+                startDate = parsedStartDate;
+            }
 
-                // Get optional date range from query string, default to last 30 days
-                var endDate = DateTime.UtcNow;
-                var startDate = endDate.AddDays(-30);
+            if (context.Request.Query.TryGetValue("endDate", out var endDateStr) &&
+                DateTime.TryParse(endDateStr, out var parsedEndDate))
+            {
+                endDate = parsedEndDate;
+            }
 
-                if (context.Request.Query.TryGetValue("startDate", out var startDateStr) &&
-                    DateTime.TryParse(startDateStr, out var parsedStartDate))
-                {
-                    startDate = parsedStartDate;
-                }
+            var report = reportingService.GenerateTransactionReport(startDate, endDate);
 
-                if (context.Request.Query.TryGetValue("endDate", out var endDateStr) &&
-                    DateTime.TryParse(endDateStr, out var parsedEndDate))
-                {
-                    endDate = parsedEndDate;
-                }
-
-                var report = reportingService.GenerateTransactionReport(startDate, endDate);
-
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(report);
-            });
+            return Results.Json(report);
         });
     }
 }

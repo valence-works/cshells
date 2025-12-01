@@ -36,6 +36,9 @@ namespace CShells.DependencyInjection
             // Register the feature factory for consistent feature instantiation across the framework
             services.TryAddSingleton<IShellFeatureFactory, DefaultShellFeatureFactory>();
 
+            // Register the notification publisher for shell lifecycle events
+            services.TryAddSingleton<Notifications.INotificationPublisher, Notifications.DefaultNotificationPublisher>();
+
             // Register the shell settings cache
             var cache = new ShellSettingsCache();
             services.TryAddSingleton<ShellSettingsCache>(cache);
