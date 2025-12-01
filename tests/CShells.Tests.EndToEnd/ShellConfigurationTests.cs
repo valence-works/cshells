@@ -39,14 +39,14 @@ public class ShellConfigurationTests(WorkbenchApplicationFactory factory)
         var contosoShell = shellHost.AllShells.First(s => s.Id.Name == "Contoso");
 
         // Assert
-        Assert.True(defaultShell.Settings.Properties.ContainsKey("CShells.AspNetCore.Path"));
-        Assert.True(acmeShell.Settings.Properties.ContainsKey("CShells.AspNetCore.Path"));
-        Assert.True(contosoShell.Settings.Properties.ContainsKey("CShells.AspNetCore.Path"));
+        Assert.True(defaultShell.Settings.Properties.ContainsKey("AspNetCore.Path"));
+        Assert.True(acmeShell.Settings.Properties.ContainsKey("AspNetCore.Path"));
+        Assert.True(contosoShell.Settings.Properties.ContainsKey("AspNetCore.Path"));
 
         // Properties may be JsonElement objects from deserialization, extract string values
-        var defaultPath = GetPropertyAsString(defaultShell.Settings.Properties["CShells.AspNetCore.Path"]);
-        var acmePath = GetPropertyAsString(acmeShell.Settings.Properties["CShells.AspNetCore.Path"]);
-        var contosoPath = GetPropertyAsString(contosoShell.Settings.Properties["CShells.AspNetCore.Path"]);
+        var defaultPath = GetPropertyAsString(defaultShell.Settings.Properties["AspNetCore.Path"]);
+        var acmePath = GetPropertyAsString(acmeShell.Settings.Properties["AspNetCore.Path"]);
+        var contosoPath = GetPropertyAsString(contosoShell.Settings.Properties["AspNetCore.Path"]);
 
         Assert.Equal("", defaultPath);
         Assert.Equal("acme", acmePath);

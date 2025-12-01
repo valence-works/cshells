@@ -58,38 +58,50 @@ Introduce CShells into an existing application and start moving functionality in
 
 ### 1. Create a Feature
 
-Features implement `IShellFeature` and are decorated with `[ShellFeature]`:
+Features implement `IShellFeature` (for service registration) or `IWebShellFeature` (for services + endpoints):
 
 ```csharp
-using CShells;
+using CShells.Features;
+using CShells.AspNetCore.Features;
 using Microsoft.Extensions.DependencyInjection;
 
 [ShellFeature("Core", DisplayName = "Core Services")]
-public class CoreFeatureStartup : IShellFeature
+public class CoreFeature : IWebShellFeature
 {
     public void ConfigureServices(IServiceCollection services)
     {
         services.AddSingleton<ITimeService, TimeService>();
     }
+
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment)
+    {
+        endpoints.MapGet("", () => new { Message = "Hello from Core feature" });
+    }
 }
 ```
 
-Features can depend on other features:
+Features can depend on other features and access `ShellSettings` via constructor:
 
 ```csharp
 [ShellFeature("Weather", DependsOn = ["Core"], DisplayName = "Weather Feature")]
-public class WeatherFeatureStartup : IShellFeature
+public class WeatherFeature(ShellSettings shellSettings) : IWebShellFeature
 {
     public void ConfigureServices(IServiceCollection services)
     {
         services.AddSingleton<IWeatherService, WeatherService>();
+    }
+
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment)
+    {
+        endpoints.MapGet("weather", (IWeatherService weatherService) =>
+            weatherService.GetForecast());
     }
 }
 ```
 
 ### 2. Configure Shells
 
-Add shell configuration to `appsettings.json` (default section name: `CShells`):
+**Option A: Using appsettings.json** (default section name: `CShells`):
 
 ```json
 {
@@ -99,14 +111,14 @@ Add shell configuration to `appsettings.json` (default section name: `CShells`):
         "Name": "Default",
         "Features": [ "Core", "Weather" ],
         "Properties": {
-          "Title": "Default site"
+          "CShells.AspNetCore.Path": ""
         }
       },
       {
         "Name": "Admin",
         "Features": [ "Core", "Admin" ],
         "Properties": {
-          "Title": "Admin area"
+          "CShells.AspNetCore.Path": "admin"
         }
       }
     ]
@@ -114,61 +126,157 @@ Add shell configuration to `appsettings.json` (default section name: `CShells`):
 }
 ```
 
-Notes:
-- Shell names are case-insensitive and must be unique; duplicate names will cause an exception during configuration.
-- Feature names are trimmed and preserved in the order they are configured.
+**Option B: Using JSON files with FluentStorage**:
+
+Create JSON files in a `Shells` folder (e.g., `Default.json`, `Admin.json`) with the same structure as above.
+
+**Option C: Code-first configuration**:
+
+```csharp
+builder.AddShells(cshells =>
+{
+    cshells.AddShell("Default", shell => shell
+        .WithFeatures("Core", "Weather")
+        .WithPath(""));
+
+    cshells.AddShell("Admin", shell => shell
+        .WithFeatures("Core", "Admin")
+        .WithPath("admin"));
+
+    cshells.WithInMemoryShells();
+});
+```
 
 ### 3. Register CShells in Program.cs
 
-```csharp
-using CShells;
-using CShells.AspNetCore;
+**Simple setup (reads from appsettings.json)**:
 
+```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Register CShells services from configuration
-builder.Services.AddCShells(
-    builder.Configuration,
-    assemblies: [typeof(Program).Assembly]);
-
-// Register ASP.NET Core integration
-builder.Services.AddCShellsAspNetCore();
+// Register CShells from configuration
+builder.AddShells();
 
 var app = builder.Build();
 
-// Enable shell resolution middleware
-app.UseCShells();
-
-// Resolve services from the current shell's container
-app.MapGet("/", (HttpContext context) =>
-{
-    var weatherService = context.RequestServices.GetRequiredService<IWeatherService>();
-    return Results.Ok(weatherService.GetForecast());
-});
+// Configure middleware and endpoints
+app.MapShells();
 
 app.Run();
 ```
 
-### Highlights
+**FluentStorage setup (reads from Shells folder)**:
 
-The following patterns are supported out of the box and are useful when getting started:
+```csharp
+using FluentStorage;
 
-- **Flexible shell resolution**  Implement `IShellResolver` to choose the active shell per request (e.g., by path, host, header, or tenant id), and compose multiple resolvers to build more advanced strategies.
-- **Per-shell DI on `HttpContext.RequestServices`**  After calling `app.UseCShells()`, `HttpContext.RequestServices` is automatically set to the current shells service provider, so you can resolve shell-specific services in minimal APIs or controllers without special plumbing.
-- **Path-based shells / areas**  Map different URL segments to different shells (for example, a default public area, an admin area, or a specialized area), each with its own set of features and registrations.
-- **Shell-aware routing helpers**  Use shell-aware mapping helpers (such as methods that add a shell path prefix) to build routes that automatically include shell context while still resolving services from the correct shell.
-- **Different implementations per shell**  Register different implementations of the same interface per shell (e.g., one `IWeatherService` for a standard shell and another for a specialized shell) and let CShells pick the right one based on the active shell.
-- **Feature composition per shell**  Configure each shell with a set of feature identifiers; features declare dependencies on other features, and CShells orders them so that shared building blocks (like `Core` features) are initialized before dependent features.
-- **Plays nicely with minimal APIs and common middleware**  CShells integrates with the standard ASP.NET Core pipeline, including minimal APIs, HTTPS redirection, routing, and Swagger/OpenAPI.
+var builder = WebApplication.CreateBuilder(args);
 
-## Configuration Details
+var shellsPath = Path.Combine(builder.Environment.ContentRootPath, "Shells");
+var blobStorage = StorageFactory.Blobs.DirectoryFiles(shellsPath);
 
-CShells supports configuring shells and their enabled features via the application's configuration (for example, `appsettings.json`). The default configuration section name is `CShells`.
+builder.AddShells(cshells =>
+{
+    cshells.WithFluentStorageProvider(blobStorage);
+});
 
-At a high level:
-- The `CShells` section is bound to `CShells.Configuration.CShellsOptions`.
-- The options are converted to runtime `ShellSettings` using `CShells.Configuration.ShellSettingsFactory.CreateFromOptions`.
-- The `AddCShells(configuration)` extension method wraps this process and registers `IShellHost` (implemented by `DefaultShellHost`) and the configured shells.
+var app = builder.Build();
+app.MapShells();
+app.Run();
+```
+
+**Advanced setup with custom resolvers**:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddCShellsAspNetCore(cshells =>
+{
+    cshells.WithConfigurationProvider(builder.Configuration);
+    cshells.WithPathResolver(options =>
+    {
+        options.ExcludePaths = ["/api", "/health"];
+    });
+    cshells.WithHostResolver();
+}, assemblies: [typeof(Program).Assembly]);
+
+var app = builder.Build();
+app.MapShells();
+app.Run();
+```
+
+### Key Capabilities
+
+- **IWebShellFeature** - Features can expose their own endpoints using `MapEndpoints()`, keeping all logic self-contained
+- **Automatic endpoint routing** - `MapShells()` handles middleware and endpoint registration in one call
+- **Shell path prefixes** - Routes are automatically prefixed based on the `CShells.AspNetCore.Path` property
+- **Per-shell DI containers** - Each shell has its own isolated service provider with shell-specific services
+- **Multiple configuration sources** - Configure shells via appsettings.json, external JSON files, or code
+- **Flexible shell resolution** - Built-in path and host resolvers, plus extensibility for custom strategies
+- **Feature dependencies** - Features can depend on other features with automatic topological ordering
+- **Constructor injection of ShellSettings** - Features can access their shell's configuration via constructor
+- **Runtime shell management** - Add, update, or remove shells at runtime without restarting the application
+
+
+## Configuration
+
+### Shell Settings Providers
+
+CShells supports multiple ways to configure shells:
+
+#### 1. Configuration-based (appsettings.json)
+
+```csharp
+builder.AddShells(); // Uses default "CShells" section
+// or
+builder.AddShells("MyCustomSection");
+// or
+builder.Services.AddCShellsAspNetCore(cshells =>
+{
+    cshells.WithConfigurationProvider(builder.Configuration, "CShells");
+});
+```
+
+#### 2. FluentStorage (JSON files from disk/cloud)
+
+```csharp
+var blobStorage = StorageFactory.Blobs.DirectoryFiles("./Shells");
+builder.AddShells(cshells =>
+{
+    cshells.WithFluentStorageProvider(blobStorage);
+});
+```
+
+#### 3. Code-first (In-memory)
+
+```csharp
+builder.AddShells(cshells =>
+{
+    cshells.AddShell("Default", shell => shell
+        .WithFeatures("Core", "Weather")
+        .WithPath("")
+        .WithProperty("Title", "Default Site"));
+
+    cshells.WithInMemoryShells();
+});
+```
+
+#### 4. Custom Provider
+
+```csharp
+public class DatabaseShellSettingsProvider : IShellSettingsProvider
+{
+    public async Task<IEnumerable<ShellSettings>> GetAllAsync()
+    {
+        // Load from database, API, etc.
+    }
+}
+
+builder.AddShells(cshells =>
+{
+    cshells.WithProvider<DatabaseShellSettingsProvider>();
+});
+```
 
 ## Shell Context Scopes & Background Work
 
@@ -262,16 +370,20 @@ services.AddHostedService<ShellBackgroundWorker>();
 
 ## Running the Sample App
 
-The `samples/CShells.SampleApp` project demonstrates a complete CShells integration:
+The `samples/CShells.Workbench` project demonstrates a multi-tenant payment platform:
 
 ```bash
-cd samples/CShells.SampleApp
+cd samples/CShells.Workbench
 dotnet run
 ```
 
 Then access:
-- `http://localhost:5000/` - Default shell (Weather feature)
-- `http://localhost:5000/admin` - Admin shell (Admin feature)
+- `https://localhost:5001/` - Default tenant (Basic tier - Stripe + Email)
+- `https://localhost:5001/acme` - Acme Corp (Premium tier - PayPal + SMS + Fraud Detection)
+- `https://localhost:5001/contoso` - Contoso Ltd (Enterprise tier - Stripe + Multi-channel + Fraud + Reporting)
+- `https://localhost:5001/swagger` - Swagger UI for all endpoints
+
+See the [Workbench README](samples/CShells.Workbench/README.md) for detailed feature descriptions and API examples.
 
 ## License
 

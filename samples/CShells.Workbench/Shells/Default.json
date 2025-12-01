@@ -6,6 +6,6 @@
     "EmailNotification"
   ],
   "properties": {
-    "CShells.AspNetCore.Path": ""
+    "AspNetCore.Path": ""
   }
 }

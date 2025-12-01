@@ -7,6 +7,6 @@
     "FraudDetection"
   ],
   "properties": {
-    "CShells.AspNetCore.Path": "acme"
+    "AspNetCore.Path": "acme"
   }
 }

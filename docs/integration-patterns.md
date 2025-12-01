@@ -1,4 +1,4 @@
-~~~~# CShells Integration Patterns with Host Applications
+# CShells Integration Patterns with Host Applications
 
 This guide explains how to safely integrate CShells into existing ASP.NET Core applications without conflicts.
 
@@ -18,7 +18,7 @@ Use unique path prefixes for each shell to isolate shell routes from host routes
   "name": "Acme",
   "features": ["Core", "Payment"],
   "properties": {
-    "CShells.AspNetCore.Path": "tenants/acme"
+    "AspNetCore.Path": "tenants/acme"
   }
 }
 
@@ -27,7 +27,7 @@ Use unique path prefixes for each shell to isolate shell routes from host routes
   "name": "Contoso",
   "features": ["Core", "Payment"],
   "properties": {
-    "CShells.AspNetCore.Path": "tenants/contoso"
+    "AspNetCore.Path": "tenants/contoso"
   }
 }
 ```
@@ -46,14 +46,14 @@ Use `HostShellResolver` to isolate shells by subdomain:
 {
   "name": "Acme",
   "properties": {
-    "CShells.AspNetCore.Host": "acme.example.com"
+    "AspNetCore.Path": "acme.example.com"
   }
 }
 ```
 
 ```csharp
-// Startup
-builder.AddCShells(cshells =>
+// Program.cs
+builder.AddShells(cshells =>
 {
     cshells.WithFluentStorageProvider(blobStorage);
     cshells.WithHostResolver(); // Resolve by subdomain
@@ -73,21 +73,18 @@ Combine host routes with shell routes using careful path planning:
 ```csharp
 var app = builder.Build();
 
-// Register host routes FIRST (before MapCShells)
+// Register host routes FIRST (before MapShells)
 app.MapGet("/", () => "Host Home Page");
 app.MapControllers(); // Host API controllers at /api/*
 
 // Register shell routes
-app.UseEndpoints(endpoints =>
-{
-    endpoints.MapCShells(); // Shell routes at configured prefixes
-});
+app.MapShells(); // Shell routes at configured prefixes
 ```
 
 **Best Practices:**
 - ✅ Host routes without path prefixes (e.g., `/`, `/api/*`, `/admin/*`)
 - ✅ Shell routes with path prefixes (e.g., `/apps/*`, `/tenants/*`)
-- ✅ Register host routes BEFORE `MapCShells()`
+- ✅ Register host routes BEFORE `MapShells()`
 
 ### ⚠️ Pattern 4: Root-Level Shell (Advanced)
 
@@ -97,7 +94,7 @@ Use an empty path prefix when the **entire application** is multi-tenant:
 {
   "name": "Default",
   "properties": {
-    "CShells.AspNetCore.Path": ""
+    "AspNetCore.Path": ""
   }
 }
 ```
@@ -133,13 +130,13 @@ warn: Path conflict detected: Shell 'Default' endpoint 'GET /' conflicts with ho
 Prevent shell resolution for specific paths (e.g., admin panels, health checks):
 
 ```csharp
-builder.AddCShells(cshells =>
+builder.AddShells(cshells =>
 {
     cshells.WithFluentStorageProvider(blobStorage);
     cshells.WithPathResolver(options =>
     {
         // Exclude these paths from shell resolution
-        options.ExcludePaths = new[] { "/admin", "/health", "/swagger" };
+        options.ExcludePaths = ["/admin", "/health", "/swagger"];
     });
 });
 ```
@@ -171,18 +168,11 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// 6. CShells middleware (resolves shell and sets RequestServices)
-app.UseCShells();
+// 6. Host routes (register before shell routes)
+app.MapControllers();
 
-// 7. Endpoints
-app.UseEndpoints(endpoints =>
-{
-    // Host routes first
-    app.MapControllers();
-
-    // Shell routes last
-    endpoints.MapCShells();
-});
+// 7. Shell routes (includes middleware)
+app.MapShells();
 ```
 
 ## Troubleshooting
@@ -208,10 +198,10 @@ The request matched multiple endpoints
 - Shell routes work but host routes don't
 
 **Solutions:**
-1. Verify middleware ordering (`UseCShells()` before `UseEndpoints()`)
-2. Ensure host routes are registered before `MapCShells()`
-3. Check if a root-level shell (`Path: ""`) is shadowing host routes
-4. Use path exclusions to protect host routes
+1. Ensure host routes are registered before `MapShells()`
+2. Check if a root-level shell (`Path: ""`) is shadowing host routes
+3. Use path exclusions to protect host routes
+4. Verify middleware ordering (host routes before `MapShells()`)
 
 ### Issue: Shell routes not working
 
@@ -220,10 +210,10 @@ The request matched multiple endpoints
 - Shell endpoints return 404
 
 **Solutions:**
-1. Verify `MapCShells()` is called in `UseEndpoints()`
-2. Check shell JSON files have correct path prefixes
+1. Verify `MapShells()` is called in the pipeline
+2. Check shell configuration files have correct path prefixes (`CShells.AspNetCore.Path`)
 3. Ensure shell settings are loaded (check logs: "Loaded N shell(s)")
-4. Verify shell resolver is configured (`WithPathResolver()` or `WithHostResolver()`)
+4. Verify shell resolver is configured (defaults to path and host resolvers)
 
 ## Example: Complete Integration
 
@@ -239,16 +229,15 @@ builder.Services.AddSwaggerGen();
 var shellsPath = Path.Combine(builder.Environment.ContentRootPath, "Shells");
 var blobStorage = StorageFactory.Blobs.DirectoryFiles(shellsPath);
 
-builder.AddCShells(cshells =>
+builder.AddShells(cshells =>
 {
     cshells.WithFluentStorageProvider(blobStorage);
     cshells.WithPathResolver(options =>
     {
         // Protect host routes from shell resolution
-        options.ExcludePaths = new[] { "/api", "/swagger", "/health" };
+        options.ExcludePaths = ["/api", "/swagger", "/health"];
     });
-    cshells.WithEndpointRouting();
-}, assemblies: [typeof(Program).Assembly]);
+});
 
 var app = builder.Build();
 
@@ -264,20 +253,13 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// CShells middleware
-app.UseCShells();
+// Host routes first
+app.MapGet("/", () => "Host Home");
+app.MapControllers(); // /api/*
+app.MapHealthChecks("/health");
 
-// Endpoints
-app.UseEndpoints(endpoints =>
-{
-    // Host routes
-    endpoints.MapGet("/", () => "Host Home");
-    endpoints.MapControllers(); // /api/*
-    endpoints.MapHealthChecks("/health");
-
-    // Shell routes (under /tenants/*)
-    endpoints.MapCShells();
-});
+// Shell routes (under /tenants/*)
+app.MapShells();
 
 app.Run();
 ```
@@ -287,7 +269,7 @@ app.Run();
 ✅ **DO:**
 - Use dedicated path prefixes for shells (`/tenants/*`, `/apps/*`)
 - Use subdomain-based routing for complete isolation
-- Register host routes before `MapCShells()`
+- Register host routes before `MapShells()`
 - Use path exclusions to protect critical host routes
 - Monitor logs for path conflict warnings
 
@@ -295,7 +277,7 @@ app.Run();
 - Use empty path prefixes unless entire app is multi-tenant
 - Mix root-level shell routes with root-level host routes
 - Ignore path conflict warnings in logs
-- Skip middleware ordering best practices
+- Register `MapShells()` before host routes
 
 ## Further Reading
 

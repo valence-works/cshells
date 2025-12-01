@@ -1,6 +1,6 @@
-# CShells Sample App - Multi-Tenant Payment Platform
+# CShells Workbench - Multi-Tenant Payment Platform
 
-This sample application demonstrates CShells' multi-tenancy capabilities through a realistic payment processing SaaS platform scenario.
+This sample application demonstrates CShells' multi-tenancy capabilities through a realistic payment processing SaaS platform scenario. It showcases how to build a modular, feature-driven application where different tenants get different service implementations and features based on their subscription tier.
 
 ## Scenario
 
@@ -106,11 +106,24 @@ curl "http://localhost:5000/contoso/reports?startDate=2024-01-01&endDate=2024-12
 
 ## Shell Configuration
 
-Each tenant's features are configured in JSON descriptor files:
+Each tenant is configured as a shell via JSON files in the `Shells` folder. CShells loads these at startup using FluentStorage:
 
 - `Shells/Default.json` - Basic tier configuration
 - `Shells/Acme.json` - Premium tier configuration
 - `Shells/Contoso.json` - Enterprise tier configuration
+
+Example shell configuration (Acme.json):
+```json
+{
+  "name": "Acme",
+  "features": ["Core", "PayPalPayment", "SmsNotification", "FraudDetection"],
+  "properties": {
+    "CShells.AspNetCore.Path": "acme"
+  }
+}
+```
+
+The `CShells.AspNetCore.Path` property determines the URL path prefix for the shell.
 
 ## Project Structure
 
@@ -142,22 +155,51 @@ Features/
 Program.cs                              # Only 47 lines - just shell config!
 ```
 
+## Program.cs Configuration
+
+The application uses the simplified `AddShells()` API, which reads from `appsettings.json` by default:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.AddShells(); // Reads from appsettings.json "CShells" section
+
+var app = builder.Build();
+app.MapShells(); // Configures middleware and endpoints
+app.Run();
+```
+
+To use FluentStorage instead (reading from Shells folder), you would use:
+
+```csharp
+var shellsPath = Path.Combine(builder.Environment.ContentRootPath, "Shells");
+var blobStorage = StorageFactory.Blobs.DirectoryFiles(shellsPath);
+
+builder.AddShells(cshells =>
+{
+    cshells.WithFluentStorageProvider(blobStorage);
+});
+```
+
 ## Running the Sample
 
 ```bash
-cd samples/CShells.SampleApp
+cd samples/CShells.Workbench
 dotnet run
 ```
 
-Then visit https://localhost:5001/swagger to explore the API.
+Then visit:
+- `https://localhost:5001/swagger` - Swagger UI to explore all endpoints
+- `https://localhost:5001/` - Default tenant
+- `https://localhost:5001/acme` - Acme Corp tenant
+- `https://localhost:5001/contoso` - Contoso Ltd tenant
 
 ## Learning Points
 
-1. **Simple Scenarios**: Basic tier shows straightforward feature composition
-2. **Multi-Tenant**: Different tenants get different service implementations
-3. **Interface Segregation**: Same interface, different implementations per tenant
-4. **Feature-Owned Endpoints**: All features expose their own routes via `IWebShellFeature`
-5. **Endpoint Inheritance**: Base feature classes expose endpoints, concrete features register services
-6. **Path-Based Resolution**: Shell middleware routes requests to correct tenant features
-7. **Clean Architecture**: Program.cs is pure configuration - all business logic in features
-8. **Graceful Degradation**: Fraud detection integrated in payments via `GetService()` (optional)
+1. **IWebShellFeature**: Features expose their own endpoints via `MapEndpoints()` - no code in Program.cs
+2. **Multi-tenant service resolution**: Different tenants get different `IPaymentProcessor` implementations
+3. **Feature composition**: Shells are composed of features defined via JSON configuration
+4. **Path-based routing**: `CShells.AspNetCore.Path` property controls URL routing
+5. **Tier-based features**: Premium and Enterprise features are only enabled for specific tenants
+6. **Endpoint inheritance**: Base feature classes expose endpoints, concrete features register services
+7. **Clean Program.cs**: All business logic lives in features, Program.cs is minimal
+8. **Graceful degradation**: Optional dependencies via `GetService()` (e.g., fraud detection in payments)

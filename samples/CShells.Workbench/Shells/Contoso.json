@@ -8,6 +8,6 @@
     "Reporting"
   ],
   "properties": {
-    "CShells.AspNetCore.Path": "contoso"
+    "AspNetCore.Path": "contoso"
   }
 }
