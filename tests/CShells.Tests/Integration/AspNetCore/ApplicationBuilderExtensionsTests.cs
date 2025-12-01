@@ -12,10 +12,10 @@ namespace CShells.Tests.Integration.AspNetCore;
 /// </summary>
 public class ApplicationBuilderExtensionsTests
 {
-    public static IEnumerable<object[]> GuardClauseData() => new[]
+    public static IEnumerable<object[]> GuardClauseData()
     {
-        new object?[] { null, "app" }
-    };
+        yield return new object[] { null!, "app" };
+    }
 
     [Theory(DisplayName = "UseCShells guard clauses throw ArgumentNullException")]
     [MemberData(nameof(GuardClauseData))]
