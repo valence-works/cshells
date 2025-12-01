@@ -67,8 +67,8 @@ public class ServiceCollectionExtensionsTests
         Assert.Equal("services", ex.ParamName);
     }
 
-    [Fact(DisplayName = "AddCShellsAspNetCore returns services for chaining")]
-    public void AddCShellsAspNetCore_ReturnsServicesForChaining()
+    [Fact(DisplayName = "AddCShellsAspNetCore returns builder for chaining")]
+    public void AddCShellsAspNetCore_ReturnsBuilderForChaining()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -77,10 +77,12 @@ public class ServiceCollectionExtensionsTests
         var result = CShells.AspNetCore.Extensions.ServiceCollectionExtensions.AddCShellsAspNetCore(services);
 
         // Assert
-        Assert.Same(services, result);
+        Assert.NotNull(result);
+        Assert.IsType<CShellsBuilder>(result);
+        Assert.Same(services, result.Services);
     }
 
-    [Fact(DisplayName = "AddCShellsAspNetCore registers multiple strategies")]
+    [Fact(DisplayName = "AddCShellsAspNetCore registers multiple strategies including standard resolvers")]
     public void AddCShellsAspNetCore_RegistersMultipleStrategies()
     {
         // Arrange
@@ -92,9 +94,11 @@ public class ServiceCollectionExtensionsTests
         var serviceProvider = services.BuildServiceProvider();
         var strategies = serviceProvider.GetServices<IShellResolverStrategy>().ToList();
 
-        // Assert - should have both custom and default strategies
-        Assert.Equal(2, strategies.Count);
+        // Assert - should have custom strategy, standard resolvers (Path + Host), and default fallback strategy
+        Assert.Equal(4, strategies.Count);
         Assert.Contains(strategies, s => s is CustomStrategy);
+        Assert.Contains(strategies, s => s.GetType().Name == "PathShellResolver");
+        Assert.Contains(strategies, s => s.GetType().Name == "HostShellResolver");
         Assert.Contains(strategies, s => s is DefaultShellResolverStrategy);
     }
 

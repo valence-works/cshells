@@ -2,6 +2,7 @@ using System.Reflection;
 using CShells.Configuration;
 using CShells.Features;
 using CShells.Hosting;
+using CShells.Management;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -68,6 +69,9 @@ namespace CShells.DependencyInjection
 
             // Register the default shell context scope factory.
             services.AddSingleton<IShellContextScopeFactory, DefaultShellContextScopeFactory>();
+
+            // Register the shell manager for runtime shell lifecycle management
+            services.TryAddSingleton<IShellManager, DefaultShellManager>();
 
             return new CShellsBuilder(services);
         }

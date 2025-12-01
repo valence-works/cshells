@@ -1,16 +1,12 @@
-using CShells.AspNetCore.Management;
 using CShells.AspNetCore.Resolution;
 using CShells.AspNetCore.Routing;
 using CShells.DependencyInjection;
-using CShells.Management;
 using CShells.Notifications;
 using CShells.Resolution;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace CShells.AspNetCore.Configuration;
-
-// TODO: Consider calling WithEndpointRouting from ServiceCollectionExtensions.AddCShellsAspNetCore. The assumption being that when using ASPNET Core, well likely expose web shell features that configure endpoints.   
 
 /// <summary>
 /// Extension methods for <see cref="CShellsBuilder"/> to configure ASP.NET Core-specific shell resolution.
@@ -59,7 +55,7 @@ public static class CShellsBuilderExtensions
     }
 
     /// <summary>
-    /// Registers ASP.NET Core shell resolution strategies that query Path and Host properties from shell settings.
+    /// Registers the standard ASP.NET Core shell resolution strategies (Path and Host resolvers).
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
     /// <returns>The builder for method chaining.</returns>
@@ -70,9 +66,9 @@ public static class CShellsBuilderExtensions
     /// <item><see cref="HostShellResolver"/> to resolve shells by HTTP host name</item>
     /// </list>
     /// The resolvers query shell properties at runtime from the shell settings cache.
+    /// For custom resolver strategies, use <see cref="WithResolverStrategy{TStrategy}"/> or <see cref="WithResolverStrategy(CShellsBuilder, IShellResolverStrategy)"/>.
     /// </remarks>
-    // TODO: Come up with a better name than "auto resolvers". Additionally, let's introduce a convenience extension method to register additional resolver strategies so that the user can easily register custom resolver strategies, such as claim based, header based, etc.
-    public static CShellsBuilder WithAutoResolvers(this CShellsBuilder builder)
+    public static CShellsBuilder WithStandardResolvers(this CShellsBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
@@ -84,7 +80,80 @@ public static class CShellsBuilderExtensions
     }
 
     /// <summary>
-    /// Registers ASP.NET Core endpoint routing and shell management services.
+    /// Registers the standard ASP.NET Core shell resolution strategies (Path and Host resolvers).
+    /// </summary>
+    /// <param name="builder">The CShells builder.</param>
+    /// <returns>The builder for method chaining.</returns>
+    /// <remarks>
+    /// This method is obsolete. Use <see cref="WithStandardResolvers"/> instead.
+    /// </remarks>
+    [Obsolete("Use WithStandardResolvers instead. This method will be removed in a future version.")]
+    public static CShellsBuilder WithAutoResolvers(this CShellsBuilder builder)
+    {
+        return builder.WithStandardResolvers();
+    }
+
+    /// <summary>
+    /// Registers a custom shell resolver strategy.
+    /// </summary>
+    /// <typeparam name="TStrategy">The type of the resolver strategy to register.</typeparam>
+    /// <param name="builder">The CShells builder.</param>
+    /// <returns>The builder for method chaining.</returns>
+    /// <remarks>
+    /// Use this method to register custom resolver strategies such as claim-based, header-based,
+    /// or any other custom resolution logic. The strategy will be added to the collection of
+    /// resolver strategies that the shell resolver orchestrator will execute.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// builder.AddCShells(cshells =>
+    /// {
+    ///     cshells.WithResolverStrategy&lt;ClaimBasedShellResolver&gt;();
+    ///     cshells.WithResolverStrategy&lt;HeaderBasedShellResolver&gt;();
+    /// });
+    /// </code>
+    /// </example>
+    public static CShellsBuilder WithResolverStrategy<TStrategy>(this CShellsBuilder builder)
+        where TStrategy : class, IShellResolverStrategy
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, TStrategy>());
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a custom shell resolver strategy instance.
+    /// </summary>
+    /// <param name="builder">The CShells builder.</param>
+    /// <param name="strategy">The resolver strategy instance to register.</param>
+    /// <returns>The builder for method chaining.</returns>
+    /// <remarks>
+    /// Use this method to register a pre-configured instance of a custom resolver strategy.
+    /// This is useful when you need to pass configuration or dependencies directly to the strategy instance.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var customResolver = new CustomShellResolver(someConfig);
+    /// builder.AddCShells(cshells =>
+    /// {
+    ///     cshells.WithResolverStrategy(customResolver);
+    /// });
+    /// </code>
+    /// </example>
+    public static CShellsBuilder WithResolverStrategy(this CShellsBuilder builder, IShellResolverStrategy strategy)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(strategy);
+
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy>(strategy));
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers ASP.NET Core endpoint routing services.
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
     /// <returns>The builder for method chaining.</returns>
@@ -92,7 +161,7 @@ public static class CShellsBuilderExtensions
     /// This method registers:
     /// <list type="bullet">
     /// <item><see cref="DynamicShellEndpointDataSource"/> for dynamic endpoint registration</item>
-    /// <item><see cref="IShellManager"/> for runtime shell management</item>
+    /// <item>Notification handlers for shell lifecycle events to update endpoints automatically</item>
     /// </list>
     /// This must be called if you want to use endpoint routing with CShells.
     /// </remarks>
@@ -102,10 +171,6 @@ public static class CShellsBuilderExtensions
 
         // Register the dynamic endpoint data source as a singleton
         builder.Services.TryAddSingleton<DynamicShellEndpointDataSource>();
-
-        // TODO: Move this to the DI code in the CShells project.
-        // Register the shell manager for runtime shell lifecycle management
-        builder.Services.TryAddSingleton<IShellManager, DefaultShellManager>();
 
         // Register the endpoint route builder accessor to capture IEndpointRouteBuilder during MapCShells()
         builder.Services.TryAddSingleton<EndpointRouteBuilderAccessor>();

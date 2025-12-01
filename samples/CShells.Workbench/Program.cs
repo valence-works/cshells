@@ -23,7 +23,7 @@ builder.AddCShells(cshells =>
     cshells.WithFluentStorageProvider(blobStorage);
 
     // Automatically register Path/Host resolvers from shell properties
-    cshells.WithAutoResolvers();
+    cshells.WithStandardResolvers();
 
     // Enable endpoint routing for dynamic shell loading
     cshells.WithEndpointRouting();
