@@ -7,7 +7,8 @@ namespace CShells.Tests.EndToEnd;
 /// <summary>
 /// Tests to verify shell configuration is loaded correctly from JSON files.
 /// </summary>
-public class ShellConfigurationTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Workbench")]
+public class ShellConfigurationTests(WorkbenchApplicationFactory factory)
 {
     [Fact(DisplayName = "All three shells are loaded")]
     public void AllShells_AreLoaded()

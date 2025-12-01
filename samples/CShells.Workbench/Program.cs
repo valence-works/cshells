@@ -9,14 +9,6 @@ var builder = WebApplication.CreateBuilder(args);
 // Register CShells services and configure multi-tenant shell resolution.
 // This sample demonstrates a payment processing SaaS platform where different tenants
 // have different features and service implementations loaded from JSON files in the Shells folder.
-//
-// All endpoints are now exposed by the features themselves via IWebShellFeature:
-// - Core: Exposes / (tenant info)
-// - PaymentProcessing: Exposes /payments
-// - Notifications: Exposes /notifications
-// - FraudDetection: Exposes /fraud-check (premium feature)
-// - Reporting: Exposes /reports (enterprise feature)
-//
 // Shell configurations are loaded from the Shells folder using FluentStorage's disk provider.
 // Each JSON file (Default.json, Acme.json, Contoso.json) represents a shell configuration.
 // Path mappings are configured in the shell JSON files via the "properties" section.

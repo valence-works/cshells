@@ -19,9 +19,7 @@ public static class AsyncCShellsBuilderExtensions
     /// <param name="builder">The CShells builder.</param>
     /// <param name="cancellationToken">Optional cancellation token.</param>
     /// <returns>The builder for method chaining.</returns>
-    public static async Task<CShellsBuilder> WithAutoResolversAsync(
-        this CShellsBuilder builder,
-        CancellationToken cancellationToken = default)
+    public static async Task<CShellsBuilder> WithAutoResolversAsync(this CShellsBuilder builder, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(builder);
 

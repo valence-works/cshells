@@ -9,9 +9,10 @@ namespace CShells.Tests.EndToEnd;
 /// These tests verify that the shell resolution middleware correctly routes requests
 /// based on URL path prefixes configured in shell properties.
 /// </summary>
-public class PathBasedShellResolutionTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Workbench")]
+public class PathBasedShellResolutionTests(WorkbenchApplicationFactory factory)
 {
-    private readonly WebApplicationFactory<Program> _factory = factory;
+    private readonly WorkbenchApplicationFactory _factory = factory;
     private readonly HttpClient _client = factory.CreateClient();
 
     [Fact(DisplayName = "Root path resolves to Default shell")]
