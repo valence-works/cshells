@@ -1,24 +1,25 @@
+using CShells.AspNetCore.Configuration;
+using CShells.Configuration;
 using CShells.Resolution;
 
 namespace CShells.AspNetCore.Resolution;
 
 /// <summary>
-/// A shell resolver strategy that determines the shell based on the host name.
+/// A shell resolver strategy that determines the shell based on the HTTP host header.
+/// Reads shell settings from the cache at runtime to find matching Host properties.
 /// </summary>
 public class HostShellResolver : IShellResolverStrategy
 {
-    private readonly Dictionary<string, ShellId> _hostMap;
+    private readonly IShellSettingsCache _cache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HostShellResolver"/> class.
     /// </summary>
-    /// <param name="hostMap">A dictionary mapping host names to shell identifiers.
-    /// Keys should be host names (e.g., "tenant1.example.com", "localhost"). Matching is case-insensitive.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="hostMap"/> is null.</exception>
-    public HostShellResolver(IReadOnlyDictionary<string, ShellId> hostMap)
+    /// <param name="cache">The shell settings cache to read from.</param>
+    public HostShellResolver(IShellSettingsCache cache)
     {
-        ArgumentNullException.ThrowIfNull(hostMap);
-        _hostMap = new(hostMap, StringComparer.OrdinalIgnoreCase);
+        ArgumentNullException.ThrowIfNull(cache);
+        _cache = cache;
     }
 
     /// <inheritdoc />
@@ -32,9 +33,23 @@ public class HostShellResolver : IShellResolverStrategy
             return null;
         }
 
-        if (_hostMap.TryGetValue(host, out var shellId))
+        // Search all shells for matching Host property
+        foreach (var shell in _cache.GetAll())
         {
-            return shellId;
+            if (shell.Properties.TryGetValue(ShellPropertyKeys.Host, out var hostValue))
+            {
+                var shellHost = hostValue switch
+                {
+                    string s => s,
+                    System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.String => jsonElement.GetString(),
+                    _ => null
+                };
+
+                if (shellHost != null && shellHost.Equals(host, StringComparison.OrdinalIgnoreCase))
+                {
+                    return shell.Id;
+                }
+            }
         }
 
         return null;

@@ -1,12 +1,14 @@
 using CShells.AspNetCore;
+using CShells.AspNetCore.Configuration;
 using CShells.AspNetCore.Resolution;
+using CShells.Configuration;
 using CShells.Resolution;
-using Microsoft.AspNetCore.Http;
+using System.Text.Json;
 
 namespace CShells.Tests.Integration.AspNetCore;
 
 /// <summary>
-/// Consolidated tests for all <see cref="IShellResolverStrategy"/> implementations.
+/// Tests for shell resolver implementations.
 /// </summary>
 public class ShellResolverTests
 {
@@ -14,94 +16,167 @@ public class ShellResolverTests
     private const string Tenant2Host = "tenant2.example.com";
     private const string Tenant1Path = "tenant1";
     private const string Tenant2Path = "tenant2";
-    private const string Localhost = "localhost";
 
-    public static TheoryData<IShellResolverStrategy, ShellResolutionContext, ShellId?, string> ResolverTestCases => new()
+    [Fact(DisplayName = "HostShellResolver resolves shell by host property")]
+    public void HostShellResolver_WithMatchingHost_ReturnsShellId()
     {
-        // HostShellResolver - matching hosts
-        { CreateHostResolver(), CreateResolutionContext(Tenant1Host), new ShellId("Tenant1Shell"), "HostResolver with matching host" },
-        { CreateHostResolver(), CreateResolutionContext(Tenant2Host), new ShellId("Tenant2Shell"), "HostResolver with second matching host" },
-        { CreateHostResolver(), CreateResolutionContext(Localhost), new ShellId("LocalhostShell"), "HostResolver with localhost" },
-        { CreateHostResolver(), CreateResolutionContext("TENANT1.EXAMPLE.COM"), new ShellId("Tenant1Shell"), "HostResolver case-insensitive host" },
+        // Arrange
+        var cache = CreateCacheWithHostShells();
+        var resolver = new HostShellResolver(cache);
+        var context = CreateResolutionContext(host: Tenant1Host);
 
-        // HostShellResolver - non-matching
-        { CreateHostResolver(), CreateResolutionContext("unknown.example.com"), null, "HostResolver with non-matching host" },
-
-        // PathShellResolver - matching paths
-        { CreatePathResolver(), CreateResolutionContext(path: $"/{Tenant1Path}/some/path"), new ShellId("Tenant1Shell"), "PathResolver with matching first segment" },
-        { CreatePathResolver(), CreateResolutionContext(path: $"/{Tenant2Path}/api"), new ShellId("Tenant2Shell"), "PathResolver with matching second segment" },
-        { CreatePathResolver(), CreateResolutionContext(path: $"/{Tenant1Path}"), new ShellId("Tenant1Shell"), "PathResolver with single segment" },
-        { CreatePathResolver(), CreateResolutionContext(path: "/TENANT1/path"), new ShellId("Tenant1Shell"), "PathResolver case-insensitive path" },
-
-        // PathShellResolver - non-matching
-        { CreatePathResolver(), CreateResolutionContext(path: "/unknown/path"), null, "PathResolver with non-matching path" },
-        { CreatePathResolver(), CreateResolutionContext(path: ""), null, "PathResolver with empty path" },
-        { CreatePathResolver(), CreateResolutionContext(path: "/"), null, "PathResolver with root path" },
-    };
-
-    [Theory(DisplayName = "Resolve with various inputs returns expected result")]
-    [MemberData(nameof(ResolverTestCases))]
-    public void Resolve_WithVariousInputs_ReturnsExpectedResult(
-        IShellResolverStrategy strategy,
-        ShellResolutionContext context,
-        ShellId? expectedShellId,
-        string scenario)
-    {
         // Act
-        var result = strategy.Resolve(context);
+        var result = resolver.Resolve(context);
 
         // Assert
-        Assert.Equal(expectedShellId, result);
+        Assert.Equal(new ShellId("Tenant1Shell"), result);
     }
 
-    [Fact(DisplayName = "HostShellResolver constructor with null hostMap throws ArgumentNullException")]
-    public void HostShellResolver_Constructor_WithNullHostMap_ThrowsArgumentNullException()
+    [Fact(DisplayName = "HostShellResolver with non-matching host returns null")]
+    public void HostShellResolver_WithNonMatchingHost_ReturnsNull()
+    {
+        // Arrange
+        var cache = CreateCacheWithHostShells();
+        var resolver = new HostShellResolver(cache);
+        var context = CreateResolutionContext(host: "unknown.example.com");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact(DisplayName = "HostShellResolver is case-insensitive")]
+    public void HostShellResolver_WithDifferentCase_ReturnsShellId()
+    {
+        // Arrange
+        var cache = CreateCacheWithHostShells();
+        var resolver = new HostShellResolver(cache);
+        var context = CreateResolutionContext(host: "TENANT1.EXAMPLE.COM");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Equal(new ShellId("Tenant1Shell"), result);
+    }
+
+    [Fact(DisplayName = "PathShellResolver resolves shell by path property")]
+    public void PathShellResolver_WithMatchingPath_ReturnsShellId()
+    {
+        // Arrange
+        var cache = CreateCacheWithPathShells();
+        var resolver = new PathShellResolver(cache);
+        var context = CreateResolutionContext(path: $"/{Tenant1Path}/api/users");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Equal(new ShellId("Tenant1Shell"), result);
+    }
+
+    [Fact(DisplayName = "PathShellResolver with non-matching path returns null")]
+    public void PathShellResolver_WithNonMatchingPath_ReturnsNull()
+    {
+        // Arrange
+        var cache = CreateCacheWithPathShells();
+        var resolver = new PathShellResolver(cache);
+        var context = CreateResolutionContext(path: "/unknown/api");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact(DisplayName = "PathShellResolver is case-insensitive")]
+    public void PathShellResolver_WithDifferentCase_ReturnsShellId()
+    {
+        // Arrange
+        var cache = CreateCacheWithPathShells();
+        var resolver = new PathShellResolver(cache);
+        var context = CreateResolutionContext(path: "/TENANT1/api");
+
+        // Act
+        var result = resolver.Resolve(context);
+
+        // Assert
+        Assert.Equal(new ShellId("Tenant1Shell"), result);
+    }
+
+    [Fact(DisplayName = "HostShellResolver constructor with null cache throws ArgumentNullException")]
+    public void HostShellResolver_Constructor_WithNullCache_ThrowsArgumentNullException()
     {
         // Act & Assert
         var ex = Assert.Throws<ArgumentNullException>(() => new HostShellResolver(null!));
-        Assert.Equal("hostMap", ex.ParamName);
+        Assert.Equal("cache", ex.ParamName);
     }
 
-    [Fact(DisplayName = "PathShellResolver constructor with null pathMap throws ArgumentNullException")]
-    public void PathShellResolver_Constructor_WithNullPathMap_ThrowsArgumentNullException()
+    [Fact(DisplayName = "PathShellResolver constructor with null cache throws ArgumentNullException")]
+    public void PathShellResolver_Constructor_WithNullCache_ThrowsArgumentNullException()
     {
         // Act & Assert
         var ex = Assert.Throws<ArgumentNullException>(() => new PathShellResolver(null!));
-        Assert.Equal("pathMap", ex.ParamName);
-    }
-
-    [Theory(DisplayName = "Resolve with null context throws ArgumentNullException")]
-    [InlineData(typeof(HostShellResolver))]
-    [InlineData(typeof(PathShellResolver))]
-    public void Resolve_WithNullContext_ThrowsArgumentNullException(Type resolverType)
-    {
-        // Arrange
-        var resolver = CreateResolverInstance(resolverType);
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => resolver.Resolve(null!));
-        Assert.Equal("context", ex.ParamName);
+        Assert.Equal("cache", ex.ParamName);
     }
 
     #region Helper Methods
 
-    private static HostShellResolver CreateHostResolver() => new(new Dictionary<string, ShellId>
+    private static IShellSettingsCache CreateCacheWithHostShells()
     {
-        [Tenant1Host] = new("Tenant1Shell"),
-        [Tenant2Host] = new("Tenant2Shell"),
-        [Localhost] = new("LocalhostShell")
-    });
+        var shells = new List<ShellSettings>
+        {
+            new ShellSettings
+            {
+                Id = new ShellId("Tenant1Shell"),
+                EnabledFeatures = [],
+                Properties = new Dictionary<string, object>
+                {
+                    [ShellPropertyKeys.Host] = JsonDocument.Parse($"\"{Tenant1Host}\"").RootElement
+                }
+            },
+            new ShellSettings
+            {
+                Id = new ShellId("Tenant2Shell"),
+                EnabledFeatures = [],
+                Properties = new Dictionary<string, object>
+                {
+                    [ShellPropertyKeys.Host] = JsonDocument.Parse($"\"{Tenant2Host}\"").RootElement
+                }
+            }
+        };
 
-    private static PathShellResolver CreatePathResolver() => new(new Dictionary<string, ShellId>
-    {
-        [Tenant1Path] = new("Tenant1Shell"),
-        [Tenant2Path] = new("Tenant2Shell")
-    });
+        return new TestShellSettingsCache(shells);
+    }
 
-    private static IShellResolverStrategy CreateResolverInstance(Type resolverType)
+    private static IShellSettingsCache CreateCacheWithPathShells()
     {
-        var emptyMap = new Dictionary<string, ShellId>();
-        return (IShellResolverStrategy)Activator.CreateInstance(resolverType, emptyMap)!;
+        var shells = new List<ShellSettings>
+        {
+            new ShellSettings
+            {
+                Id = new ShellId("Tenant1Shell"),
+                EnabledFeatures = [],
+                Properties = new Dictionary<string, object>
+                {
+                    [ShellPropertyKeys.Path] = JsonDocument.Parse($"\"{Tenant1Path}\"").RootElement
+                }
+            },
+            new ShellSettings
+            {
+                Id = new ShellId("Tenant2Shell"),
+                EnabledFeatures = [],
+                Properties = new Dictionary<string, object>
+                {
+                    [ShellPropertyKeys.Path] = JsonDocument.Parse($"\"{Tenant2Path}\"").RootElement
+                }
+            }
+        };
+
+        return new TestShellSettingsCache(shells);
     }
 
     private static ShellResolutionContext CreateResolutionContext(string? host = null, string? path = null)
@@ -115,6 +190,20 @@ public class ShellResolverTests
             context.Set(ShellResolutionContextKeys.Path, path);
 
         return context;
+    }
+
+    private class TestShellSettingsCache : IShellSettingsCache
+    {
+        private readonly List<ShellSettings> _shells;
+
+        public TestShellSettingsCache(List<ShellSettings> shells)
+        {
+            _shells = shells;
+        }
+
+        public IReadOnlyCollection<ShellSettings> GetAll() => _shells;
+
+        public ShellSettings? GetById(ShellId id) => _shells.FirstOrDefault(s => s.Id == id);
     }
 
     #endregion

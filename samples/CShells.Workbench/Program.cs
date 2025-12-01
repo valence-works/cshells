@@ -18,13 +18,13 @@ var shellsPath = Path.Combine(builder.Environment.ContentRootPath, "Shells");
 var blobStorage = StorageFactory.Blobs.DirectoryFiles(shellsPath);
 
 // Register CShells with FluentStorage provider and auto-configure resolvers from shell properties
-await builder.AddCShellsAsync(async cshells =>
+builder.AddCShells(cshells =>
 {
     // Load shell settings from FluentStorage
     cshells.WithFluentStorageProvider(blobStorage);
 
     // Automatically register Path/Host resolvers from shell properties
-    await cshells.WithAutoResolversAsync();
+    cshells.WithAutoResolvers();
 }, assemblies: [typeof(Program).Assembly]);
 
 builder.Services.AddEndpointsApiExplorer();

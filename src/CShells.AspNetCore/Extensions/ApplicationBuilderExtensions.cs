@@ -232,7 +232,7 @@ public static class ApplicationBuilderExtensions
     {
         var mappings = new Dictionary<string, ShellId>(StringComparer.OrdinalIgnoreCase);
 
-        // First, check shell properties for path mappings
+        // Get path mappings from shell properties
         var shellHost = serviceProvider.GetService<IShellHost>();
         if (shellHost != null)
         {
@@ -252,20 +252,6 @@ public static class ApplicationBuilderExtensions
                     {
                         mappings[path] = shell.Id;
                     }
-                }
-            }
-        }
-
-        // Then, get path mappings from explicitly registered resolver strategies
-        // (these override property-based mappings if there are conflicts)
-        var strategies = serviceProvider.GetServices<IShellResolverStrategy>();
-        foreach (var strategy in strategies)
-        {
-            if (strategy is PathShellResolver pathResolver)
-            {
-                foreach (var (path, shellId) in pathResolver.PathMap)
-                {
-                    mappings[path] = shellId;
                 }
             }
         }

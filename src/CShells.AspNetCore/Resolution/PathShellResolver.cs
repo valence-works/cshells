@@ -1,29 +1,25 @@
+using CShells.AspNetCore.Configuration;
+using CShells.Configuration;
 using CShells.Resolution;
 
 namespace CShells.AspNetCore.Resolution;
 
 /// <summary>
 /// A shell resolver strategy that determines the shell based on the first segment of the request URL path.
+/// Reads shell settings from the cache at runtime to find matching Path properties.
 /// </summary>
 public class PathShellResolver : IShellResolverStrategy
 {
-    private readonly Dictionary<string, ShellId> _pathMap;
-
-    /// <summary>
-    /// Gets the dictionary mapping path segment names to shell identifiers.
-    /// </summary>
-    public IReadOnlyDictionary<string, ShellId> PathMap => _pathMap;
+    private readonly IShellSettingsCache _cache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PathShellResolver"/> class.
     /// </summary>
-    /// <param name="pathMap">A dictionary mapping path segment names to shell identifiers.
-    /// Keys should be the first path segment without leading slash (e.g., "tenant1", "admin").</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="pathMap"/> is null.</exception>
-    public PathShellResolver(IReadOnlyDictionary<string, ShellId> pathMap)
+    /// <param name="cache">The shell settings cache to read from.</param>
+    public PathShellResolver(IShellSettingsCache cache)
     {
-        ArgumentNullException.ThrowIfNull(pathMap);
-        _pathMap = new(pathMap, StringComparer.OrdinalIgnoreCase);
+        ArgumentNullException.ThrowIfNull(cache);
+        _cache = cache;
     }
 
     /// <inheritdoc />
@@ -42,9 +38,23 @@ public class PathShellResolver : IShellResolverStrategy
         var slashIndex = pathValue.IndexOf('/');
         var firstSegment = slashIndex >= 0 ? pathValue[..slashIndex].ToString() : pathValue.ToString();
 
-        if (_pathMap.TryGetValue(firstSegment, out var shellId))
+        // Search all shells for matching Path property
+        foreach (var shell in _cache.GetAll())
         {
-            return shellId;
+            if (shell.Properties.TryGetValue(ShellPropertyKeys.Path, out var propertyValue))
+            {
+                var shellPath = propertyValue switch
+                {
+                    string s => s,
+                    System.Text.Json.JsonElement jsonElement when jsonElement.ValueKind == System.Text.Json.JsonValueKind.String => jsonElement.GetString(),
+                    _ => null
+                };
+
+                if (shellPath != null && shellPath.Equals(firstSegment, StringComparison.OrdinalIgnoreCase))
+                {
+                    return shell.Id;
+                }
+            }
         }
 
         return null;

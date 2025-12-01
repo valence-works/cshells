@@ -1,5 +1,6 @@
-using CShells.AspNetCore.Resolution;
+using CShells.Configuration;
 using CShells.DependencyInjection;
+using CShells.AspNetCore.Resolution;
 using CShells.Resolution;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -12,100 +13,32 @@ namespace CShells.AspNetCore.Configuration;
 public static class CShellsBuilderExtensions
 {
     /// <summary>
-    /// Automatically registers shell resolution strategies based on shell properties.
-    /// This method scans all configured shells for Path and Host properties and registers
-    /// appropriate resolver strategies.
+    /// Automatically registers shell resolution strategies that read shell properties at runtime.
+    /// Resolvers query Path and Host properties from the shell settings cache.
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
     /// <returns>The builder for method chaining.</returns>
+    /// <remarks>
+    /// This method registers:
+    /// <list type="bullet">
+    /// <item><see cref="IShellSettingsCache"/> as a hosted service that loads shells at startup</item>
+    /// <item><see cref="PathShellResolver"/> to resolve shells by URL path segment</item>
+    /// <item><see cref="HostShellResolver"/> to resolve shells by HTTP host name</item>
+    /// </list>
+    /// The resolvers query shell properties at runtime from the cache, enabling dynamic shell configuration.
+    /// </remarks>
     public static CShellsBuilder WithAutoResolvers(this CShellsBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        var shells = builder.GetShells();
+        // Register the shell settings cache as a hosted service
+        // This loads shells at startup and keeps them cached for runtime resolution
+        builder.Services.TryAddSingleton<IShellSettingsCache, DefaultShellSettingsCache>();
+        builder.Services.AddHostedService(sp => (DefaultShellSettingsCache)sp.GetRequiredService<IShellSettingsCache>());
 
-        // Collect path and host mappings from shell properties
-        var pathMappings = new Dictionary<string, ShellId>(StringComparer.OrdinalIgnoreCase);
-        var hostMappings = new Dictionary<string, ShellId>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var shell in shells)
-        {
-            // Check for path property
-            if (shell.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathValue)
-                && pathValue is string path)
-            {
-                pathMappings[path] = shell.Id;
-            }
-
-            // Check for host property
-            if (shell.Properties.TryGetValue(ShellPropertyKeys.Host, out var hostValue)
-                && hostValue is string host)
-            {
-                hostMappings[host] = shell.Id;
-            }
-        }
-
-        // Register path resolver if any path mappings exist
-        if (pathMappings.Count > 0)
-        {
-            builder.Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IShellResolverStrategy>(
-                    new PathShellResolver(pathMappings)));
-        }
-
-        // Register host resolver if any host mappings exist
-        if (hostMappings.Count > 0)
-        {
-            builder.Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IShellResolverStrategy>(
-                    new HostShellResolver(hostMappings)));
-        }
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Manually registers path-based shell resolution for the specified shells.
-    /// </summary>
-    /// <param name="builder">The CShells builder.</param>
-    /// <param name="pathMappings">Dictionary mapping URL path prefixes to shell IDs.</param>
-    /// <returns>The builder for method chaining.</returns>
-    public static CShellsBuilder WithPathResolver(
-        this CShellsBuilder builder,
-        IReadOnlyDictionary<string, ShellId> pathMappings)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(pathMappings);
-
-        if (pathMappings.Count > 0)
-        {
-            builder.Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IShellResolverStrategy>(
-                    new PathShellResolver(pathMappings)));
-        }
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Manually registers host-based shell resolution for the specified shells.
-    /// </summary>
-    /// <param name="builder">The CShells builder.</param>
-    /// <param name="hostMappings">Dictionary mapping hostnames to shell IDs.</param>
-    /// <returns>The builder for method chaining.</returns>
-    public static CShellsBuilder WithHostResolver(
-        this CShellsBuilder builder,
-        IReadOnlyDictionary<string, ShellId> hostMappings)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(hostMappings);
-
-        if (hostMappings.Count > 0)
-        {
-            builder.Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IShellResolverStrategy>(
-                    new HostShellResolver(hostMappings)));
-        }
+        // Register resolvers that read from the cache at runtime
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, PathShellResolver>());
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, HostShellResolver>());
 
         return builder;
     }
