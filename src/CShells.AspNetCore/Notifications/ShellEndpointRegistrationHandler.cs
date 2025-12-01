@@ -3,6 +3,7 @@ using CShells.AspNetCore.Routing;
 using CShells.Features;
 using CShells.Hosting;
 using CShells.Notifications;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -103,7 +104,23 @@ public class ShellEndpointRegistrationHandler :
         _logger.LogDebug("Registering endpoints for shell '{ShellId}'", settings.Id);
 
         // Get path prefix from shell properties
+        _logger.LogInformation("Shell '{ShellId}' has {PropertyCount} properties",
+            settings.Id, settings.Properties.Count);
+
+        if (settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathValue))
+        {
+            _logger.LogInformation("Shell '{ShellId}' Path property type: {TypeName}, value: {Value}",
+                settings.Id, pathValue?.GetType().Name ?? "null", pathValue);
+        }
+        else
+        {
+            _logger.LogWarning("Shell '{ShellId}' does not have property '{PropertyKey}'",
+                settings.Id, ShellPropertyKeys.Path);
+        }
+
         var pathPrefix = GetPathPrefix(settings);
+
+        _logger.LogInformation("Shell '{ShellId}' path prefix: '{PathPrefix}'", settings.Id, pathPrefix ?? "(none)");
 
         // Create shell-scoped endpoint builder
         var shellEndpointBuilder = new ShellEndpointRouteBuilder(
@@ -139,6 +156,17 @@ public class ShellEndpointRegistrationHandler :
 
         // Add all endpoints to the data source
         var shellEndpoints = shellEndpointBuilder.GetEndpoints().ToList();
+
+        // Log the actual route patterns being registered
+        foreach (var endpoint in shellEndpoints)
+        {
+            if (endpoint is RouteEndpoint routeEndpoint)
+            {
+                _logger.LogInformation("Registering endpoint for shell '{ShellId}': {RoutePattern}",
+                    settings.Id, routeEndpoint.RoutePattern.RawText);
+            }
+        }
+
         _endpointDataSource.AddEndpoints(shellEndpoints);
 
         _logger.LogDebug("Registered {Count} endpoint(s) for shell '{ShellId}'",
@@ -165,19 +193,26 @@ public class ShellEndpointRegistrationHandler :
     /// </summary>
     private static string? GetPathPrefix(ShellSettings settings)
     {
-        if (settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathObj) &&
-            pathObj is string path &&
-            !string.IsNullOrWhiteSpace(path))
+        if (!settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathObj))
+            return null;
+
+        // Handle JsonElement (from JSON deserialization)
+        string? path = pathObj switch
         {
-            var trimmedPath = path.Trim();
-            if (!trimmedPath.StartsWith('/'))
-                trimmedPath = "/" + trimmedPath;
-            if (trimmedPath.EndsWith('/') && trimmedPath.Length > 1)
-                trimmedPath = trimmedPath.TrimEnd('/');
+            string s => s,
+            System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
+            _ => null
+        };
 
-            return trimmedPath;
-        }
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
 
-        return null;
+        var trimmedPath = path.Trim();
+        if (!trimmedPath.StartsWith('/'))
+            trimmedPath = "/" + trimmedPath;
+        if (trimmedPath.EndsWith('/') && trimmedPath.Length > 1)
+            trimmedPath = trimmedPath.TrimEnd('/');
+
+        return trimmedPath;
     }
 }

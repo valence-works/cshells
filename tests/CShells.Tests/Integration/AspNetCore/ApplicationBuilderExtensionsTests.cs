@@ -1,4 +1,3 @@
-using CShells.AspNetCore;
 using CShells.Hosting;
 using CShells.Resolution;
 using Microsoft.AspNetCore.Builder;

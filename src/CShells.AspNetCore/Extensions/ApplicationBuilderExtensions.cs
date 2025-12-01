@@ -1,14 +1,9 @@
-using CShells.AspNetCore.Management;
 using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Routing;
 using CShells.Configuration;
-using CShells.Features;
-using CShells.Hosting;
-using CShells.Management;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -167,20 +162,27 @@ public static class ApplicationBuilderExtensions
     /// </summary>
     private static string? GetPathPrefix(ShellSettings settings)
     {
-        if (settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathObj) &&
-            pathObj is string path &&
-            !string.IsNullOrWhiteSpace(path))
+        if (!settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathObj))
+            return null;
+
+        // Handle JsonElement (from JSON deserialization)
+        string? path = pathObj switch
         {
-            var trimmedPath = path.Trim();
-            if (!trimmedPath.StartsWith('/'))
-                trimmedPath = "/" + trimmedPath;
-            if (trimmedPath.EndsWith('/') && trimmedPath.Length > 1)
-                trimmedPath = trimmedPath.TrimEnd('/');
+            string s => s,
+            System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
+            _ => null
+        };
 
-            return trimmedPath;
-        }
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
 
-        return null;
+        var trimmedPath = path.Trim();
+        if (!trimmedPath.StartsWith('/'))
+            trimmedPath = "/" + trimmedPath;
+        if (trimmedPath.EndsWith('/') && trimmedPath.Length > 1)
+            trimmedPath = trimmedPath.TrimEnd('/');
+
+        return trimmedPath;
     }
 
     /// <summary>

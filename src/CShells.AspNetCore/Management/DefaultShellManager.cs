@@ -1,13 +1,7 @@
-using CShells.AspNetCore.Features;
-using CShells.AspNetCore.Routing;
 using CShells.Configuration;
-using CShells.Features;
 using CShells.Hosting;
 using CShells.Management;
 using CShells.Notifications;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 

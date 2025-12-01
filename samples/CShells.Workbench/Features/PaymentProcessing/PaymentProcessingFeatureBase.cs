@@ -1,4 +1,3 @@
-using CShells.AspNetCore;
 using CShells.AspNetCore.Features;
 using CShells.SampleApp.Features.Core;
 using CShells.SampleApp.Features.FraudDetection;

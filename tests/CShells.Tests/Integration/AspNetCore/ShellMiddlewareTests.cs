@@ -1,4 +1,3 @@
-using CShells.AspNetCore;
 using CShells.AspNetCore.Middleware;
 using CShells.Hosting;
 using CShells.Resolution;

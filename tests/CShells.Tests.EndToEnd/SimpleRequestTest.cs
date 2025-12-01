@@ -1,5 +1,3 @@
-using System.Net;
-
 namespace CShells.Tests.EndToEnd;
 
 [Collection("Workbench")]

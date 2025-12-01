@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Primitives;
 
 namespace CShells.AspNetCore.Routing;

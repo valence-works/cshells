@@ -1,4 +1,3 @@
-using CShells;
 using CShells.Configuration;
 using CShells.DependencyInjection;
 using CShells.Features;

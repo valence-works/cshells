@@ -1,5 +1,4 @@
 using CShells.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.EndToEnd;

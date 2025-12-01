@@ -1,4 +1,3 @@
-using CShells.AspNetCore;
 using CShells.DependencyInjection;
 using CShells.Resolution;
 using Microsoft.Extensions.DependencyInjection;

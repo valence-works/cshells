@@ -1,7 +1,5 @@
-using System.Reflection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Hosting;
 
 namespace CShells.Tests.EndToEnd;
 
