@@ -35,7 +35,7 @@ public static class ApplicationBuilderExtensions
     /// </code>
     /// </para>
     /// </remarks>
-    public static IEndpointConventionBuilder MapCShells(this IApplicationBuilder app)
+    public static IEndpointConventionBuilder MapShells(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
 

@@ -20,11 +20,11 @@ public static class ShellExtensions
         /// configuration section "CShells" and the default shell resolver.
         /// </summary>
         /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>
-        public WebApplicationBuilder AddCShells()
+        public WebApplicationBuilder AddShells()
         {
             ArgumentNullException.ThrowIfNull(builder);
 
-            return builder.AddCShells(sectionName: CShellsOptions.SectionName, assemblies: null);
+            return builder.AddShells(sectionName: CShellsOptions.SectionName, assemblies: null);
         }
 
         /// <summary>
@@ -33,11 +33,11 @@ public static class ShellExtensions
         /// </summary>
         /// <param name="assemblies">The assemblies to scan for CShells features. If <c>null</c>, all loaded assemblies are scanned.</param>
         /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>
-        public WebApplicationBuilder AddCShells(IEnumerable<Assembly> assemblies)
+        public WebApplicationBuilder AddShells(IEnumerable<Assembly> assemblies)
         {
             ArgumentNullException.ThrowIfNull(builder);
 
-            return builder.AddCShells(sectionName: CShellsOptions.SectionName, assemblies: assemblies);
+            return builder.AddShells(sectionName: CShellsOptions.SectionName, assemblies: assemblies);
         }
 
         /// <summary>
@@ -47,12 +47,12 @@ public static class ShellExtensions
         /// <param name="sectionName">The configuration section name to bind CShells options from.</param>
         /// <param name="assemblies">The assemblies to scan for CShells features. If <c>null</c>, all loaded assemblies are scanned.</param>
         /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>
-        public WebApplicationBuilder AddCShells(string sectionName, IEnumerable<Assembly>? assemblies = null)
+        public WebApplicationBuilder AddShells(string sectionName, IEnumerable<Assembly>? assemblies = null)
         {
             ArgumentNullException.ThrowIfNull(builder);
             ArgumentException.ThrowIfNullOrEmpty(sectionName);
 
-            return builder.AddCShells(shells => shells.WithConfigurationProvider(builder.Configuration, sectionName), assemblies);
+            return builder.AddShells(shells => shells.WithConfigurationProvider(builder.Configuration, sectionName), assemblies);
         }
 
         /// <summary>
@@ -62,7 +62,7 @@ public static class ShellExtensions
         /// <param name="configureCShells">Callback used to configure the CShells builder (e.g., shell settings provider).</param>
         /// <param name="assemblies">The assemblies to scan for CShells features. If <c>null</c>, all loaded assemblies are scanned.</param>
         /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>        
-        public WebApplicationBuilder AddCShells(
+        public WebApplicationBuilder AddShells(
             Action<CShellsBuilder> configureCShells,
             IEnumerable<Assembly>? assemblies = null)
         {

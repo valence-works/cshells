@@ -23,7 +23,7 @@ public class ApplicationBuilderExtensionsTests
     [MemberData(nameof(GuardClauseData))]
     public void MapCShells_GuardClauses_ThrowArgumentNullException(IApplicationBuilder? app, string expectedParam)
     {
-        var exception = Assert.Throws<ArgumentNullException>(() => CShells.AspNetCore.Extensions.ApplicationBuilderExtensions.MapCShells(app!));
+        var exception = Assert.Throws<ArgumentNullException>(() => CShells.AspNetCore.Extensions.ApplicationBuilderExtensions.MapShells(app!));
         Assert.Equal(expectedParam, exception.ParamName);
     }
 
@@ -41,7 +41,7 @@ public class ApplicationBuilderExtensionsTests
         var app = new TestApplicationBuilder(serviceProvider);
 
         // Act
-        var result = CShells.AspNetCore.Extensions.ApplicationBuilderExtensions.MapCShells(app);
+        var result = CShells.AspNetCore.Extensions.ApplicationBuilderExtensions.MapShells(app);
 
         // Assert
         Assert.NotNull(result);
