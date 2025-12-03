@@ -8,7 +8,7 @@ CShells is a lightweight, extensible shell and feature system for .NET projects 
 
 - **Language**: C# (.NET 10)
 - **Framework**: .NET 10 with ASP.NET Core integration
-- **Testing**: xUnit with FluentAssertions
+- **Testing**: xUnit
 - **Build**: MSBuild with Central Package Management (Directory.Packages.props)
 - **CI/CD**: GitHub Actions
 
@@ -51,7 +51,7 @@ CShells is a lightweight, extensible shell and feature system for .NET projects 
 ## Testing Guidelines
 
 - Write unit tests using xUnit
-- Use FluentAssertions for assertions
+- Use xUnit's Assert methods for assertions
 - Place unit tests in `tests/CShells.Tests/Unit/`
 - Place integration tests in `tests/CShells.Tests/Integration/`
 - Test file names should match the class being tested with `Tests` suffix (e.g., `FeatureDiscoveryTests.cs`)
