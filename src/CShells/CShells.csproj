@@ -1,5 +1,26 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+    <PropertyGroup>
+        <Authors>Sipke Schoorstra</Authors>
+        <Description>A modular multi-tenancy framework for .NET that enables building feature-based applications with isolated services, configuration, and background workers. Organize functionality into features and modules, with runtime resolution of tenant contexts (shells) for true multi-tenant isolation.</Description>
+        <PackageTags>multi-tenancy;tenancy;shell;tenant;isolation;saas;asp.net;dependency-injection</PackageTags>
+        <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>logo.png</PackageIcon>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" Link="README.md" />
+        <None Include="$(MSBuildThisFileDirectory)..\..\branding\logo.png" Pack="true" PackagePath="\" Link="logo.png" />
+    </ItemGroup>
+
     <ItemGroup>
         <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>

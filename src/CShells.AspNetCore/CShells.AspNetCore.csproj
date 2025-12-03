@@ -1,5 +1,26 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+    <PropertyGroup>
+        <Authors>Sipke Schoorstra</Authors>
+        <Description>ASP.NET Core integration for CShells. Provides middleware and extensions for shell/tenant resolution based on HTTP context, including host-based and route-based strategies for modular multi-tenant applications.</Description>
+        <PackageTags>multi-tenancy;tenancy;shell;tenant;isolation;saas;asp.net-core;middleware;aspnetcore</PackageTags>
+        <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>logo.png</PackageIcon>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" Link="README.md" />
+        <None Include="$(MSBuildThisFileDirectory)..\..\branding\logo.png" Pack="true" PackagePath="\" Link="logo.png" />
+    </ItemGroup>
+
     <ItemGroup>
         <ProjectReference Include="..\CShells\CShells.csproj"/>
     </ItemGroup>

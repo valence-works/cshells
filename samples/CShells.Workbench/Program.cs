@@ -1,5 +1,6 @@
 using CShells.AspNetCore.Extensions;
 using CShells.AspNetCore.Resolution;
+using CShells.Workbench.Background;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddShells();
@@ -13,6 +14,12 @@ if (optionsDescriptor != null)
     var newOptions = new WebRoutingShellResolverOptions { HeaderName = "X-Tenant-Id" };
     services.AddSingleton(newOptions);
 }
+
+// Register background work observer
+builder.Services.AddSingleton<IBackgroundWorkObserver, ConsoleBackgroundWorkObserver>();
+
+// Register background worker
+builder.Services.AddHostedService<ShellDemoWorker>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

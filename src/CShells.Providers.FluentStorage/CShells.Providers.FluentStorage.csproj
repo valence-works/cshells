@@ -1,5 +1,26 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <Authors>Sipke Schoorstra</Authors>
+    <Description>FluentStorage integration provider for CShells. Enables loading and persisting shell configurations from various storage backends (Azure Blob, AWS S3, disk, memory, etc.) supported by FluentStorage.</Description>
+    <PackageTags>multi-tenancy;tenancy;shell;tenant;storage;fluent-storage;configuration;persistence</PackageTags>
+    <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" Link="README.md" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\branding\logo.png" Pack="true" PackagePath="\" Link="logo.png" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="FluentStorage" />
   </ItemGroup>
