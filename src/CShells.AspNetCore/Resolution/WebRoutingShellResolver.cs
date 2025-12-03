@@ -34,11 +34,8 @@ public class WebRoutingShellResolver(IShellSettingsCache cache, WebRoutingShellR
 
         if (_options.ExcludePaths is { Length: > 0 } excludePaths)
         {
-            foreach (var excludedPath in excludePaths)
-            {
-                if (path.StartsWith(excludedPath, StringComparison.OrdinalIgnoreCase))
-                    return null;
-            }
+            if (excludePaths.Any(excludedPath => path.StartsWith(excludedPath, StringComparison.OrdinalIgnoreCase)))
+                return null;
         }
 
         var pathValue = path.AsSpan(1);
