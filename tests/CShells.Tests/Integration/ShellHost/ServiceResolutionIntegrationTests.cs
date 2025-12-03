@@ -18,9 +18,9 @@ public class ServiceResolutionIntegrationTests : IDisposable
     }
 
     [Theory(DisplayName = "GetShell with Weather feature resolves expected services")]
-    [InlineData(typeof(TestFixtures.IWeatherService), "Weather feature should register IWeatherService")]
-    [InlineData(typeof(TestFixtures.ITimeService), "Core feature (dependency of Weather) should register ITimeService")]
-    public void GetShell_WithWeatherFeature_ResolvesExpectedServices(Type serviceType, string reason)
+    [InlineData(typeof(TestFixtures.IWeatherService))]
+    [InlineData(typeof(TestFixtures.ITimeService))]
+    public void GetShell_WithWeatherFeature_ResolvesExpectedServices(Type serviceType)
     {
         // Arrange
         var host = TestFixtures.CreateDefaultHostWithWeatherFeature(_hostsToDispose);

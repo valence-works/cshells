@@ -10,7 +10,6 @@ public class EndpointRouteBuilderAccessor
 {
     /// <summary>
     /// Gets or sets the endpoint route builder.
-    /// This is set during MapCShells() and remains available for the lifetime of the application.
     /// </summary>
     public IEndpointRouteBuilder? EndpointRouteBuilder { get; set; }
 }

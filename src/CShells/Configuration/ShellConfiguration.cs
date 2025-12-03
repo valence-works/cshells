@@ -7,34 +7,23 @@ namespace CShells.Configuration;
 /// Provides shell-scoped configuration that merges shell-specific settings with the root application configuration.
 /// Shell-specific settings take precedence over root configuration values.
 /// </summary>
-public class ShellConfiguration : IConfiguration
+public class ShellConfiguration(ShellSettings shellSettings, IConfiguration rootConfiguration) : IConfiguration
 {
-    private readonly IConfiguration _rootConfiguration;
-    private readonly IConfiguration _shellConfiguration;
+    private readonly IConfiguration _rootConfiguration = Guard.Against.Null(rootConfiguration);
+    private readonly IConfiguration _shellConfiguration = BuildShellConfiguration(Guard.Against.Null(shellSettings));
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ShellConfiguration"/> class.
-    /// </summary>
-    /// <param name="shellSettings">The shell settings containing configuration data.</param>
-    /// <param name="rootConfiguration">The root application configuration.</param>
-    public ShellConfiguration(ShellSettings shellSettings, IConfiguration rootConfiguration)
+    private static IConfiguration BuildShellConfiguration(ShellSettings settings)
     {
-        Guard.Against.Null(shellSettings);
-        Guard.Against.Null(rootConfiguration);
-
-        _rootConfiguration = rootConfiguration;
-
-        // Build a configuration from the shell's ConfigurationData
         var builder = new ConfigurationBuilder();
 
-        if (shellSettings.ConfigurationData.Count > 0)
+        if (settings.ConfigurationData.Count > 0)
         {
             builder.AddInMemoryCollection(
-                shellSettings.ConfigurationData.Select(kvp =>
+                settings.ConfigurationData.Select(kvp =>
                     new KeyValuePair<string, string?>(kvp.Key, kvp.Value?.ToString())));
         }
 
-        _shellConfiguration = builder.Build();
+        return builder.Build();
     }
 
     /// <inheritdoc />
@@ -47,22 +36,13 @@ public class ShellConfiguration : IConfiguration
     /// <inheritdoc />
     public IConfigurationSection GetSection(string key)
     {
-        // Try shell configuration first, then fall back to root
         var shellSection = _shellConfiguration.GetSection(key);
-
-        // Check if the shell section exists (has a value or children)
-        if (shellSection.Exists())
-        {
-            return shellSection;
-        }
-
-        return _rootConfiguration.GetSection(key);
+        return shellSection.Exists() ? shellSection : _rootConfiguration.GetSection(key);
     }
 
     /// <inheritdoc />
     public IEnumerable<IConfigurationSection> GetChildren()
     {
-        // Merge children from both configurations, shell takes precedence
         var shellChildren = _shellConfiguration.GetChildren().ToDictionary(s => s.Key);
         var rootChildren = _rootConfiguration.GetChildren().ToDictionary(s => s.Key);
 
@@ -70,51 +50,29 @@ public class ShellConfiguration : IConfiguration
         var merged = new Dictionary<string, IConfigurationSection>(shellChildren);
 
         // Add root children that don't exist in shell
-        foreach (var rootChild in rootChildren)
+        foreach (var rootChild in rootChildren.Where(rc => !merged.ContainsKey(rc.Key)))
         {
-            if (!merged.ContainsKey(rootChild.Key))
-            {
-                merged[rootChild.Key] = rootChild.Value;
-            }
+            merged[rootChild.Key] = rootChild.Value;
         }
 
         return merged.Values;
     }
 
     /// <inheritdoc />
-    public IChangeToken GetReloadToken()
-    {
-        // Return a composite change token that triggers when either configuration changes
-        return new CompositeChangeToken(new[]
-        {
-            _shellConfiguration.GetReloadToken(),
-            _rootConfiguration.GetReloadToken()
-        });
-    }
+    public IChangeToken GetReloadToken() => new CompositeChangeToken([_shellConfiguration.GetReloadToken(), _rootConfiguration.GetReloadToken()]);
 }
 
 /// <summary>
 /// A change token that represents multiple change tokens.
 /// </summary>
-internal class CompositeChangeToken : IChangeToken
+internal sealed class CompositeChangeToken(IChangeToken[] changeTokens) : IChangeToken
 {
-    private readonly IChangeToken[] _changeTokens;
-
-    public CompositeChangeToken(IChangeToken[] changeTokens)
-    {
-        _changeTokens = changeTokens;
-    }
-
-    public bool HasChanged => _changeTokens.Any(t => t.HasChanged);
-
-    public bool ActiveChangeCallbacks => _changeTokens.Any(t => t.ActiveChangeCallbacks);
+    public bool HasChanged => changeTokens.Any(t => t.HasChanged);
+    public bool ActiveChangeCallbacks => changeTokens.Any(t => t.ActiveChangeCallbacks);
 
     public IDisposable RegisterChangeCallback(Action<object?> callback, object? state)
     {
-        var registrations = _changeTokens
-            .Select(token => token.RegisterChangeCallback(callback, state))
-            .ToArray();
-
+        var registrations = changeTokens.Select(token => token.RegisterChangeCallback(callback, state)).ToArray();
         return new CompositeDisposable(registrations);
     }
 }
@@ -122,20 +80,11 @@ internal class CompositeChangeToken : IChangeToken
 /// <summary>
 /// Disposes multiple disposables.
 /// </summary>
-internal class CompositeDisposable : IDisposable
+internal sealed class CompositeDisposable(IDisposable[] disposables) : IDisposable
 {
-    private readonly IDisposable[] _disposables;
-
-    public CompositeDisposable(IDisposable[] disposables)
-    {
-        _disposables = disposables;
-    }
-
     public void Dispose()
     {
-        foreach (var disposable in _disposables)
-        {
+        foreach (var disposable in disposables)
             disposable.Dispose();
-        }
     }
 }

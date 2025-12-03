@@ -12,37 +12,20 @@ namespace CShells.AspNetCore.Middleware;
 /// Middleware that resolves the current shell from the request and sets the appropriate
 /// <see cref="HttpContext.RequestServices"/> scope for the duration of the request.
 /// </summary>
-public class ShellMiddleware
+public class ShellMiddleware(
+    RequestDelegate next,
+    IShellResolver resolver,
+    IShellHost host,
+    ILogger<ShellMiddleware>? logger = null)
 {
-    private readonly RequestDelegate _next;
-    private readonly IShellResolver _resolver;
-    private readonly IShellHost _host;
-    private readonly ILogger<ShellMiddleware> _logger;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ShellMiddleware"/> class.
-    /// </summary>
-    /// <param name="next">The next middleware in the pipeline.</param>
-    /// <param name="resolver">The shell resolver to determine the shell for each request.</param>
-    /// <param name="host">The shell host containing available shells.</param>
-    /// <param name="logger">Optional logger for diagnostic output.</param>
-    public ShellMiddleware(
-        RequestDelegate next,
-        IShellResolver resolver,
-        IShellHost host,
-        ILogger<ShellMiddleware>? logger = null)
-    {
-        _next = Guard.Against.Null(next);
-        _resolver = Guard.Against.Null(resolver);
-        _host = Guard.Against.Null(host);
-        _logger = logger ?? NullLogger<ShellMiddleware>.Instance;
-    }
+    private readonly RequestDelegate _next = Guard.Against.Null(next);
+    private readonly IShellResolver _resolver = Guard.Against.Null(resolver);
+    private readonly IShellHost _host = Guard.Against.Null(host);
+    private readonly ILogger<ShellMiddleware> _logger = logger ?? NullLogger<ShellMiddleware>.Instance;
 
     /// <summary>
     /// Invokes the middleware for the current request.
     /// </summary>
-    /// <param name="context">The HTTP context for the current request.</param>
-    /// <returns>A task that represents the asynchronous operation.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
         var resolutionContext = context.ToShellResolutionContext();
@@ -60,17 +43,15 @@ public class ShellMiddleware
         var shellContext = _host.GetShell(shellId.Value);
         var originalRequestServices = context.RequestServices;
 
-        using (var scope = shellContext.ServiceProvider.CreateScope())
+        using var scope = shellContext.ServiceProvider.CreateScope();
+        try
         {
-            try
-            {
-                context.RequestServices = scope.ServiceProvider;
-                await _next(context);
-            }
-            finally
-            {
-                context.RequestServices = originalRequestServices;
-            }
+            context.RequestServices = scope.ServiceProvider;
+            await _next(context);
+        }
+        finally
+        {
+            context.RequestServices = originalRequestServices;
         }
     }
 }

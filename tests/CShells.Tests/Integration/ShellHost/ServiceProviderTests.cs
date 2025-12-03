@@ -36,9 +36,9 @@ public class ServiceProviderTests : IDisposable
     }
 
     [Theory(DisplayName = "ServiceProvider can resolve shell infrastructure")]
-    [InlineData(typeof(ShellContext), "ShellContext")]
-    [InlineData(typeof(ShellSettings), "ShellSettings")]
-    public void ServiceProvider_CanResolveShellInfrastructure(Type serviceType, string serviceName)
+    [InlineData(typeof(ShellContext))]
+    [InlineData(typeof(ShellSettings))]
+    public void ServiceProvider_CanResolveShellInfrastructure(Type serviceType)
     {
         // Arrange
         var host = TestFixtures.CreateDefaultHostWithWeatherFeature(_hostsToDispose);

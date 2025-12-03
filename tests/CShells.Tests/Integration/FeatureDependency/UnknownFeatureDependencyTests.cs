@@ -26,7 +26,7 @@ public class UnknownFeatureDependencyTests
 
     [Theory(DisplayName = "ResolveDependencies with unknown feature throws InvalidOperationException")]
     [MemberData(nameof(FeatureDependencyData.UnknownDependencyCases), MemberType = typeof(FeatureDependencyData))]
-    public void ResolveDependencies_WithUnknownFeature_ThrowsInvalidOperationException(IEnumerable<string> roots, string missingFeature, string[] dependencyMap)
+    public void ResolveDependencies_WithUnknownFeature_ThrowsInvalidOperationException(IEnumerable<string> _, string missingFeature, string[] dependencyMap)
     {
         // Arrange
         var featureList = FeatureTestHelpers.ParseFeatureDependencies(dependencyMap);

@@ -7,23 +7,11 @@ namespace CShells.Notifications;
 /// <summary>
 /// Default implementation of <see cref="INotificationPublisher"/> that resolves handlers from DI.
 /// </summary>
-public class DefaultNotificationPublisher : INotificationPublisher
+public class DefaultNotificationPublisher(IServiceProvider serviceProvider, ILogger<DefaultNotificationPublisher>? logger = null) : INotificationPublisher
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<DefaultNotificationPublisher> _logger;
-    private readonly INotificationStrategy _defaultStrategy;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="DefaultNotificationPublisher"/> class.
-    /// </summary>
-    public DefaultNotificationPublisher(
-        IServiceProvider serviceProvider,
-        ILogger<DefaultNotificationPublisher>? logger = null)
-    {
-        _serviceProvider = serviceProvider;
-        _logger = logger ?? NullLogger<DefaultNotificationPublisher>.Instance;
-        _defaultStrategy = new ParallelNotificationStrategy();
-    }
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
+    private readonly ILogger<DefaultNotificationPublisher> _logger = logger ?? NullLogger<DefaultNotificationPublisher>.Instance;
+    private readonly INotificationStrategy _defaultStrategy = new ParallelNotificationStrategy();
 
     /// <inheritdoc />
     public async Task PublishAsync<TNotification>(
@@ -39,7 +27,6 @@ public class DefaultNotificationPublisher : INotificationPublisher
         _logger.LogDebug("Publishing notification of type {NotificationType} using {StrategyType}",
             typeof(TNotification).Name, executionStrategy.GetType().Name);
 
-        // Resolve all handlers for this notification type
         var handlers = _serviceProvider.GetServices<INotificationHandler<TNotification>>().ToList();
 
         if (handlers.Count == 0)

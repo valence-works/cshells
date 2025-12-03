@@ -38,6 +38,6 @@ public class TransitiveDependencyTests
         // Assert
         Assert.Equal(expectedOrder.Length, result.Count);
         Assert.Equal(expectedOrder, result);
-        Assert.Single(result.Where(f => f == "D"));
+        Assert.Single(result, f => f == "D");
     }
 }

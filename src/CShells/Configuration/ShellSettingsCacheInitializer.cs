@@ -5,8 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace CShells.Configuration;
 
 /// <summary>
-/// Background service that initializes the <see cref="ShellSettingsCache"/> at application startup
-/// by loading shell settings from an <see cref="IShellSettingsProvider"/>.
+/// Background service that initializes the <see cref="ShellSettingsCache"/> at application startup.
 /// </summary>
 public class ShellSettingsCacheInitializer(IShellManager shellManager, ILogger<ShellSettingsCacheInitializer> logger) : IHostedService
 {
@@ -27,8 +26,5 @@ public class ShellSettingsCacheInitializer(IShellManager shellManager, ILogger<S
     }
 
     /// <inheritdoc />
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
