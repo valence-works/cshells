@@ -65,7 +65,12 @@ public class ShellDemoWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope(shell);
 
-        var workDescription = $"Background work executed for shell '{shell.Id.Name}'";
+        // Access shell-scoped configuration to demonstrate per-shell settings
+        var configuration = scope.ServiceProvider.GetService<IConfiguration>();
+        var theme = configuration?["Theme"] ?? "Unknown";
+        var tier = configuration?["Tier"] ?? "Unknown";
+
+        var workDescription = $"Background work executed for shell '{shell.Id.Name}' (Theme: {theme}, Tier: {tier})";
         _logger.LogInformation(workDescription);
 
         // Notify the observer if one is registered
