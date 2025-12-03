@@ -1,4 +1,5 @@
 using CShells.AspNetCore.Features;
+using CShells.AspNetCore.Resolution;
 using CShells.AspNetCore.Routing;
 using CShells.Features;
 using CShells.Hosting;
@@ -107,15 +108,15 @@ public class ShellEndpointRegistrationHandler :
         _logger.LogInformation("Shell '{ShellId}' has {PropertyCount} properties",
             settings.Id, settings.Properties.Count);
 
-        if (settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathValue))
+        if (settings.Properties.TryGetValue(ShellPropertyKeys.WebRouting, out var pathValue))
         {
-            _logger.LogInformation("Shell '{ShellId}' Path property type: {TypeName}, value: {Value}",
+            _logger.LogInformation("Shell '{ShellId}' WebRouting property type: {TypeName}, value: {Value}",
                 settings.Id, pathValue?.GetType().Name ?? "null", pathValue);
         }
         else
         {
             _logger.LogWarning("Shell '{ShellId}' does not have property '{PropertyKey}'",
-                settings.Id, ShellPropertyKeys.Path);
+                settings.Id, ShellPropertyKeys.WebRouting);
         }
 
         var pathPrefix = GetPathPrefix(settings);
@@ -193,19 +194,19 @@ public class ShellEndpointRegistrationHandler :
     /// </summary>
     private static string? GetPathPrefix(ShellSettings settings)
     {
-        if (!settings.Properties.TryGetValue(ShellPropertyKeys.Path, out var pathObj))
+        var routingOptions = settings.GetProperty<WebRoutingShellOptions>(ShellPropertyKeys.WebRouting);
+        if (routingOptions == null)
             return null;
 
-        // Handle JsonElement (from JSON deserialization)
-        string? path = pathObj switch
-        {
-            string s => s,
-            System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.String => je.GetString(),
-            _ => null
-        };
+        var path = routingOptions.Path;
 
-        if (string.IsNullOrWhiteSpace(path))
+        // Null means no path routing configured for this shell
+        if (path == null)
             return null;
+
+        // Empty string is valid and means root path (no prefix)
+        if (path == string.Empty)
+            return null; // Return null for empty path to indicate no prefix
 
         var trimmedPath = path.Trim();
         if (!trimmedPath.StartsWith('/'))

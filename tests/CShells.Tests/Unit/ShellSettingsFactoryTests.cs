@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CShells.Configuration;
 
 namespace CShells.Tests.Unit;
@@ -31,7 +32,10 @@ public class ShellSettingsFactoryTests
         Assert.Equal("TestShell", settings.Id.Name);
         Assert.Equal(["Feature1", "Feature2"], settings.EnabledFeatures);
         Assert.Single(settings.Properties);
-        Assert.Equal("Value1", settings.Properties["Key1"]);
+
+        // Properties are stored as JsonElement now
+        var propertyValue = Assert.IsType<JsonElement>(settings.Properties["Key1"]);
+        Assert.Equal("Value1", propertyValue.GetString());
     }
 
     [Fact(DisplayName = "Create with empty config returns ShellSettings with empty collections")]

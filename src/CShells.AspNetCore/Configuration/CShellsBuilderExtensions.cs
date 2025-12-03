@@ -15,81 +15,52 @@ namespace CShells.AspNetCore.Configuration;
 public static class CShellsBuilderExtensions
 {
     /// <summary>
-    /// Registers the path-based shell resolver with optional configuration.
+    /// Registers the unified web routing shell resolver with optional configuration.
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
-    /// <param name="configure">Optional configuration action for path resolver options.</param>
+    /// <param name="configure">Optional configuration action for web routing resolver options.</param>
     /// <param name="order">Optional execution order. If not specified, uses the order from <see cref="ResolverOrderAttribute"/> (default: 0).</param>
     /// <returns>The builder for method chaining.</returns>
     /// <remarks>
-    /// This method registers <see cref="PathShellResolver"/> to resolve shells by URL path segment.
-    /// The resolver queries shell properties at runtime from the shell settings cache.
+    /// This method registers <see cref="WebRoutingShellResolver"/> which supports multiple routing methods:
+    /// path-based, host-based, header-based, and claim-based routing.
+    /// Configure which methods are enabled via the options action.
     /// </remarks>
-    public static CShellsBuilder WithPathResolver(this CShellsBuilder builder, Action<PathShellResolverOptions>? configure = null, int? order = null)
+    public static CShellsBuilder WithWebRoutingResolver(this CShellsBuilder builder, Action<WebRoutingShellResolverOptions>? configure = null, int? order = null)
     {
         Guard.Against.Null(builder);
 
-        var options = new PathShellResolverOptions();
+        var options = new WebRoutingShellResolverOptions();
         configure?.Invoke(options);
 
         builder.Services.TryAddSingleton(options);
-        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, PathShellResolver>());
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, WebRoutingShellResolver>());
 
         // Configure order if specified
         if (order.HasValue)
         {
-            builder.Services.Configure<ShellResolverOptions>(opt => opt.SetOrder<PathShellResolver>(order.Value));
+            builder.Services.Configure<ShellResolverOptions>(opt => opt.SetOrder<WebRoutingShellResolver>(order.Value));
         }
 
         return builder;
     }
 
     /// <summary>
-    /// Registers the host-based shell resolver.
-    /// </summary>
-    /// <param name="builder">The CShells builder.</param>
-    /// <param name="order">Optional execution order. If not specified, uses the order from <see cref="ResolverOrderAttribute"/> (default: 0).</param>
-    /// <returns>The builder for method chaining.</returns>
-    /// <remarks>
-    /// This method registers <see cref="HostShellResolver"/> to resolve shells by HTTP host name.
-    /// The resolver queries shell properties at runtime from the shell settings cache.
-    /// </remarks>
-    public static CShellsBuilder WithHostResolver(this CShellsBuilder builder, int? order = null)
-    {
-        Guard.Against.Null(builder);
-
-        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, HostShellResolver>());
-
-        // Configure order if specified
-        if (order.HasValue)
-        {
-            builder.Services.Configure<ShellResolverOptions>(opt => opt.SetOrder<HostShellResolver>(order.Value));
-        }
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Registers the standard ASP.NET Core shell resolution strategies (Path and Host resolvers).
+    /// Registers the standard ASP.NET Core shell resolution strategies.
     /// </summary>
     /// <param name="builder">The CShells builder.</param>
     /// <returns>The builder for method chaining.</returns>
     /// <remarks>
-    /// This method registers:
-    /// <list type="bullet">
-    /// <item><see cref="PathShellResolver"/> to resolve shells by URL path segment</item>
-    /// <item><see cref="HostShellResolver"/> to resolve shells by HTTP host name</item>
-    /// </list>
-    /// The resolvers query shell properties at runtime from the shell settings cache.
-    /// For custom resolver strategies, use <see cref="WithResolverStrategy{TStrategy}"/> or <see cref="WithResolverStrategy(CShellsBuilder, IShellResolverStrategy)"/>.
+    /// This method registers the unified <see cref="WebRoutingShellResolver"/> with path and host routing enabled by default.
+    /// The resolver supports multiple routing methods: URL path, HTTP host, custom headers, and user claims.
+    /// For custom configuration, use <see cref="WithWebRoutingResolver"/> with a configuration action.
     /// </remarks>
     public static CShellsBuilder WithStandardResolvers(this CShellsBuilder builder)
     {
         Guard.Against.Null(builder);
 
-        // Register resolvers that read from the cache at runtime
-        builder.WithPathResolver();
-        builder.WithHostResolver();
+        // Register the unified web routing resolver with default options
+        builder.WithWebRoutingResolver();
 
         return builder;
     }

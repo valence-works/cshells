@@ -1,3 +1,6 @@
+using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+
 namespace CShells.Configuration;
 
 /// <summary>
@@ -22,12 +25,52 @@ public static class ShellSettingsFactory
             .ToArray();
         var settings = new ShellSettings(shellId, normalizedFeatures);
 
+        // Convert property values to JsonElement for consistent serialization
         foreach (var property in config.Properties)
         {
-            settings.Properties[property.Key] = property.Value;
+            settings.Properties[property.Key] = ConvertToJsonElement(property.Value);
         }
 
         return settings;
+    }
+
+    /// <summary>
+    /// Converts a value to JsonElement for consistent serialization.
+    /// </summary>
+    private static object? ConvertToJsonElement(object? value)
+    {
+        if (value == null)
+            return null;
+
+        // Already a JsonElement, return as-is
+        if (value is JsonElement)
+            return value;
+
+        // For primitives and strings, serialize to JsonElement
+        if (value is string || value.GetType().IsPrimitive)
+        {
+            var json = JsonSerializer.Serialize(value);
+            return JsonSerializer.Deserialize<JsonElement>(json);
+        }
+
+        // For complex objects, serialize and deserialize to JsonElement
+        // Use options that handle complex nested structures
+        try
+        {
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                WriteIndented = false
+            };
+
+            var json = JsonSerializer.Serialize(value, value.GetType(), options);
+            return JsonSerializer.Deserialize<JsonElement>(json, options);
+        }
+        catch
+        {
+            // If serialization fails, return the original value
+            return value;
+        }
     }
 
     /// <summary>
@@ -61,4 +104,73 @@ public static class ShellSettingsFactory
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when duplicate shell names are found.</exception>
     public static IReadOnlyList<ShellSettings> CreateFromOptions(CShellsOptions options) => CreateAll(options);
+
+    /// <summary>
+    /// Creates a <see cref="ShellSettings"/> instance directly from an IConfigurationSection.
+    /// This method properly handles nested property sections like WebRoutingShellOptions.
+    /// </summary>
+    /// <param name="section">The configuration section representing a shell.</param>
+    /// <returns>A new <see cref="ShellSettings"/> instance.</returns>
+    public static ShellSettings CreateFromConfiguration(IConfigurationSection section)
+    {
+        Guard.Against.Null(section);
+
+        var name = section.GetValue<string>("Name") ?? throw new InvalidOperationException("Shell name is required");
+        var features = section.GetSection("Features").Get<string[]>() ?? [];
+
+        var shellId = new ShellId(name);
+        var normalizedFeatures = features
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => f.Trim())
+            .ToArray();
+        var settings = new ShellSettings(shellId, normalizedFeatures);
+
+        // Manually bind properties from configuration
+        var propertiesSection = section.GetSection("Properties");
+        foreach (var propertySection in propertiesSection.GetChildren())
+        {
+            var key = propertySection.Key;
+
+            // Check if this is a complex object or a simple value
+            if (propertySection.GetChildren().Any())
+            {
+                // Complex object - serialize to JSON and store as JsonElement
+                var json = SerializeConfigurationSection(propertySection);
+                var jsonElement = JsonSerializer.Deserialize<JsonElement>(json);
+                settings.Properties[key] = jsonElement;
+            }
+            else
+            {
+                // Simple value
+                var value = propertySection.Value;
+                settings.Properties[key] = ConvertToJsonElement(value);
+            }
+        }
+
+        return settings;
+    }
+
+    /// <summary>
+    /// Serializes an IConfigurationSection to JSON string.
+    /// </summary>
+    private static string SerializeConfigurationSection(IConfigurationSection section)
+    {
+        var dict = new Dictionary<string, object?>();
+
+        foreach (var child in section.GetChildren())
+        {
+            if (child.GetChildren().Any())
+            {
+                // Nested object
+                dict[child.Key] = JsonSerializer.Deserialize<JsonElement>(SerializeConfigurationSection(child));
+            }
+            else
+            {
+                // Simple value
+                dict[child.Key] = child.Value;
+            }
+        }
+
+        return JsonSerializer.Serialize(dict);
+    }
 }

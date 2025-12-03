@@ -94,11 +94,10 @@ public class ServiceCollectionExtensionsTests
         var serviceProvider = services.BuildServiceProvider();
         var strategies = serviceProvider.GetServices<IShellResolverStrategy>().ToList();
 
-        // Assert - should have custom strategy, standard resolvers (Path + Host), and default fallback strategy
-        Assert.Equal(4, strategies.Count);
+        // Assert - should have custom strategy, unified web routing resolver, and default fallback strategy
+        Assert.Equal(3, strategies.Count);
         Assert.Contains(strategies, s => s is CustomStrategy);
-        Assert.Contains(strategies, s => s.GetType().Name == "PathShellResolver");
-        Assert.Contains(strategies, s => s.GetType().Name == "HostShellResolver");
+        Assert.Contains(strategies, s => s.GetType().Name == "WebRoutingShellResolver");
         Assert.Contains(strategies, s => s is DefaultShellResolverStrategy);
     }
 

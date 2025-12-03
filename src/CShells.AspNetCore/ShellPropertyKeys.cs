@@ -7,14 +7,8 @@ namespace CShells.AspNetCore;
 public static class ShellPropertyKeys
 {
     /// <summary>
-    /// Property key for the URL path prefix used to route requests to this shell.
-    /// Example: "acme" maps requests like "/acme/..." to the shell.
+    /// Property key for web routing shell options that supports path, host, headers, and claims-based routing.
+    /// Value should be a <see cref="WebRoutingShellOptions"/> object or compatible JSON structure.
     /// </summary>
-    public const string Path = "AspNetCore.Path";
-
-    /// <summary>
-    /// Property key for the hostname used to route requests to this shell.
-    /// Example: "acme.example.com" maps requests with this host header to the shell.
-    /// </summary>
-    public const string Host = "AspNetCore.Path";
+    public const string WebRouting = "AspNetCore.WebRouting";
 }

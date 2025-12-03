@@ -24,15 +24,15 @@ public class ConfigurationShellSettingsProvider : IShellSettingsProvider
     /// <inheritdoc />
     public Task<IEnumerable<ShellSettings>> GetShellSettingsAsync(CancellationToken cancellationToken = default)
     {
-        var options = new CShellsOptions();
-        _configuration.GetSection(_sectionName).Bind(options);
+        var shellsSection = _configuration.GetSection(_sectionName).GetSection("Shells");
+        var shellConfigurations = shellsSection.GetChildren().ToList();
 
-        if (options.Shells == null || options.Shells.Count == 0)
+        if (shellConfigurations.Count == 0)
         {
             throw new InvalidOperationException($"No shells configured in the configuration section '{_sectionName}'.");
         }
 
-        var shells = options.Shells.Select(ShellSettingsFactory.Create);
+        var shells = shellConfigurations.Select(section => ShellSettingsFactory.CreateFromConfiguration(section));
         return Task.FromResult(shells);
     }
 }

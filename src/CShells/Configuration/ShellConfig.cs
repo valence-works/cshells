@@ -17,6 +17,8 @@ public class ShellConfig
 
     /// <summary>
     /// Gets or sets arbitrary properties associated with this shell.
+    /// Note: Configuration binding creates these as objects. They will be converted
+    /// to JsonElement during ShellSettings creation for proper serialization support.
     /// </summary>
-    public Dictionary<string, object> Properties { get; set; } = new();
+    public Dictionary<string, object?> Properties { get; set; } = new();
 }

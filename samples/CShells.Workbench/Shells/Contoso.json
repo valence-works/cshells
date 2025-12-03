@@ -8,6 +8,8 @@
     "Reporting"
   ],
   "properties": {
-    "AspNetCore.Path": "contoso"
+    "AspNetCore.WebRouting": {
+      "Path": "contoso"
+    }
   }
 }

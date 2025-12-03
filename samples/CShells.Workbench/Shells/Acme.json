@@ -7,6 +7,9 @@
     "FraudDetection"
   ],
   "properties": {
-    "AspNetCore.Path": "acme"
+    "AspNetCore.WebRouting": {
+      "Path": "acme",
+      "HeaderName": "X-Tenant-Id"
+    }
   }
 }

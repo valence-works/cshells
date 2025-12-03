@@ -6,6 +6,8 @@
     "EmailNotification"
   ],
   "properties": {
-    "AspNetCore.Path": ""
+    "AspNetCore.WebRouting": {
+      "Path": ""
+    }
   }
 }
