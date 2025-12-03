@@ -3,7 +3,7 @@ namespace CShells.Resolution;
 /// <summary>
 /// Default implementation of <see cref="IShellResolver"/> that orchestrates multiple <see cref="IShellResolverStrategy"/> instances.
 /// </summary>
-public class DefaultShellResolver(IEnumerable<IShellResolverStrategy> strategies, ShellResolverOptions? options = null) : IShellResolver
+public class DefaultShellResolver : IShellResolver
 {
     private const int DefaultOrder = 100;
 
@@ -16,19 +16,6 @@ public class DefaultShellResolver(IEnumerable<IShellResolverStrategy> strategies
         _orderedStrategies = strategies
             .OrderBy(s => GetOrderForStrategy(s, options))
             .ToArray();
-    }
-    {
-        var strategyType = strategy.GetType();
-
-        var configuredOrder = options?.GetOrder(strategyType);
-        if (configuredOrder.HasValue)
-            return configuredOrder.Value;
-
-        var attribute = strategyType.GetCustomAttributes(typeof(ResolverOrderAttribute), inherit: true)
-            .OfType<ResolverOrderAttribute>()
-            .FirstOrDefault();
-
-        return attribute?.Order ?? DefaultOrder;
     }
 
     /// <inheritdoc />
@@ -44,5 +31,20 @@ public class DefaultShellResolver(IEnumerable<IShellResolverStrategy> strategies
         }
 
         return null;
+    }
+    
+    private static int GetOrderForStrategy(IShellResolverStrategy strategy, ShellResolverOptions? options)
+    {
+        var strategyType = strategy.GetType();
+
+        var configuredOrder = options?.GetOrder(strategyType);
+        if (configuredOrder.HasValue)
+            return configuredOrder.Value;
+
+        var attribute = strategyType.GetCustomAttributes(typeof(ResolverOrderAttribute), inherit: true)
+            .OfType<ResolverOrderAttribute>()
+            .FirstOrDefault();
+
+        return attribute?.Order ?? DefaultOrder;
     }
 }

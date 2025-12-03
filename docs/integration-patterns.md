@@ -15,19 +15,23 @@ Use unique path prefixes for each shell to isolate shell routes from host routes
 ```json
 // Acme.json
 {
-  "name": "Acme",
-  "features": ["Core", "Payment"],
-  "properties": {
-    "AspNetCore.Path": "tenants/acme"
+  "Name": "Acme",
+  "Features": ["Core", "Payment"],
+  "Properties": {
+    "WebRouting": {
+      "Path": "tenants/acme"
+    }
   }
 }
 
 // Contoso.json
 {
-  "name": "Contoso",
-  "features": ["Core", "Payment"],
-  "properties": {
-    "AspNetCore.Path": "tenants/contoso"
+  "Name": "Contoso",
+  "Features": ["Core", "Payment"],
+  "Properties": {
+    "WebRouting": {
+      "Path": "tenants/contoso"
+    }
   }
 }
 ```
@@ -39,14 +43,16 @@ Use unique path prefixes for each shell to isolate shell routes from host routes
 
 ### ✅ Pattern 2: Subdomain-Based Isolation
 
-Use `HostShellResolver` to isolate shells by subdomain:
+Use host-based routing to isolate shells by subdomain:
 
 ```json
 // Acme.json
 {
-  "name": "Acme",
-  "properties": {
-    "AspNetCore.Path": "acme.example.com"
+  "Name": "Acme",
+  "Properties": {
+    "WebRouting": {
+      "Host": "acme.example.com"
+    }
   }
 }
 ```
@@ -56,7 +62,7 @@ Use `HostShellResolver` to isolate shells by subdomain:
 builder.AddShells(cshells =>
 {
     cshells.WithFluentStorageProvider(blobStorage);
-    cshells.WithHostResolver(); // Resolve by subdomain
+    // WithStandardResolvers() is registered by default and includes host-based routing
 });
 ```
 
@@ -92,9 +98,11 @@ Use an empty path prefix when the **entire application** is multi-tenant:
 
 ```json
 {
-  "name": "Default",
-  "properties": {
-    "AspNetCore.Path": ""
+  "Name": "Default",
+  "Properties": {
+    "WebRouting": {
+      "Path": ""
+    }
   }
 }
 ```
@@ -133,7 +141,7 @@ Prevent shell resolution for specific paths (e.g., admin panels, health checks):
 builder.AddShells(cshells =>
 {
     cshells.WithFluentStorageProvider(blobStorage);
-    cshells.WithPathResolver(options =>
+    cshells.WithWebRoutingResolver(options =>
     {
         // Exclude these paths from shell resolution
         options.ExcludePaths = ["/admin", "/health", "/swagger"];
@@ -211,14 +219,17 @@ The request matched multiple endpoints
 
 **Solutions:**
 1. Verify `MapShells()` is called in the pipeline
-2. Check shell configuration files have correct path prefixes (`CShells.AspNetCore.Path`)
+2. Check shell configuration files have correct path prefixes (`WebRouting.Path`)
 3. Ensure shell settings are loaded (check logs: "Loaded N shell(s)")
-4. Verify shell resolver is configured (defaults to path and host resolvers)
+4. Verify shell resolver is configured (defaults to path and host routing)
 
 ## Example: Complete Integration
 
 ```csharp
 // Program.cs
+using FluentStorage;
+using CShells.Providers.FluentStorage;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Host services
@@ -232,7 +243,7 @@ var blobStorage = StorageFactory.Blobs.DirectoryFiles(shellsPath);
 builder.AddShells(cshells =>
 {
     cshells.WithFluentStorageProvider(blobStorage);
-    cshells.WithPathResolver(options =>
+    cshells.WithWebRoutingResolver(options =>
     {
         // Protect host routes from shell resolution
         options.ExcludePaths = ["/api", "/swagger", "/health"];

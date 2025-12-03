@@ -61,8 +61,8 @@ Introduce CShells into an existing application and start moving functionality in
 Features implement `IShellFeature` (for service registration) or `IWebShellFeature` (for services + endpoints):
 
 ```csharp
-using CShells.Features;
 using CShells.AspNetCore.Features;
+using CShells.Features;
 using Microsoft.Extensions.DependencyInjection;
 
 [ShellFeature("Core", DisplayName = "Core Services")]
@@ -111,14 +111,18 @@ public class WeatherFeature(ShellSettings shellSettings) : IWebShellFeature
         "Name": "Default",
         "Features": [ "Core", "Weather" ],
         "Properties": {
-          "CShells.AspNetCore.Path": ""
+          "WebRouting": {
+            "Path": ""
+          }
         }
       },
       {
         "Name": "Admin",
         "Features": [ "Core", "Admin" ],
         "Properties": {
-          "CShells.AspNetCore.Path": "admin"
+          "WebRouting": {
+            "Path": "admin"
+          }
         }
       }
     ]
@@ -126,9 +130,39 @@ public class WeatherFeature(ShellSettings shellSettings) : IWebShellFeature
 }
 ```
 
+You can also override the configuration section name via `builder.AddShells("MySection")`.
+
 **Option B: Using JSON files with FluentStorage**:
 
-Create JSON files in a `Shells` folder (e.g., `Default.json`, `Admin.json`) with the same structure as above.
+Create JSON files in a `Shells` folder (e.g., `Default.json`, `Admin.json`):
+
+```json
+{
+  "Name": "Default",
+  "Features": [ "Core", "Weather" ],
+  "Properties": {
+    "WebRouting": {
+      "Path": ""
+    }
+  }
+}
+```
+
+Then configure the provider:
+
+```csharp
+using FluentStorage;
+using CShells.Providers.FluentStorage;
+
+var builder = WebApplication.CreateBuilder(args);
+var shellsPath = Path.Combine(builder.Environment.ContentRootPath, "Shells");
+var blobStorage = StorageFactory.Blobs.DirectoryFiles(shellsPath);
+
+builder.AddShells(cshells =>
+{
+    cshells.WithFluentStorageProvider(blobStorage);
+});
+```
 
 **Option C: Code-first configuration**:
 
@@ -154,24 +188,31 @@ builder.AddShells(cshells =>
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Register CShells from configuration
+// Register CShells from configuration (default section: CShells)
+// Scans all loaded assemblies for features by default
 builder.AddShells();
 
 var app = builder.Build();
 
-// Configure middleware and endpoints
+// Configure middleware and endpoints for all shells
 app.MapShells();
 
 app.Run();
+```
+
+You can optionally specify assemblies to scan for features:
+
+```csharp
+builder.AddShells(assemblies: [typeof(Program).Assembly]);
 ```
 
 **FluentStorage setup (reads from Shells folder)**:
 
 ```csharp
 using FluentStorage;
+using CShells.Providers.FluentStorage;
 
 var builder = WebApplication.CreateBuilder(args);
-
 var shellsPath = Path.Combine(builder.Environment.ContentRootPath, "Shells");
 var blobStorage = StorageFactory.Blobs.DirectoryFiles(shellsPath);
 
@@ -193,12 +234,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddCShellsAspNetCore(cshells =>
 {
     cshells.WithConfigurationProvider(builder.Configuration);
-    cshells.WithPathResolver(options =>
+    cshells.WithWebRoutingResolver(options =>
     {
-        options.ExcludePaths = ["/api", "/health"];
+        // Configure web routing options
+        options.ExcludePaths = new[] { "/api", "/health" };
+        options.HeaderName = "X-Tenant-Id";
     });
-    cshells.WithHostResolver();
-}, assemblies: [typeof(Program).Assembly]);
+});
 
 var app = builder.Build();
 app.MapShells();
@@ -209,7 +251,7 @@ app.Run();
 
 - **IWebShellFeature** - Features can expose their own endpoints using `MapEndpoints()`, keeping all logic self-contained
 - **Automatic endpoint routing** - `MapShells()` handles middleware and endpoint registration in one call
-- **Shell path prefixes** - Routes are automatically prefixed based on the `CShells.AspNetCore.Path` property
+- **Shell path prefixes** - Routes are automatically prefixed based on the `WebRouting.Path` property
 - **Per-shell DI containers** - Each shell has its own isolated service provider with shell-specific services
 - **Multiple configuration sources** - Configure shells via appsettings.json, external JSON files, or code
 - **Flexible shell resolution** - Built-in path and host resolvers, plus extensibility for custom strategies
@@ -240,6 +282,8 @@ builder.Services.AddCShellsAspNetCore(cshells =>
 #### 2. FluentStorage (JSON files from disk/cloud)
 
 ```csharp
+using CShells.Providers.FluentStorage;
+
 var blobStorage = StorageFactory.Blobs.DirectoryFiles("./Shells");
 builder.AddShells(cshells =>
 {
@@ -269,6 +313,7 @@ public class DatabaseShellSettingsProvider : IShellSettingsProvider
     public async Task<IEnumerable<ShellSettings>> GetAllAsync()
     {
         // Load from database, API, etc.
+        return Enumerable.Empty<ShellSettings>();
     }
 }
 
@@ -377,7 +422,7 @@ cd samples/CShells.Workbench
 dotnet run
 ```
 
-Then access:
+Then access (actual ports depend on your Kestrel/HTTPS dev cert setup):
 - `https://localhost:5001/` - Default tenant (Basic tier - Stripe + Email)
 - `https://localhost:5001/acme` - Acme Corp (Premium tier - PayPal + SMS + Fraud Detection)
 - `https://localhost:5001/contoso` - Contoso Ltd (Enterprise tier - Stripe + Multi-channel + Fraud + Reporting)
