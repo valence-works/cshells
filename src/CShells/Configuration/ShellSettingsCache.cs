@@ -35,12 +35,12 @@ public class ShellSettingsCache : IShellSettingsCache
     /// <param name="settings">The shell settings to cache.</param>
     public void Load(IEnumerable<ShellSettings> settings)
     {
-        ArgumentNullException.ThrowIfNull(settings);
+        var list = Guard.Against.Null(settings).ToList();
 
         lock (_lock)
         {
             _cache.Clear();
-            _orderedSettings = settings.ToList();
+            _orderedSettings = list;
 
             foreach (var shell in _orderedSettings)
             {

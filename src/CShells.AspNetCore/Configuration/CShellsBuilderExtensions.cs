@@ -27,7 +27,7 @@ public static class CShellsBuilderExtensions
     /// </remarks>
     public static CShellsBuilder WithPathResolver(this CShellsBuilder builder, Action<PathShellResolverOptions>? configure = null, int? order = null)
     {
-        ArgumentNullException.ThrowIfNull(builder);
+        Guard.Against.Null(builder);
 
         var options = new PathShellResolverOptions();
         configure?.Invoke(options);
@@ -56,7 +56,7 @@ public static class CShellsBuilderExtensions
     /// </remarks>
     public static CShellsBuilder WithHostResolver(this CShellsBuilder builder, int? order = null)
     {
-        ArgumentNullException.ThrowIfNull(builder);
+        Guard.Against.Null(builder);
 
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, HostShellResolver>());
 
@@ -85,7 +85,7 @@ public static class CShellsBuilderExtensions
     /// </remarks>
     public static CShellsBuilder WithStandardResolvers(this CShellsBuilder builder)
     {
-        ArgumentNullException.ThrowIfNull(builder);
+        Guard.Against.Null(builder);
 
         // Register resolvers that read from the cache at runtime
         builder.WithPathResolver();

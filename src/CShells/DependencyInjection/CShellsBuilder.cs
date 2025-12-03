@@ -16,8 +16,7 @@ public class CShellsBuilder
     /// <param name="services">The service collection.</param>
     public CShellsBuilder(IServiceCollection services)
     {
-        ArgumentNullException.ThrowIfNull(services);
-        Services = services;
+        Services = Guard.Against.Null(services);
     }
 
     /// <summary>
@@ -32,7 +31,7 @@ public class CShellsBuilder
     /// <returns>This builder for method chaining.</returns>
     public CShellsBuilder AddShell(Action<Configuration.ShellBuilder> configure)
     {
-        ArgumentNullException.ThrowIfNull(configure);
+        Guard.Against.Null(configure);
         var shellBuilder = new Configuration.ShellBuilder(new ShellId(Guid.NewGuid().ToString()));
         configure(shellBuilder);
         _shells.Add(shellBuilder.Build());
@@ -47,8 +46,8 @@ public class CShellsBuilder
     /// <returns>This builder for method chaining.</returns>
     public CShellsBuilder AddShell(string id, Action<Configuration.ShellBuilder> configure)
     {
-        ArgumentNullException.ThrowIfNull(id);
-        ArgumentNullException.ThrowIfNull(configure);
+        Guard.Against.Null(id);
+        Guard.Against.Null(configure);
         var shellBuilder = new Configuration.ShellBuilder(new ShellId(id));
         configure(shellBuilder);
         _shells.Add(shellBuilder.Build());
@@ -62,8 +61,7 @@ public class CShellsBuilder
     /// <returns>This builder for method chaining.</returns>
     public CShellsBuilder AddShell(ShellSettings settings)
     {
-        ArgumentNullException.ThrowIfNull(settings);
-        _shells.Add(settings);
+        _shells.Add(Guard.Against.Null(settings));
         return this;
     }
 

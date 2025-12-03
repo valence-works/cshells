@@ -11,8 +11,7 @@ public class DefaultShellContextScopeFactory : IShellContextScopeFactory
     /// <inheritdoc/>
     public IShellContextScope CreateScope(ShellContext shellContext)
     {
-        ArgumentNullException.ThrowIfNull(shellContext);
-        return new DefaultShellContextScope(shellContext);
+        return new DefaultShellContextScope(Guard.Against.Null(shellContext));
     }
 
     private sealed class DefaultShellContextScope(ShellContext shellContext) : IShellContextScope

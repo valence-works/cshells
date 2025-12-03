@@ -16,14 +16,13 @@ public class DefaultShellFeatureFactory : IShellFeatureFactory
     /// <param name="serviceProvider">The service provider used to resolve feature dependencies.</param>
     public DefaultShellFeatureFactory(IServiceProvider serviceProvider)
     {
-        ArgumentNullException.ThrowIfNull(serviceProvider);
-        _serviceProvider = serviceProvider;
+        _serviceProvider = Guard.Against.Null(serviceProvider);
     }
 
     /// <inheritdoc />
     public T CreateFeature<T>(Type featureType, ShellSettings? shellSettings = null) where T : class
     {
-        ArgumentNullException.ThrowIfNull(featureType);
+        featureType = Guard.Against.Null(featureType);
 
         if (!typeof(T).IsAssignableFrom(featureType))
         {

@@ -12,7 +12,7 @@ public readonly record struct ShellId
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is null.</exception>
     public ShellId(string name)
     {
-        ArgumentNullException.ThrowIfNull(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         Name = name;
     }
 

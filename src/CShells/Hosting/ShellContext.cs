@@ -13,10 +13,8 @@ public class ShellContext
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="settings"/> or <paramref name="serviceProvider"/> is null.</exception>
     public ShellContext(ShellSettings settings, IServiceProvider serviceProvider)
     {
-        ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(serviceProvider);
-        Settings = settings;
-        ServiceProvider = serviceProvider;
+        Settings = Guard.Against.Null(settings);
+        ServiceProvider = Guard.Against.Null(serviceProvider);
     }
 
     /// <summary>

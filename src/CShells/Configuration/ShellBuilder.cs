@@ -23,7 +23,7 @@ public class ShellBuilder
     /// <returns>This builder for method chaining.</returns>
     public ShellBuilder WithFeatures(params string[] featureIds)
     {
-        ArgumentNullException.ThrowIfNull(featureIds);
+        Guard.Against.Null(featureIds);
         _settings.EnabledFeatures = featureIds.ToArray();
         return this;
     }
@@ -35,7 +35,7 @@ public class ShellBuilder
     /// <returns>This builder for method chaining.</returns>
     public ShellBuilder WithFeature(string featureId)
     {
-        ArgumentNullException.ThrowIfNull(featureId);
+        Guard.Against.Null(featureId);
         var currentFeatures = _settings.EnabledFeatures.ToList();
         currentFeatures.Add(featureId);
         _settings.EnabledFeatures = currentFeatures.ToArray();
@@ -50,8 +50,8 @@ public class ShellBuilder
     /// <returns>This builder for method chaining.</returns>
     public ShellBuilder WithProperty(string key, object value)
     {
-        ArgumentNullException.ThrowIfNull(key);
-        ArgumentNullException.ThrowIfNull(value);
+        Guard.Against.Null(key);
+        Guard.Against.Null(value);
         _settings.Properties[key] = value;
         return this;
     }
@@ -63,7 +63,7 @@ public class ShellBuilder
     /// <returns>This builder for method chaining.</returns>
     public ShellBuilder WithProperties(IDictionary<string, object> properties)
     {
-        ArgumentNullException.ThrowIfNull(properties);
+        Guard.Against.Null(properties);
         foreach (var (key, value) in properties)
         {
             _settings.Properties[key] = value;

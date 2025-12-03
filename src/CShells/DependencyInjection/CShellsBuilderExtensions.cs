@@ -20,7 +20,7 @@ public static class CShellsBuilderExtensions
         public CShellsBuilder WithProvider<TProvider>()
             where TProvider : class, IShellSettingsProvider
         {
-            ArgumentNullException.ThrowIfNull(builder);
+            Guard.Against.Null(builder);
             builder.Services.AddSingleton<IShellSettingsProvider, TProvider>();
             return builder;
         }
@@ -32,8 +32,8 @@ public static class CShellsBuilderExtensions
         /// <returns>The updated CShells builder.</returns>
         public CShellsBuilder WithProvider(IShellSettingsProvider provider)
         {
-            ArgumentNullException.ThrowIfNull(builder);
-            ArgumentNullException.ThrowIfNull(provider);
+            Guard.Against.Null(builder);
+            Guard.Against.Null(provider);
             builder.Services.AddSingleton(provider);
             return builder;
         }
@@ -45,8 +45,8 @@ public static class CShellsBuilderExtensions
         /// <returns>The updated CShells builder.</returns>
         public CShellsBuilder WithProvider(Func<IServiceProvider, IShellSettingsProvider> factory)
         {
-            ArgumentNullException.ThrowIfNull(builder);
-            ArgumentNullException.ThrowIfNull(factory);
+            Guard.Against.Null(builder);
+            Guard.Against.Null(factory);
             builder.Services.AddSingleton(factory);
             return builder;
         }
@@ -60,8 +60,8 @@ public static class CShellsBuilderExtensions
         public CShellsBuilder WithConfigurationProvider(IConfiguration configuration,
             string sectionName = CShellsOptions.SectionName)
         {
-            ArgumentNullException.ThrowIfNull(builder);
-            ArgumentNullException.ThrowIfNull(configuration);
+            Guard.Against.Null(builder);
+            Guard.Against.Null(configuration);
 
             builder.Services.AddSingleton<IShellSettingsProvider>(
                 _ => new ConfigurationShellSettingsProvider(configuration, sectionName));

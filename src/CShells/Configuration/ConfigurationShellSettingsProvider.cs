@@ -17,11 +17,8 @@ public class ConfigurationShellSettingsProvider : IShellSettingsProvider
     /// <param name="sectionName">The configuration section name (default: "CShells").</param>
     public ConfigurationShellSettingsProvider(IConfiguration configuration, string sectionName = CShellsOptions.SectionName)
     {
-        ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sectionName);
-
-        _configuration = configuration;
-        _sectionName = sectionName;
+        _configuration = Guard.Against.Null(configuration);
+        _sectionName = Guard.Against.NullOrWhiteSpace(sectionName);
     }
 
     /// <inheritdoc />

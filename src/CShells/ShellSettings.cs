@@ -18,7 +18,6 @@ public class ShellSettings
     /// <param name="id">The shell identifier.</param>
     public ShellSettings(ShellId id)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id.Name);
         Id = id;
     }
 
@@ -30,10 +29,9 @@ public class ShellSettings
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="enabledFeatures"/> is null.</exception>
     public ShellSettings(ShellId id, IReadOnlyList<string> enabledFeatures)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id.Name);
-        ArgumentNullException.ThrowIfNull(enabledFeatures);
         Id = id;
-        EnabledFeatures = enabledFeatures;
+        // ShellId validates its own Name; only need to guard the collection.
+        EnabledFeatures = Guard.Against.Null(enabledFeatures);
     }
 
     /// <summary>

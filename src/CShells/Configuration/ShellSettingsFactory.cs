@@ -13,7 +13,7 @@ public static class ShellSettingsFactory
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="config"/> is null.</exception>
     public static ShellSettings Create(ShellConfig config)
     {
-        ArgumentNullException.ThrowIfNull(config);
+        Guard.Against.Null(config);
 
         var shellId = new ShellId(config.Name);
         var normalizedFeatures = config.Features
@@ -38,7 +38,7 @@ public static class ShellSettingsFactory
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is null.</exception>
     public static IReadOnlyList<ShellSettings> CreateAll(CShellsOptions options)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        Guard.Against.Null(options);
 
         var duplicates = (options.Shells
             .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)

@@ -111,20 +111,14 @@ public class DefaultShellHost : IShellHost, IDisposable
         IShellFeatureFactory featureFactory,
         ILogger<DefaultShellHost>? logger = null)
     {
-        ArgumentNullException.ThrowIfNull(shellSettingsCache);
-        ArgumentNullException.ThrowIfNull(assemblies);
-        ArgumentNullException.ThrowIfNull(rootProvider);
-        ArgumentNullException.ThrowIfNull(rootServicesAccessor);
-        ArgumentNullException.ThrowIfNull(featureFactory);
-
-        _shellSettingsCache = shellSettingsCache;
-        _rootProvider = rootProvider;
-        _rootServices = rootServicesAccessor.Services;
-        _featureFactory = featureFactory;
+        _shellSettingsCache = Guard.Against.Null(shellSettingsCache);
+        _rootProvider = Guard.Against.Null(rootProvider);
+        _rootServices = Guard.Against.Null(rootServicesAccessor).Services;
+        _featureFactory = Guard.Against.Null(featureFactory);
         _logger = logger ?? NullLogger<DefaultShellHost>.Instance;
 
         // Discover all features from specified assemblies
-        var features = FeatureDiscovery.DiscoverFeatures(assemblies).ToList();
+        var features = FeatureDiscovery.DiscoverFeatures(Guard.Against.Null(assemblies)).ToList();
 
         _logger.LogInformation("Discovered {FeatureCount} features: {FeatureNames}",
             features.Count,

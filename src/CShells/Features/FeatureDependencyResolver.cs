@@ -15,8 +15,8 @@ public class FeatureDependencyResolver
     /// <exception cref="InvalidOperationException">Thrown when a circular dependency is detected or a dependency is not found.</exception>
     public List<string> ResolveDependencies(string featureName, IReadOnlyDictionary<string, ShellFeatureDescriptor> features)
     {
-        ArgumentNullException.ThrowIfNull(featureName);
-        ArgumentNullException.ThrowIfNull(features);
+        Guard.Against.Null(featureName);
+        Guard.Against.Null(features);
 
         var result = new List<string>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -38,7 +38,7 @@ public class FeatureDependencyResolver
     /// <exception cref="InvalidOperationException">Thrown when a circular dependency is detected.</exception>
     public List<string> GetOrderedFeatures(IReadOnlyDictionary<string, ShellFeatureDescriptor> features)
     {
-        ArgumentNullException.ThrowIfNull(features);
+        Guard.Against.Null(features);
 
         var result = new List<string>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -62,8 +62,8 @@ public class FeatureDependencyResolver
     /// <exception cref="InvalidOperationException">Thrown when a circular dependency is detected or a dependency is not found.</exception>
     public List<string> GetOrderedFeatures(IEnumerable<string> featureNames, IReadOnlyDictionary<string, ShellFeatureDescriptor> features)
     {
-        ArgumentNullException.ThrowIfNull(featureNames);
-        ArgumentNullException.ThrowIfNull(features);
+        Guard.Against.Null(featureNames);
+        Guard.Against.Null(features);
 
         var result = new List<string>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

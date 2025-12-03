@@ -16,8 +16,7 @@ public class ShellResolutionBuilder
     /// <returns>The builder for method chaining.</returns>
     public ShellResolutionBuilder AddStrategy(IShellResolverStrategy strategy)
     {
-        ArgumentNullException.ThrowIfNull(strategy);
-        _strategies.Add(strategy);
+        _strategies.Add(Guard.Against.Null(strategy));
         return this;
     }
 
@@ -28,8 +27,7 @@ public class ShellResolutionBuilder
     /// <returns>The builder for method chaining.</returns>
     public ShellResolutionBuilder AddStrategy(Func<IShellResolverStrategy> strategyFactory)
     {
-        ArgumentNullException.ThrowIfNull(strategyFactory);
-        _strategies.Add(strategyFactory());
+        _strategies.Add(Guard.Against.Null(strategyFactory)());
         return this;
     }
 
@@ -41,8 +39,7 @@ public class ShellResolutionBuilder
     /// <returns>The builder for method chaining.</returns>
     public ShellResolutionBuilder AddFinalizer(Action<ShellResolutionBuilder> finalizer)
     {
-        ArgumentNullException.ThrowIfNull(finalizer);
-        _finalizers.Add(finalizer);
+        _finalizers.Add(Guard.Against.Null(finalizer));
         return this;
     }
 
@@ -55,12 +52,12 @@ public class ShellResolutionBuilder
     /// <returns>The property value.</returns>
     public T GetOrCreateProperty<T>(string key, Func<T> factory) where T : notnull
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-        ArgumentNullException.ThrowIfNull(factory);
+        key = Guard.Against.NullOrEmpty(key);
+        var creator = Guard.Against.Null(factory);
 
         if (!_properties.TryGetValue(key, out var value))
         {
-            value = factory();
+            value = creator();
             _properties[key] = value;
         }
 
@@ -76,7 +73,7 @@ public class ShellResolutionBuilder
     /// <returns><c>true</c> if the property exists; otherwise, <c>false</c>.</returns>
     public bool TryGetProperty<T>(string key, out T? value)
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
+        key = Guard.Against.NullOrEmpty(key);
 
         if (_properties.TryGetValue(key, out var obj) && obj is T typed)
         {
@@ -95,8 +92,7 @@ public class ShellResolutionBuilder
     /// <returns><c>true</c> if the property was removed; otherwise, <c>false</c>.</returns>
     public bool RemoveProperty(string key)
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-        return _properties.Remove(key);
+        return _properties.Remove(Guard.Against.NullOrEmpty(key));
     }
 
     /// <summary>

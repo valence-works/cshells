@@ -32,13 +32,9 @@ public class ShellMiddleware
         IShellHost host,
         ILogger<ShellMiddleware>? logger = null)
     {
-        ArgumentNullException.ThrowIfNull(next);
-        ArgumentNullException.ThrowIfNull(resolver);
-        ArgumentNullException.ThrowIfNull(host);
-
-        _next = next;
-        _resolver = resolver;
-        _host = host;
+        _next = Guard.Against.Null(next);
+        _resolver = Guard.Against.Null(resolver);
+        _host = Guard.Against.Null(host);
         _logger = logger ?? NullLogger<ShellMiddleware>.Instance;
     }
 
