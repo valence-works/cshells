@@ -1,9 +1,9 @@
 using CShells.AspNetCore.Features;
-using CShells.SampleApp.Features.Core;
-using CShells.SampleApp.Features.FraudDetection;
-using CShells.SampleApp.Features.Notifications;
+using CShells.Workbench.Features.Core;
+using CShells.Workbench.Features.FraudDetection;
+using CShells.Workbench.Features.Notifications;
 
-namespace CShells.SampleApp.Features.PaymentProcessing;
+namespace CShells.Workbench.Features.PaymentProcessing;
 
 /// <summary>
 /// Base class for payment processing features that exposes the /payments endpoint.

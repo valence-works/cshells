@@ -21,4 +21,11 @@ public class ShellConfig
     /// to JsonElement during ShellSettings creation for proper serialization support.
     /// </summary>
     public Dictionary<string, object?> Properties { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets shell-specific configuration settings.
+    /// These settings can be accessed through IConfiguration in the shell's service provider,
+    /// allowing features to bind them to strongly-typed options classes.
+    /// </summary>
+    public Dictionary<string, object?> Settings { get; set; } = new();
 }

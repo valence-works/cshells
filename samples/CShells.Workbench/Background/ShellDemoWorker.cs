@@ -1,6 +1,6 @@
 using CShells.Hosting;
 
-namespace CShells.SampleApp.Background;
+namespace CShells.Workbench.Background;
 
 /// <summary>
 /// A sample background service that demonstrates how to use shell context scopes

@@ -1,7 +1,7 @@
 using CShells.AspNetCore.Features;
-using CShells.SampleApp.Features.Core;
+using CShells.Workbench.Features.Core;
 
-namespace CShells.SampleApp.Features.Notifications;
+namespace CShells.Workbench.Features.Notifications;
 
 /// <summary>
 /// Base class for notification features that exposes the /notifications endpoint.

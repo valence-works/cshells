@@ -1,4 +1,4 @@
-namespace CShells.SampleApp.Features.FraudDetection;
+namespace CShells.Workbench.Features.FraudDetection;
 
 /// <summary>
 /// Represents a fraud detection service.

@@ -40,14 +40,14 @@ public class ShellConfigurationTests(WorkbenchApplicationFactory factory)
         var contosoShell = shellHost.AllShells.First(s => s.Id.Name == "Contoso");
 
         // Assert
-        Assert.True(defaultShell.Settings.Properties.ContainsKey("AspNetCore.WebRouting"));
-        Assert.True(acmeShell.Settings.Properties.ContainsKey("AspNetCore.WebRouting"));
-        Assert.True(contosoShell.Settings.Properties.ContainsKey("AspNetCore.WebRouting"));
+        Assert.True(defaultShell.Settings.Properties.ContainsKey("WebRouting"));
+        Assert.True(acmeShell.Settings.Properties.ContainsKey("WebRouting"));
+        Assert.True(contosoShell.Settings.Properties.ContainsKey("WebRouting"));
 
         // Properties are JsonElement objects, deserialize to WebRoutingShellOptions
-        var defaultWebRouting = GetWebRoutingOptions(defaultShell.Settings.Properties["AspNetCore.WebRouting"]);
-        var acmeWebRouting = GetWebRoutingOptions(acmeShell.Settings.Properties["AspNetCore.WebRouting"]);
-        var contosoWebRouting = GetWebRoutingOptions(contosoShell.Settings.Properties["AspNetCore.WebRouting"]);
+        var defaultWebRouting = GetWebRoutingOptions(defaultShell.Settings.Properties["WebRouting"]);
+        var acmeWebRouting = GetWebRoutingOptions(acmeShell.Settings.Properties["WebRouting"]);
+        var contosoWebRouting = GetWebRoutingOptions(contosoShell.Settings.Properties["WebRouting"]);
 
         Assert.NotNull(defaultWebRouting);
         Assert.NotNull(acmeWebRouting);

@@ -147,7 +147,47 @@ public static class ShellSettingsFactory
             }
         }
 
+        // Process shell-specific settings (configuration data)
+        var settingsSection = section.GetSection("Settings");
+        foreach (var settingSection in settingsSection.GetChildren())
+        {
+            var key = settingSection.Key;
+
+            // Check if this is a complex object or a simple value
+            if (settingSection.GetChildren().Any())
+            {
+                // Complex object - flatten to key-value pairs for IConfiguration
+                FlattenConfigurationSection(settingSection, key, settings.ConfigurationData);
+            }
+            else
+            {
+                // Simple value
+                settings.ConfigurationData[key] = settingSection.Value!;
+            }
+        }
+
         return settings;
+    }
+
+    /// <summary>
+    /// Flattens a configuration section into key-value pairs suitable for IConfiguration.
+    /// </summary>
+    private static void FlattenConfigurationSection(IConfigurationSection section, string prefix, IDictionary<string, object> target)
+    {
+        foreach (var child in section.GetChildren())
+        {
+            var key = $"{prefix}:{child.Key}";
+
+            if (child.GetChildren().Any())
+            {
+                // Recursively flatten nested sections
+                FlattenConfigurationSection(child, key, target);
+            }
+            else
+            {
+                target[key] = child.Value!;
+            }
+        }
     }
 
     /// <summary>

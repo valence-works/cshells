@@ -1,4 +1,4 @@
-namespace CShells.SampleApp.Features.Notifications;
+namespace CShells.Workbench.Features.Notifications;
 
 /// <summary>
 /// Represents a notification service.

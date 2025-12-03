@@ -1,6 +1,6 @@
-using CShells.SampleApp.Features.Core;
+using CShells.Workbench.Features.Core;
 
-namespace CShells.SampleApp.Features.PaymentProcessing;
+namespace CShells.Workbench.Features.PaymentProcessing;
 
 /// <summary>
 /// PayPal payment processor implementation.

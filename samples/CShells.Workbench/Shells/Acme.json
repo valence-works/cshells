@@ -7,9 +7,19 @@
     "FraudDetection"
   ],
   "properties": {
-    "AspNetCore.WebRouting": {
+    "WebRouting": {
       "Path": "acme",
       "HeaderName": "X-Tenant-Id"
+    }
+  },
+  "Settings": {
+    "ConnectionStringKey": "AcmeConnection",
+    "Theme": "Dark",
+    "MaxUploadSizeMB": "50",
+    "Features": {
+      "FraudDetection": {
+        "Threshold": "0.85"
+      }
     }
   }
 }

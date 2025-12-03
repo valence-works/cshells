@@ -8,8 +8,13 @@
     "Reporting"
   ],
   "properties": {
-    "AspNetCore.WebRouting": {
+    "WebRouting": {
       "Path": "contoso"
     }
+  },
+  "Settings": {
+    "ConnectionStringKey": "ContosoConnection",
+    "Theme": "Light",
+    "MaxUploadSizeMB": "100"
   }
 }

@@ -1,7 +1,7 @@
 using CShells.AspNetCore.Features;
 using CShells.Features;
 
-namespace CShells.SampleApp.Features.Reporting;
+namespace CShells.Workbench.Features.Reporting;
 
 /// <summary>
 /// Reporting feature that demonstrates IWebShellFeature for exposing endpoints.

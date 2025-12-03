@@ -1,4 +1,4 @@
-namespace CShells.SampleApp.Features.Core;
+namespace CShells.Workbench.Features.Core;
 
 /// <summary>
 /// Provides information about the current tenant.

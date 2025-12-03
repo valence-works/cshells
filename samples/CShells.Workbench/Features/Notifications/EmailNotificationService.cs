@@ -1,6 +1,6 @@
-using CShells.SampleApp.Features.Core;
+using CShells.Workbench.Features.Core;
 
-namespace CShells.SampleApp.Features.Notifications;
+namespace CShells.Workbench.Features.Notifications;
 
 /// <summary>
 /// Email-based notification service implementation.

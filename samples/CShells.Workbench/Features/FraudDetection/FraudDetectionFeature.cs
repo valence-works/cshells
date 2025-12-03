@@ -1,8 +1,9 @@
 using CShells.AspNetCore.Features;
 using CShells.Features;
-using CShells.SampleApp.Features.Core;
+using CShells.Workbench.Features.Core;
+using Microsoft.Extensions.Options;
 
-namespace CShells.SampleApp.Features.FraudDetection;
+namespace CShells.Workbench.Features.FraudDetection;
 
 /// <summary>
 /// Fraud detection feature - a premium feature available only to premium/enterprise tenants.
@@ -13,6 +14,14 @@ public class FraudDetectionFeature : IWebShellFeature
 {
     public void ConfigureServices(IServiceCollection services)
     {
+        // Bind shell-scoped configuration to FraudDetectionOptions
+        // Look for settings under "Features:FraudDetection" section
+        services.AddOptions<FraudDetectionOptions>()
+            .Configure<IConfiguration>((options, config) =>
+            {
+                config.GetSection("Features:FraudDetection").Bind(options);
+            });
+
         services.AddSingleton<IFraudDetectionService, FraudDetectionService>();
     }
 
@@ -30,13 +39,19 @@ public class FraudDetectionFeature : IWebShellFeature
 
             var tenantInfo = context.RequestServices.GetRequiredService<ITenantInfo>();
             var fraudDetection = context.RequestServices.GetRequiredService<IFraudDetectionService>();
+            var options = context.RequestServices.GetRequiredService<IOptions<FraudDetectionOptions>>().Value;
 
             var result = fraudDetection.AnalyzeTransaction(request.Amount, request.Currency, request.IpAddress);
 
             return Results.Json(new
             {
                 Tenant = tenantInfo.TenantName,
-                Analysis = result
+                Analysis = result,
+                Configuration = new
+                {
+                    options.Threshold,
+                    options.MaxTransactionAmount
+                }
             });
         });
     }

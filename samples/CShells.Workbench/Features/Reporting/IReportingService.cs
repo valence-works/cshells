@@ -1,4 +1,4 @@
-namespace CShells.SampleApp.Features.Reporting;
+namespace CShells.Workbench.Features.Reporting;
 
 /// <summary>
 /// Represents a reporting service.

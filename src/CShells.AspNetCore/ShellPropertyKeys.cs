@@ -10,5 +10,5 @@ public static class ShellPropertyKeys
     /// Property key for web routing shell options that supports path, host, headers, and claims-based routing.
     /// Value should be a <see cref="WebRoutingShellOptions"/> object or compatible JSON structure.
     /// </summary>
-    public const string WebRouting = "AspNetCore.WebRouting";
+    public const string WebRouting = "WebRouting";
 }

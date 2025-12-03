@@ -1,4 +1,4 @@
-namespace CShells.SampleApp.Features.Core;
+namespace CShells.Workbench.Features.Core;
 
 /// <summary>
 /// Simple audit logging service for demonstration purposes.

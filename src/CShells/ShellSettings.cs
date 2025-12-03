@@ -53,4 +53,11 @@ public class ShellSettings
     /// Gets or sets arbitrary properties associated with this shell.
     /// </summary>
     public IDictionary<string, object> Properties { get; set; } = new Dictionary<string, object>();
+
+    /// <summary>
+    /// Gets or sets shell-specific configuration data.
+    /// This data is used to create a shell-scoped IConfiguration instance
+    /// that can be injected into services within the shell's service provider.
+    /// </summary>
+    public IDictionary<string, object> ConfigurationData { get; set; } = new Dictionary<string, object>();
 }

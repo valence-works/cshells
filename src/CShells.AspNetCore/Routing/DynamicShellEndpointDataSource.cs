@@ -86,23 +86,23 @@ public class DynamicShellEndpointDataSource : EndpointDataSource
                 var existingShellMetadata = existingEndpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
 
                 // Check if patterns match and methods overlap
-                if (PatternsConflict(newPattern, existingPattern) && MethodsConflict(newMethod, existingMethod))
+                if (!PatternsConflict(newPattern, existingPattern) || !MethodsConflict(newMethod, existingMethod)) 
+                    continue;
+                
+                if (newShellMetadata != null && existingShellMetadata != null)
                 {
-                    if (newShellMetadata != null && existingShellMetadata != null)
-                    {
-                        _logger.LogWarning(
-                            "Path conflict detected: Shell '{NewShell}' endpoint '{NewMethod} {NewPattern}' conflicts with shell '{ExistingShell}' endpoint '{ExistingMethod} {ExistingPattern}'. " +
-                            "This may cause routing ambiguity.",
-                            newShellMetadata.ShellId, newMethod, newPattern,
-                            existingShellMetadata.ShellId, existingMethod, existingPattern);
-                    }
-                    else if (newShellMetadata != null)
-                    {
-                        _logger.LogWarning(
-                            "Path conflict detected: Shell '{NewShell}' endpoint '{NewMethod} {NewPattern}' conflicts with host application endpoint '{ExistingMethod} {ExistingPattern}'. " +
-                            "Shell routes may override host routes.",
-                            newShellMetadata.ShellId, newMethod, newPattern, existingMethod, existingPattern);
-                    }
+                    _logger.LogWarning(
+                        "Path conflict detected: Shell '{NewShell}' endpoint '{NewMethod} {NewPattern}' conflicts with shell '{ExistingShell}' endpoint '{ExistingMethod} {ExistingPattern}'. " +
+                        "This may cause routing ambiguity.",
+                        newShellMetadata.ShellId, newMethod, newPattern,
+                        existingShellMetadata.ShellId, existingMethod, existingPattern);
+                }
+                else if (newShellMetadata != null)
+                {
+                    _logger.LogWarning(
+                        "Path conflict detected: Shell '{NewShell}' endpoint '{NewMethod} {NewPattern}' conflicts with host application endpoint '{ExistingMethod} {ExistingPattern}'. " +
+                        "Shell routes may override host routes.",
+                        newShellMetadata.ShellId, newMethod, newPattern, existingMethod, existingPattern);
                 }
             }
         }
@@ -148,8 +148,7 @@ public class DynamicShellEndpointDataSource : EndpointDataSource
         lock (_lock)
         {
             // Remove endpoints that belong to this shell
-            _endpoints.RemoveAll(e =>
-                e.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(shellId) ?? false);
+            _endpoints.RemoveAll(e => e.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(shellId) ?? false);
             NotifyChanged();
         }
     }
@@ -172,7 +171,7 @@ public class DynamicShellEndpointDataSource : EndpointDataSource
     private void NotifyChanged()
     {
         var oldCts = _cts;
-        _cts = new CancellationTokenSource();
+        _cts = new();
         oldCts.Cancel();
         oldCts.Dispose();
     }

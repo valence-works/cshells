@@ -1,4 +1,4 @@
-namespace CShells.SampleApp.Features.Core;
+namespace CShells.Workbench.Features.Core;
 
 /// <summary>
 /// Time service interface for getting current time.

@@ -325,9 +325,9 @@ public class DefaultShellHost : IShellHost, IDisposable
         // This enables inheritance of root services in shells.
         CopyRootServices(shellServices);
 
-        // Step 2: Register shell-specific core services (ShellSettings, ShellId, ShellContext).
+        // Step 2: Register shell-specific core services (ShellSettings, ShellId, ShellContext, IConfiguration).
         // These are added after root services, so they override any root registrations.
-        RegisterCoreServices(shellServices, settings, contextHolder);
+        RegisterCoreServices(shellServices, settings, contextHolder, _rootProvider);
 
         // Step 3: Configure feature services in dependency order.
         // Features can override root services by registering the same service type.
@@ -388,7 +388,7 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// <summary>
     /// Registers core services required by all shells.
     /// </summary>
-    private static void RegisterCoreServices(ServiceCollection services, ShellSettings settings, ShellContextHolder contextHolder)
+    private static void RegisterCoreServices(ServiceCollection services, ShellSettings settings, ShellContextHolder contextHolder, IServiceProvider rootProvider)
     {
         // Register shell settings and shell ID for convenience
         services.AddSingleton(settings);
@@ -398,6 +398,14 @@ public class DefaultShellHost : IShellHost, IDisposable
 
         // Add logging services so shell containers work with ASP.NET Core infrastructure
         services.AddLogging();
+
+        // Register shell-scoped IConfiguration that merges shell-specific settings with root configuration
+        // This allows features to use IConfiguration and IOptions<T> patterns with shell-specific values
+        services.AddSingleton<Microsoft.Extensions.Configuration.IConfiguration>(sp =>
+        {
+            var rootConfiguration = rootProvider.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+            return new ShellConfiguration(settings, rootConfiguration);
+        });
 
         // Register the ShellContext using the holder pattern
         // The holder will be populated after the service provider is built

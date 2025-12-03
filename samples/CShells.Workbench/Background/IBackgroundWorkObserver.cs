@@ -1,4 +1,4 @@
-namespace CShells.SampleApp.Background;
+namespace CShells.Workbench.Background;
 
 /// <summary>
 /// Observer interface for monitoring background work execution.

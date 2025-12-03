@@ -1,6 +1,6 @@
 using CShells.Features;
 
-namespace CShells.SampleApp.Features.Notifications;
+namespace CShells.Workbench.Features.Notifications;
 
 /// <summary>
 /// Multi-channel notification feature that provides both Email and SMS.

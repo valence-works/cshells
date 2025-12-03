@@ -1,6 +1,6 @@
 using CShells.Features;
 
-namespace CShells.SampleApp.Features.PaymentProcessing;
+namespace CShells.Workbench.Features.PaymentProcessing;
 
 /// <summary>
 /// Payment processing feature using PayPal.

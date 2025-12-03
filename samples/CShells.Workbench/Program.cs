@@ -32,4 +32,7 @@ app.MapShells();
 app.Run();
 
 // Make Program class accessible for WebApplicationFactory
-public partial class Program;
+namespace CShells.Workbench
+{
+    public partial class Program;
+}

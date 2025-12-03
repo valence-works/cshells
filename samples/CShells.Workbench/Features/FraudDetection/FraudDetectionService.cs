@@ -1,24 +1,28 @@
-using CShells.SampleApp.Features.Core;
+using CShells.Workbench.Features.Core;
+using Microsoft.Extensions.Options;
 
-namespace CShells.SampleApp.Features.FraudDetection;
+namespace CShells.Workbench.Features.FraudDetection;
 
 /// <summary>
 /// Fraud detection service implementation.
+/// Uses shell-scoped configuration options to customize fraud detection behavior.
 /// </summary>
-public class FraudDetectionService(IAuditLogger logger) : IFraudDetectionService
+public class FraudDetectionService(IAuditLogger logger, IOptions<FraudDetectionOptions> options) : IFraudDetectionService
 {
+    private readonly FraudDetectionOptions _options = options.Value;
+
     public FraudAnalysisResult AnalyzeTransaction(decimal amount, string currency, string ipAddress)
     {
-        logger.LogInfo($"Analyzing transaction: ${amount} {currency} from {ipAddress}");
+        logger.LogInfo($"Analyzing transaction: ${amount} {currency} from {ipAddress} (Threshold: {_options.Threshold})");
 
-        // Simulate fraud detection logic
+        // Simulate fraud detection logic using configured thresholds
         var flags = new List<string>();
         var riskScore = 0.0;
 
-        // Simple rules for demonstration
-        if (amount > 10000)
+        // Use configured max transaction amount
+        if (amount > _options.MaxTransactionAmount)
         {
-            flags.Add("High transaction amount");
+            flags.Add($"High transaction amount (>${_options.MaxTransactionAmount})");
             riskScore += 0.3;
         }
 
@@ -33,7 +37,8 @@ public class FraudDetectionService(IAuditLogger logger) : IFraudDetectionService
             riskScore += 0.2;
         }
 
-        var isSuspicious = riskScore > 0.5;
+        // Use configured threshold to determine if suspicious
+        var isSuspicious = riskScore > _options.Threshold;
 
         return new()
         {

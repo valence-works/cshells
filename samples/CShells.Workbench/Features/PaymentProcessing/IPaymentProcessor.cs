@@ -1,4 +1,4 @@
-namespace CShells.SampleApp.Features.PaymentProcessing;
+namespace CShells.Workbench.Features.PaymentProcessing;
 
 /// <summary>
 /// Represents a payment processing service.

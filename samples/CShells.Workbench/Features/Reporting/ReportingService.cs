@@ -1,6 +1,6 @@
-using CShells.SampleApp.Features.Core;
+using CShells.Workbench.Features.Core;
 
-namespace CShells.SampleApp.Features.Reporting;
+namespace CShells.Workbench.Features.Reporting;
 
 /// <summary>
 /// Reporting service implementation.
