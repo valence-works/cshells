@@ -7,6 +7,5 @@ namespace CShells.AspNetCore.Resolution;
 /// </summary>
 public class FixedShellResolver(ShellId shellId) : IShellResolverStrategy
 {
-    private readonly ShellId _shellId = shellId;
-    public ShellId? Resolve(ShellResolutionContext context) => _shellId;
+    public ShellId? Resolve(ShellResolutionContext context) => shellId;
 }
