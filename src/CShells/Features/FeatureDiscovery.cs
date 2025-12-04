@@ -18,14 +18,15 @@ public static class FeatureDiscovery
     /// </exception>
     public static IEnumerable<ShellFeatureDescriptor> DiscoverFeatures(IEnumerable<Assembly> assemblies)
     {
-        Guard.Against.Null(assemblies);
+        var assembliesList = assemblies.ToList();
+        Guard.Against.Null(assembliesList);
 
         var features = new Dictionary<string, ShellFeatureDescriptor>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var assembly in assemblies)
+        foreach (var assembly in assembliesList)
         {
             // Skip null assemblies
-            if (assembly == null)
+            if (assembly == null!)
                 continue;
 
             foreach (var type in GetExportedTypes(assembly))

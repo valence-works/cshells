@@ -11,7 +11,7 @@ public class FeatureDiscoveryTests
     {
         // Act & Assert
         var ex = Assert.Throws<ArgumentNullException>(() => CShells.Features.FeatureDiscovery.DiscoverFeatures(null!).ToList());
-        Assert.Equal("assemblies", ex.ParamName);
+        Assert.Equal("source", ex.ParamName);
     }
 
     [Fact(DisplayName = "DiscoverFeatures with empty assemblies returns empty collection")]

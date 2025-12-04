@@ -287,7 +287,7 @@ app.Run();
 using CShells.Features;
 using Microsoft.Extensions.DependencyInjection;
 
-// No [ShellFeature] attribute needed - feature name will be "PaymentFeature"
+// No [ShellFeature] attribute needed - feature name will be "Payment"
 public class PaymentFeature : IShellFeature
 {
     public void ConfigureServices(IServiceCollection services)

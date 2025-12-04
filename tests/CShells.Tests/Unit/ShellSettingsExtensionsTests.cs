@@ -96,7 +96,7 @@ public class ShellSettingsExtensionsTests
         var settings = new ShellSettings();
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => settings.GetProperty<string>(null!));
+        Assert.Throws<ArgumentNullException>(() => settings.GetProperty<string>(null!));
     }
 
     [Fact(DisplayName = "GetProperty with whitespace key throws ArgumentException")]
@@ -191,7 +191,7 @@ public class ShellSettingsExtensionsTests
         var settings = new ShellSettings();
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => settings.SetProperty<string>(null!, "value"));
+        Assert.Throws<ArgumentNullException>(() => settings.SetProperty<string>(null!, "value"));
     }
 
     [Fact(DisplayName = "TryGetProperty with existing key returns true and value")]

@@ -29,6 +29,9 @@ public static class Guard
 
         public static string NullOrWhiteSpace(string? input, [CallerArgumentExpression("input")] string? paramName = null)
         {
+            if (input is null)
+                throw new ArgumentNullException(paramName);
+            
             if (string.IsNullOrWhiteSpace(input))
                 throw new ArgumentException("Value cannot be null or whitespace.", paramName);
 
