@@ -22,6 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\CShells.AspNetCore.Abstractions\CShells.AspNetCore.Abstractions.csproj"/>
         <ProjectReference Include="..\CShells\CShells.csproj"/>
     </ItemGroup>
 

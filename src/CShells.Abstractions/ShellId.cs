@@ -21,4 +21,14 @@ public readonly record struct ShellId
     public bool Equals(ShellId other) => string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase);
 
     public override int GetHashCode() => StringComparer.OrdinalIgnoreCase.GetHashCode(Name);
+
+    /// <summary>
+    /// Implicitly converts a string to a <see cref="ShellId"/>.
+    /// </summary>
+    public static implicit operator ShellId(string name) => new(name);
+
+    /// <summary>
+    /// Implicitly converts a <see cref="ShellId"/> to a string.
+    /// </summary>
+    public static implicit operator string(ShellId id) => id.Name;
 }

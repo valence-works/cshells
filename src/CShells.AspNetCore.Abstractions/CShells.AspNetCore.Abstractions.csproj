@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Authors>Sipke Schoorstra</Authors>
+    <Description>ASP.NET Core abstractions for CShells. Contains interfaces and models for building web shell features without dependencies on the full CShells framework. Reference this package in your ASP.NET Core feature libraries.</Description>
+    <PackageTags>multi-tenancy;tenancy;shell;tenant;isolation;saas;asp.net-core;abstractions;interfaces</PackageTags>
+    <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" Link="README.md" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\branding\logo.png" Pack="true" PackagePath="\" Link="logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CShells.Abstractions\CShells.Abstractions.csproj"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App"/>
+  </ItemGroup>
+
+</Project>

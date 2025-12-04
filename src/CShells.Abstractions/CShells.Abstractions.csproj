@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Authors>Sipke Schoorstra</Authors>
+    <Description>Core abstractions for CShells. Contains interfaces and models for building shell features without dependencies on the full CShells framework. Reference this package in your feature libraries.</Description>
+    <PackageTags>multi-tenancy;tenancy;shell;tenant;isolation;saas;abstractions;interfaces</PackageTags>
+    <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" Link="README.md" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\branding\logo.png" Pack="true" PackagePath="\" Link="logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
+  </ItemGroup>
+
+</Project>

@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\samples\CShells.Workbench\CShells.Workbench.csproj" />
+    <ProjectReference Include="..\..\src\CShells\CShells.csproj" />
   </ItemGroup>
 
 </Project>

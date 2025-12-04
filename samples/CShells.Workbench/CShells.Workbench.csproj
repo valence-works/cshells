@@ -6,6 +6,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\CShells.Workbench.Features\CShells.Workbench.Features.csproj" />
         <ProjectReference Include="..\..\src\CShells\CShells.csproj" />
         <ProjectReference Include="..\..\src\CShells.AspNetCore\CShells.AspNetCore.csproj" />
         <ProjectReference Include="..\..\src\CShells.Providers.FluentStorage\CShells.Providers.FluentStorage.csproj" />

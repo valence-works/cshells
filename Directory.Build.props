@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
 
     <!-- Central base version for all packages; preview builds will append a suffix like -preview.{runNumber} -->
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
 
     <!-- NuGet Package Metadata -->
     <Authors>Sipke Schoorstra</Authors>
