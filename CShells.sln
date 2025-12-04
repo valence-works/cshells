@@ -51,6 +51,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CShells.Abstractions", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CShells.AspNetCore.Abstractions", "src\CShells.AspNetCore.Abstractions\CShells.AspNetCore.Abstractions.csproj", "{76421ACD-21F3-4A69-9E96-EE5513D4A2DC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CShells.Workbench.Features", "samples\CShells.Workbench.Features\CShells.Workbench.Features.csproj", "{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -157,6 +159,18 @@ Global
 		{76421ACD-21F3-4A69-9E96-EE5513D4A2DC}.Release|x64.Build.0 = Release|Any CPU
 		{76421ACD-21F3-4A69-9E96-EE5513D4A2DC}.Release|x86.ActiveCfg = Release|Any CPU
 		{76421ACD-21F3-4A69-9E96-EE5513D4A2DC}.Release|x86.Build.0 = Release|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Debug|x64.Build.0 = Debug|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Debug|x86.Build.0 = Debug|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Release|x64.ActiveCfg = Release|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Release|x64.Build.0 = Release|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Release|x86.ActiveCfg = Release|Any CPU
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -170,5 +184,6 @@ Global
 		{E7478309-4194-4AAC-8E00-EBDBEE668D66} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{74347258-04C0-4C48-AC85-90B0DE0CC8D8} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{76421ACD-21F3-4A69-9E96-EE5513D4A2DC} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{5FEE72EB-50C6-4104-A505-C72AA6FF56F0} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 EndGlobal

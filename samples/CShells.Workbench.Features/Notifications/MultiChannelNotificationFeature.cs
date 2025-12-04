@@ -1,4 +1,5 @@
 using CShells.Features;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Workbench.Features.Notifications;
 

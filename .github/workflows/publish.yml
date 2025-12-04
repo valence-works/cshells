@@ -32,14 +32,14 @@ jobs:
         id: version
         run: |
           # Read the central base version from Directory.Build.props
-          if [ ! -f Directory.Build.props ]; then
-            echo "Directory.Build.props not found in repository root"
+          if [ ! -f src/Directory.Build.props ]; then
+            echo "src/Directory.Build.props not found"
             exit 1
           fi
 
-          BASE_VERSION=$(grep -m 1 '<Version>' Directory.Build.props | sed -E 's/.*<Version>([^<]+)<.*/\1/')
+          BASE_VERSION=$(grep -m 1 '<Version>' src/Directory.Build.props | sed -E 's/.*<Version>([^<]+)<.*/\1/')
           if [ -z "$BASE_VERSION" ]; then
-            echo "Failed to read base Version from Directory.Build.props"
+            echo "Failed to read base Version from src/Directory.Build.props"
             exit 1
           fi
 

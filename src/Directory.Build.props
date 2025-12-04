@@ -3,6 +3,23 @@
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+
+        <!-- Central base version for all packages; preview builds will append a suffix like -preview.{runNumber} -->
+        <Version>0.0.4</Version>
+
+        <!-- NuGet Package Metadata -->
+        <Authors>Sipke Schoorstra</Authors>
+        <Company>Sipke Schoorstra</Company>
+        <Copyright>Copyright (c) 2025 Sipke Schoorstra</Copyright>
+        <Description>A lightweight shell &amp; feature system for .NET projects that lets you build modular and multi-tenant apps with per-shell DI containers and config-driven features.</Description>
+        <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageTags>shell;feature;modular;multitenant;aspnetcore;dependency-injection</PackageTags>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>logo.png</PackageIcon>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     </PropertyGroup>
 
     <ItemGroup>

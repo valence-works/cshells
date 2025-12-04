@@ -2,6 +2,11 @@ using CShells.AspNetCore.Features;
 using CShells.Workbench.Features.Core;
 using CShells.Workbench.Features.FraudDetection;
 using CShells.Workbench.Features.Notifications;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace CShells.Workbench.Features.PaymentProcessing;
 
