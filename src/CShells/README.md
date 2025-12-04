@@ -26,7 +26,7 @@ dotnet add package CShells
 ### 1. Create a Feature
 
 ```csharp
-using CShells.Abstractions.Features;
+using CShells.Features;
 using Microsoft.Extensions.DependencyInjection;
 
 [ShellFeature("Core", DisplayName = "Core Services")]
