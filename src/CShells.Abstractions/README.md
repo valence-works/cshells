@@ -27,7 +27,7 @@ dotnet add package CShells.Abstractions
 ## Example Usage
 
 ```csharp
-using CShells.Abstractions.Features;
+using CShells.Features;
 using Microsoft.Extensions.DependencyInjection;
 
 [ShellFeature("MyFeature")]
