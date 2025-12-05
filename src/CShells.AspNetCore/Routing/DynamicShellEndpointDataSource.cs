@@ -13,7 +13,7 @@ namespace CShells.AspNetCore.Routing;
 public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSource>? logger = null) : EndpointDataSource
 {
     private readonly List<Endpoint> _endpoints = [];
-    private readonly Lock _lock = new();
+    private readonly object _lock = new();
     private CancellationTokenSource _cts = new();
     private readonly ILogger<DynamicShellEndpointDataSource> _logger = logger ?? NullLogger<DynamicShellEndpointDataSource>.Instance;
 

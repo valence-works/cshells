@@ -1,8 +1,9 @@
 <Project>
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
 
         <!-- Central base version for all packages; preview builds will append a suffix like -preview.{runNumber} -->
         <Version>0.0.5</Version>
@@ -25,4 +26,5 @@
     <ItemGroup>
         <PackageReference Include="JetBrains.Annotations"/>
     </ItemGroup>
+
 </Project>

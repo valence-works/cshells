@@ -11,7 +11,7 @@ public class ShellSettingsCache : IShellSettingsCache
     private readonly ConcurrentDictionary<ShellId, ShellSettings> _cache = new();
     // Ordered list to preserve insertion order (ConcurrentDictionary.Values doesn't guarantee order)
     private List<ShellSettings> _orderedSettings = [];
-    private readonly Lock _lock = new();
+    private readonly object _lock = new();
 
     /// <inheritdoc />
     public IReadOnlyCollection<ShellSettings> GetAll()

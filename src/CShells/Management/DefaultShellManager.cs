@@ -17,7 +17,7 @@ public class DefaultShellManager : IShellManager
     private readonly IShellSettingsProvider _provider;
     private readonly INotificationPublisher _notificationPublisher;
     private readonly ILogger<DefaultShellManager> _logger;
-    private readonly Lock _lock = new();
+    private readonly object _lock = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultShellManager"/> class.

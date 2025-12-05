@@ -42,7 +42,7 @@ public class DefaultShellHost : IShellHost, IDisposable
     private readonly ConcurrentDictionary<ShellId, ShellContext> _shellContexts = new();
     private readonly FeatureDependencyResolver _dependencyResolver = new();
     private readonly ILogger<DefaultShellHost> _logger;
-    private readonly Lock _buildLock = new();
+    private readonly object _buildLock = new();
     private bool _disposed;
 
     // Cached copy of root service descriptors for efficient bulk-copy to shell service collections.
