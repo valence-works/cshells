@@ -1,28 +1,47 @@
 <Project>
-  <PropertyGroup>
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-  </PropertyGroup>
-  <ItemGroup>
-    <!-- Microsoft Extensions -->
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
-    <!-- ASP.NET Core -->
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1" />
-    <!-- Others -->
-    <PackageVersion Include="FluentStorage" Version="6.0.0" />
-    <PackageVersion Include="JetBrains.Annotations" Version="2025.2.4" />
-    <!-- Testing -->
-    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
-    <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-  </ItemGroup>
+    <PropertyGroup>
+        <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+        <!-- Microsoft Extensions -->
+        <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0"/>
+        <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0"/>
+        <!-- ASP.NET Core -->
+        <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0"/>
+        <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.0.1"/>
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetFramework)' == 'net8.0' or '$(TargetFramework)' == 'net9.0'">
+        <!-- Microsoft Extensions -->
+        <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.Configuration" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.Logging" Version="9.0.11"/>
+        <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.11"/>
+        <!-- ASP.NET Core -->
+        <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="9.0.11"/>
+        <PackageVersion Include="Swashbuckle.AspNetCore" Version="9.0.6"/>
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Others -->
+        <PackageVersion Include="FluentStorage" Version="6.0.0"/>
+        <PackageVersion Include="JetBrains.Annotations" Version="2025.2.4"/>
+        <!-- Testing -->
+        <PackageVersion Include="coverlet.collector" Version="6.0.4"/>
+        <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1"/>
+        <PackageVersion Include="xunit" Version="2.9.3"/>
+        <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5"/>
+    </ItemGroup>
 </Project>
