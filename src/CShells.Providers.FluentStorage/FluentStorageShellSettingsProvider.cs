@@ -50,8 +50,7 @@ public class FluentStorageShellSettingsProvider : IShellSettingsProvider
 
         if (blobs == null || !blobs.Any())
         {
-            throw new InvalidOperationException(
-                $"No shell configuration files found in blob storage path '{_path}'.");
+            return [];
         }
 
         var shellSettings = new List<ShellSettings>();
@@ -79,11 +78,6 @@ public class FluentStorageShellSettingsProvider : IShellSettingsProvider
             {
                 throw new InvalidOperationException($"Error reading shell configuration from blob '{blob.Name}': {ex.Message}", ex);
             }
-        }
-
-        if (shellSettings.Count == 0)
-        {
-            throw new InvalidOperationException($"No valid shell configurations found in blob storage path '{_path}'.");
         }
 
         return shellSettings;

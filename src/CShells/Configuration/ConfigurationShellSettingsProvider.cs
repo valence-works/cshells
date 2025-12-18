@@ -16,9 +16,6 @@ public class ConfigurationShellSettingsProvider(IConfiguration configuration, st
         var shellsSection = _configuration.GetSection(_sectionName).GetSection("Shells");
         var shellConfigurations = shellsSection.GetChildren().ToList();
 
-        if (shellConfigurations.Count == 0)
-            throw new InvalidOperationException($"No shells configured in the configuration section '{_sectionName}'.");
-
         var shells = shellConfigurations.Select(ShellSettingsFactory.CreateFromConfiguration);
         return Task.FromResult(shells);
     }
