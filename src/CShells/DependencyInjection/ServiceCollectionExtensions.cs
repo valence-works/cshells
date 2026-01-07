@@ -5,80 +5,138 @@ using CShells.Hosting;
 using CShells.Management;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyModel;
 using Microsoft.Extensions.Logging;
 
-namespace CShells.DependencyInjection
+namespace CShells.DependencyInjection;
+
+/// <summary>
+/// ServiceCollection extensions for registering CShells.
+/// </summary>
+public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// ServiceCollection extensions for registering CShells.
+    /// Registers CShells services and returns a builder for further configuration.
     /// </summary>
-    public static class ServiceCollectionExtensions
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Optional configuration action to customize the CShells builder.</param>
+    /// <param name="assemblies">Optional assemblies to scan for features. If null, scans all loaded assemblies.</param>
+    /// <returns>A CShells builder for further configuration.</returns>
+    public static CShellsBuilder AddCShells(
+        this IServiceCollection services,
+        Action<CShellsBuilder>? configure,
+        IEnumerable<Assembly>? assemblies = null)
     {
-        /// <summary>
-        /// Registers CShells services and returns a builder for further configuration.
-        /// </summary>
-        /// <param name="services">The service collection.</param>
-        /// <param name="assemblies">Optional assemblies to scan for features. If null, scans all loaded assemblies.</param>
-        /// <returns>A CShells builder for further configuration.</returns>
-        public static CShellsBuilder AddCShells(
-            this IServiceCollection services,
-            Action<CShellsBuilder>? configure,
-            IEnumerable<Assembly>? assemblies = null)
+        Guard.Against.Null(services);
+
+        // Register the root service collection accessor as early as possible.
+        // This allows the shell host to copy root service registrations into each shell's service collection.
+        // Note: The captured 'services' reference remains valid for the lifetime of the application.
+        // Because IServiceCollection is mutable, any services added after AddCShells but before shells are built
+        // will still be inherited by shells. This subtle behavior is correct but worth documenting for future maintainers.
+        services.TryAddSingleton<IRootServiceCollectionAccessor>(
+            _ => new RootServiceCollectionAccessor(services));
+
+        // Register the feature factory for consistent feature instantiation across the framework
+        services.TryAddSingleton<IShellFeatureFactory, DefaultShellFeatureFactory>();
+
+        // Register the notification publisher for shell lifecycle events
+        services.TryAddSingleton<Notifications.INotificationPublisher, Notifications.DefaultNotificationPublisher>();
+
+        // Register the shell settings cache
+        var cache = new ShellSettingsCache();
+        services.TryAddSingleton<ShellSettingsCache>(cache);
+        services.TryAddSingleton<IShellSettingsCache>(cache);
+
+        // Register a hosted service that will populate the cache at startup
+        // This ensures the cache is loaded when the application starts normally (via IHost.Run)
+        services.AddHostedService<ShellSettingsCacheInitializer>();
+
+        // Register IShellHost using the DefaultShellHost.
+        // The root IServiceProvider is passed to allow IShellFeature constructors to resolve root-level services.
+        // The root IServiceCollection is passed via the accessor to enable service inheritance in shells.
+        // The cache is passed directly, and DefaultShellHost will call GetAll() at runtime.
+        //
+        // Note: The cache may be empty when IShellHost is constructed. This is OK - shells can be
+        // loaded later via the hosted service or dynamically at runtime via the cache.
+        services.AddSingleton<IShellHost>(sp =>
         {
-            Guard.Against.Null(services);
+            var shellCache = sp.GetRequiredService<ShellSettingsCache>();
+            var logger = sp.GetService<ILogger<DefaultShellHost>>();
+            var rootServicesAccessor = sp.GetRequiredService<IRootServiceCollectionAccessor>();
+            var featureFactory = sp.GetRequiredService<IShellFeatureFactory>();
+            var assembliesToScan = assemblies ?? ResolveAssembliesToScan();
 
-            // Register the root service collection accessor as early as possible.
-            // This allows the shell host to copy root service registrations into each shell's service collection.
-            // Note: The captured 'services' reference remains valid for the lifetime of the application.
-            // Because IServiceCollection is mutable, any services added after AddCShells but before shells are built
-            // will still be inherited by shells. This subtle behavior is correct but worth documenting for future maintainers.
-            services.TryAddSingleton<IRootServiceCollectionAccessor>(
-                _ => new RootServiceCollectionAccessor(services));
+            return new DefaultShellHost(shellCache, assembliesToScan, rootProvider: sp, rootServicesAccessor, featureFactory, logger);
+        });
 
-            // Register the feature factory for consistent feature instantiation across the framework
-            services.TryAddSingleton<IShellFeatureFactory, DefaultShellFeatureFactory>();
+        // Register the default shell context scope factory.
+        services.AddSingleton<IShellContextScopeFactory, DefaultShellContextScopeFactory>();
 
-            // Register the notification publisher for shell lifecycle events
-            services.TryAddSingleton<Notifications.INotificationPublisher, Notifications.DefaultNotificationPublisher>();
+        // Register the shell manager for runtime shell lifecycle management
+        services.TryAddSingleton<IShellManager, DefaultShellManager>();
+            
+        var builder = new CShellsBuilder(services);
+            
+        configure?.Invoke(builder);
+            
+        return builder;
+    }
+    
+    static IReadOnlyCollection<Assembly> ResolveAssembliesToScan(Func<AssemblyName, bool>? filter = null)
+    {
+        var entry = Assembly.GetEntryAssembly();
+        var names = new HashSet<AssemblyName>(new AssemblyNameComparer());
 
-            // Register the shell settings cache
-            var cache = new ShellSettingsCache();
-            services.TryAddSingleton<ShellSettingsCache>(cache);
-            services.TryAddSingleton<IShellSettingsCache>(cache);
+        if (entry is not null)
+            names.Add(entry.GetName());
 
-            // Register a hosted service that will populate the cache at startup
-            // This ensures the cache is loaded when the application starts normally (via IHost.Run)
-            services.AddHostedService<ShellSettingsCacheInitializer>();
-
-            // Register IShellHost using the DefaultShellHost.
-            // The root IServiceProvider is passed to allow IShellFeature constructors to resolve root-level services.
-            // The root IServiceCollection is passed via the accessor to enable service inheritance in shells.
-            // The cache is passed directly, and DefaultShellHost will call GetAll() at runtime.
-            //
-            // Note: The cache may be empty when IShellHost is constructed. This is OK - shells can be
-            // loaded later via the hosted service or dynamically at runtime via the cache.
-            services.AddSingleton<IShellHost>(sp =>
+        var dc = DependencyContext.Default;
+        if (dc is not null)
+        {
+            foreach (var lib in dc.RuntimeLibraries)
             {
-                var shellCache = sp.GetRequiredService<ShellSettingsCache>();
-                var logger = sp.GetService<ILogger<DefaultShellHost>>();
-                var rootServicesAccessor = sp.GetRequiredService<IRootServiceCollectionAccessor>();
-                var featureFactory = sp.GetRequiredService<IShellFeatureFactory>();
-                var assembliesToScan = assemblies ?? AppDomain.CurrentDomain.GetAssemblies();
-
-                return new DefaultShellHost(shellCache, assembliesToScan, rootProvider: sp, rootServicesAccessor, featureFactory, logger);
-            });
-
-            // Register the default shell context scope factory.
-            services.AddSingleton<IShellContextScopeFactory, DefaultShellContextScopeFactory>();
-
-            // Register the shell manager for runtime shell lifecycle management
-            services.TryAddSingleton<IShellManager, DefaultShellManager>();
-            
-            var builder = new CShellsBuilder(services);
-            
-            configure?.Invoke(builder);
-            
-            return builder;
+                foreach (var an in lib.GetDefaultAssemblyNames(dc))
+                    names.Add(an);
+            }
         }
+
+        if (filter is not null)
+            names.RemoveWhere(n => !filter(n));
+
+        var loaded = new Dictionary<string, Assembly>(StringComparer.OrdinalIgnoreCase);
+        foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+            loaded[a.GetName().Name!] = a;
+
+        var result = new List<Assembly>();
+        foreach (var name in names)
+        {
+            if (name.Name is null)
+                continue;
+
+            if (loaded.TryGetValue(name.Name, out var alreadyLoaded))
+            {
+                result.Add(alreadyLoaded);
+                continue;
+            }
+
+            try
+            {
+                result.Add(Assembly.Load(name));
+            }
+            catch
+            {
+                // Ignore assemblies that cannot be loaded in this process (optional deps, analyzers, etc.)
+            }
+        }
+
+        return result;
+    }
+
+    sealed class AssemblyNameComparer : IEqualityComparer<AssemblyName>
+    {
+        public bool Equals(AssemblyName? x, AssemblyName? y) => StringComparer.OrdinalIgnoreCase.Equals(x?.Name, y?.Name);
+        public int GetHashCode(AssemblyName obj) => StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name ?? string.Empty);
     }
 }
+

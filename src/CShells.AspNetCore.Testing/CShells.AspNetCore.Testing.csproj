@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <Authors>Sipke Schoorstra</Authors>
+        <Description>Testing helpers for CShells ASP.NET Core integration. Provides utilities for integration tests, including shell initialization waiter for ensuring shells are fully loaded before test execution.</Description>
+        <PackageTags>multi-tenancy;tenancy;shell;tenant;testing;integration-tests;asp.net-core;aspnetcore</PackageTags>
+        <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>logo.png</PackageIcon>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\CShells.AspNetCore\CShells.AspNetCore.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App"/>
+    </ItemGroup>
+
+</Project>

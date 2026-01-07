@@ -2,9 +2,11 @@ using CShells.AspNetCore.Extensions;
 using CShells.Hosting;
 using CShells.Resolution;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace CShells.AspNetCore.Middleware;
 
@@ -16,11 +18,15 @@ public class ShellMiddleware(
     RequestDelegate next,
     IShellResolver resolver,
     IShellHost host,
+    IMemoryCache cache,
+    IOptions<ShellMiddlewareOptions> options,
     ILogger<ShellMiddleware>? logger = null)
 {
     private readonly RequestDelegate _next = Guard.Against.Null(next);
     private readonly IShellResolver _resolver = Guard.Against.Null(resolver);
     private readonly IShellHost _host = Guard.Against.Null(host);
+    private readonly IMemoryCache _cache = Guard.Against.Null(cache);
+    private readonly ShellMiddlewareOptions _options = Guard.Against.Null(options).Value;
     private readonly ILogger<ShellMiddleware> _logger = logger ?? NullLogger<ShellMiddleware>.Instance;
 
     /// <summary>
@@ -37,7 +43,7 @@ public class ShellMiddleware(
             return;
         }
 
-        var shellId = _resolver.Resolve(resolutionContext);
+        var shellId = ResolveShellWithCache(context, resolutionContext);
 
         if (shellId is null)
         {
@@ -61,5 +67,41 @@ public class ShellMiddleware(
         {
             context.RequestServices = originalRequestServices;
         }
+    }
+
+    private ShellId? ResolveShellWithCache(HttpContext context, ShellResolutionContext resolutionContext)
+    {
+        if (!_options.EnableCaching)
+            return _resolver.Resolve(resolutionContext);
+
+        var cacheKey = BuildCacheKey(context);
+
+        var shellId = _cache.GetOrCreate(cacheKey, entry =>
+        {
+            var resolvedShellId = _resolver.Resolve(resolutionContext);
+
+            if (resolvedShellId is null)
+            {
+                // Don't cache null results - set very short expiration
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMilliseconds(1);
+            }
+            else
+            {
+                entry.SlidingExpiration = _options.CacheSlidingExpiration;
+                entry.AbsoluteExpirationRelativeToNow = _options.CacheAbsoluteExpiration;
+                entry.Size = 1;
+                _logger.LogDebug("Cached shell '{ShellId}' for key '{CacheKey}'", resolvedShellId.Value, cacheKey);
+            }
+
+            return resolvedShellId;
+        });
+
+        return shellId;
+    }
+
+    private string BuildCacheKey(HttpContext context)
+    {
+        var request = context.Request;
+        return $"{request.Host}:{request.Path}:{request.Method}";
     }
 }

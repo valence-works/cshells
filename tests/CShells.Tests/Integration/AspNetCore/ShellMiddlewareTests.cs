@@ -2,7 +2,9 @@ using CShells.AspNetCore.Middleware;
 using CShells.Hosting;
 using CShells.Resolution;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace CShells.Tests.Integration.AspNetCore;
 
@@ -11,9 +13,16 @@ namespace CShells.Tests.Integration.AspNetCore;
 /// </summary>
 public class ShellMiddlewareTests
 {
-    private static ShellMiddleware CreateMiddleware(RequestDelegate next, IShellResolver? resolver = null, IShellHost? host = null)
+    private static ShellMiddleware CreateMiddleware(
+        RequestDelegate next,
+        IShellResolver? resolver = null,
+        IShellHost? host = null,
+        IMemoryCache? cache = null,
+        IOptions<ShellMiddlewareOptions>? options = null)
     {
-        return new(next, resolver ?? new NullShellResolver(), host ?? new TestShellHost());
+        cache ??= new MemoryCache(new MemoryCacheOptions());
+        options ??= Options.Create(new ShellMiddlewareOptions());
+        return new(next, resolver ?? new NullShellResolver(), host ?? new TestShellHost(), cache, options);
     }
 
     [Fact(DisplayName = "InvokeAsync with no shells registered continues without setting scope")]
@@ -183,16 +192,20 @@ public class ShellMiddlewareTests
     }
 
     [Theory(DisplayName = "Constructor guard clauses throw ArgumentNullException")]
-    [InlineData(true, false, false, "next")]
-    [InlineData(false, true, false, "resolver")]
-    [InlineData(false, false, true, "host")]
-    public void Constructor_GuardClauses_ThrowArgumentNullException(bool nullNext, bool nullResolver, bool nullHost, string expectedParam)
+    [InlineData(true, false, false, false, false, "next")]
+    [InlineData(false, true, false, false, false, "resolver")]
+    [InlineData(false, false, true, false, false, "host")]
+    [InlineData(false, false, false, true, false, "cache")]
+    [InlineData(false, false, false, false, true, "options")]
+    public void Constructor_GuardClauses_ThrowArgumentNullException(bool nullNext, bool nullResolver, bool nullHost, bool nullCache, bool nullOptions, string expectedParam)
     {
         RequestDelegate? next = nullNext ? null : _ => Task.CompletedTask;
         var resolver = nullResolver ? null : new NullShellResolver();
         var host = nullHost ? null : new TestShellHost();
+        var cache = nullCache ? null : new MemoryCache(new MemoryCacheOptions());
+        var options = nullOptions ? null : Options.Create(new ShellMiddlewareOptions());
 
-        var exception = Assert.Throws<ArgumentNullException>(() => new ShellMiddleware(next!, resolver!, host!));
+        var exception = Assert.Throws<ArgumentNullException>(() => new ShellMiddleware(next!, resolver!, host!, cache!, options!));
         Assert.Equal(expectedParam, exception.ParamName);
     }
 

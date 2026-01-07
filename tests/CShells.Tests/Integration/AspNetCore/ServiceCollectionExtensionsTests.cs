@@ -1,4 +1,5 @@
 using CShells.DependencyInjection;
+using CShells.Hosting;
 using CShells.Resolution;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -32,7 +33,8 @@ public class ServiceCollectionExtensionsTests
         CShells.AspNetCore.Extensions.ServiceCollectionExtensions.AddCShellsAspNetCore(services);
         var serviceProvider = services.BuildServiceProvider();
         var resolver = serviceProvider.GetRequiredService<IShellResolver>();
-        var context = new ShellResolutionContext();
+        var shellHost = serviceProvider.GetRequiredService<IShellHost>();
+        var context = new ShellResolutionContext { ShellHost = shellHost };
 
         // Act
         var result = resolver.Resolve(context);
@@ -112,7 +114,8 @@ public class ServiceCollectionExtensionsTests
 
         var serviceProvider = services.BuildServiceProvider();
         var resolver = serviceProvider.GetRequiredService<IShellResolver>();
-        var context = new ShellResolutionContext();
+        var shellHost = serviceProvider.GetRequiredService<IShellHost>();
+        var context = new ShellResolutionContext { ShellHost = shellHost };
 
         // Act
         var result = resolver.Resolve(context);

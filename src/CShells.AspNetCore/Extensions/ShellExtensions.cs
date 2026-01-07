@@ -33,9 +33,9 @@ public static class ShellExtensions
         /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>
         public WebApplicationBuilder AddShells(IEnumerable<Type> featureAssemblyMarkerTypes)
         {
-            Guard.Against.Null(featureAssemblyMarkerTypes);
-            
-            return builder.AddShells(featureAssemblyMarkerTypes.Select(t => t.Assembly));
+            var assemblyMarkerTypes = featureAssemblyMarkerTypes as Type[] ?? featureAssemblyMarkerTypes.ToArray();
+            Guard.Against.Null(assemblyMarkerTypes);
+            return builder.AddShells(assemblyMarkerTypes.Select(t => t.Assembly));
         }
 
         /// <summary>

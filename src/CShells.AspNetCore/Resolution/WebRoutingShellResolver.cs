@@ -78,6 +78,11 @@ public class WebRoutingShellResolver(IShellSettingsCache cache, WebRoutingShellR
         {
             var routingOptions = shell.GetProperty<WebRoutingShellOptions>(ShellPropertyKeys.WebRouting);
             var routeValue = routingOptions != null ? getRouteValue(routingOptions) : null;
+            
+            // If the path starts with a slash, throw a configuration exception:
+            if (routeValue?.StartsWith('/') == true)
+                throw new($"Web routing path cannot start with a slash: '{routeValue}'");
+            
             if (!string.IsNullOrEmpty(routeValue) && routeValue.Equals(valueToMatch, StringComparison.OrdinalIgnoreCase))
                 return shell.Id;
         }
