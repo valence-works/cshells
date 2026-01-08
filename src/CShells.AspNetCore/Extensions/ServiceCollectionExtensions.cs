@@ -51,7 +51,7 @@ public static class ServiceCollectionExtensions
         Guard.Against.Null(services);
 
         // Register core CShells services first (will scan all loaded assemblies)
-        var builder = services.AddCShells(configure, assemblies);
+        var builder = services.AddCShells(null, assemblies);
 
         // Register shell resolver options for strategy ordering
         services.TryAddSingleton<ShellResolverOptions>();
