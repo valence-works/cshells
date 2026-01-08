@@ -122,6 +122,24 @@ public class ServiceCollectionExtensionsTests
         Assert.Equal(new("Custom"), result.Value);
     }
 
+    [Fact(DisplayName = "AddCShellsAspNetCore only calls configure once")]
+    public void AddCShellsAspNetCore_CallsConfigureOnce()
+    {
+        // Arrange
+        var counter = 0;
+        var services = new ServiceCollection();
+        var configure = new Action<CShellsBuilder>(o =>
+        {
+            counter++;
+        });
+        
+        // Act
+        CShells.AspNetCore.Extensions.ServiceCollectionExtensions.AddCShellsAspNetCore(services, configure);
+        
+        // Assert
+        Assert.Equal(1, counter);
+    }
+
     private class CustomShellResolver : IShellResolver
     {
         public ShellId? Resolve(ShellResolutionContext context) => new ShellId("Custom");
