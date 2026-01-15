@@ -1,8 +1,10 @@
 using CShells.AspNetCore.Features;
 using CShells.AspNetCore.Routing;
 using CShells.Features;
+using CShells.Hosting;
 using CShells.Notifications;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,6 +22,7 @@ public class ShellEndpointRegistrationHandler :
     private readonly DynamicShellEndpointDataSource _endpointDataSource;
     private readonly EndpointRouteBuilderAccessor _endpointRouteBuilderAccessor;
     private readonly IShellFeatureFactory _featureFactory;
+    private readonly IShellHost _shellHost;
     private readonly IHostEnvironment? _environment;
     private readonly ILogger<ShellEndpointRegistrationHandler> _logger;
 
@@ -29,6 +32,7 @@ public class ShellEndpointRegistrationHandler :
     public ShellEndpointRegistrationHandler(
         DynamicShellEndpointDataSource endpointDataSource,
         IShellFeatureFactory featureFactory,
+        IShellHost shellHost,
         EndpointRouteBuilderAccessor endpointRouteBuilderAccessor,
         IHostEnvironment? environment = null,
         ILogger<ShellEndpointRegistrationHandler>? logger = null)
@@ -36,6 +40,7 @@ public class ShellEndpointRegistrationHandler :
         _endpointDataSource = endpointDataSource;
         _endpointRouteBuilderAccessor = endpointRouteBuilderAccessor;
         _featureFactory = featureFactory;
+        _shellHost = shellHost;
         _environment = environment;
         _logger = logger ?? NullLogger<ShellEndpointRegistrationHandler>.Instance;
     }
@@ -111,26 +116,43 @@ public class ShellEndpointRegistrationHandler :
                 settings.Id, ShellPropertyKeys.WebRouting);
         }
 
-        var pathPrefix = GetPathPrefix(settings);
+        var shellPathPrefix = GetPathPrefix(settings);
+        var globalRoutePrefix = GetGlobalRoutePrefix(settings);
 
-        _logger.LogInformation("Shell '{ShellId}' path prefix: '{PathPrefix}'", settings.Id, pathPrefix ?? "(none)");
+        // Combine shell path prefix with global route prefix (e.g., "/foo" + "elsa/api" = "/foo/elsa/api")
+        var combinedPrefix = CombinePrefixes(shellPathPrefix, globalRoutePrefix);
 
-        // Create shell-scoped endpoint builder
+        _logger.LogInformation("Shell '{ShellId}' path prefix: '{PathPrefix}', global route prefix: '{GlobalPrefix}', combined: '{Combined}'",
+            settings.Id,
+            shellPathPrefix ?? "(none)",
+            globalRoutePrefix ?? "(none)",
+            combinedPrefix ?? "(none)");
+
+        // Get the shell context for accessing service provider and feature descriptors
+        var shellContext = _shellHost.GetShell(settings.Id);
+
+        // Create shell-scoped endpoint builder with the combined prefix
+        // This ensures that endpoint mapping (e.g., FastEndpoints) can resolve shell-scoped services
         var shellEndpointBuilder = new ShellEndpointRouteBuilder(
             endpointRouteBuilder,
             settings.Id,
             settings,
-            pathPrefix);
+            shellContext.ServiceProvider,
+            combinedPrefix);
 
-        // Discover web features
-        var webFeatures = DiscoverWebFeatures(settings);
+        // Get the already-discovered feature descriptors to create the context
+        var allFeatureDescriptors = shellContext.ServiceProvider.GetRequiredService<IEnumerable<ShellFeatureDescriptor>>().ToList();
+        var featureContext = new ShellFeatureContext(settings, allFeatureDescriptors.AsReadOnly());
+
+        // Discover web features using the already-retrieved data
+        var webFeatures = DiscoverWebFeatures(shellContext, allFeatureDescriptors);
 
         // Map endpoints for each web feature
         foreach (var (featureId, featureType) in webFeatures)
         {
             try
             {
-                var feature = _featureFactory.CreateFeature<IWebShellFeature>(featureType, settings);
+                var feature = _featureFactory.CreateFeature<IWebShellFeature>(featureType, settings, featureContext);
                 feature.MapEndpoints(shellEndpointBuilder, _environment);
 
                 _logger.LogDebug("Mapped endpoints for feature '{FeatureId}' in shell '{ShellId}'",
@@ -163,17 +185,23 @@ public class ShellEndpointRegistrationHandler :
     }
 
     /// <summary>
-    /// Discovers web features that are enabled for a shell.
+    /// Discovers web features that are enabled for a shell, including resolved dependencies.
     /// </summary>
-    private static IEnumerable<(string FeatureId, Type FeatureType)> DiscoverWebFeatures(ShellSettings settings)
+    /// <remarks>
+    /// This method uses the already-discovered feature descriptors passed from the caller
+    /// instead of re-scanning assemblies, ensuring consistency and better performance.
+    /// </remarks>
+    private static IEnumerable<(string FeatureId, Type FeatureType)> DiscoverWebFeatures(
+        ShellContext shellContext,
+        IEnumerable<ShellFeatureDescriptor> allFeatureDescriptors)
     {
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic);
-        var allFeatures = FeatureDiscovery.DiscoverFeatures(assemblies);
+        var enabledFeatures = shellContext.EnabledFeatures;
 
-        return allFeatures
+        // Filter for web features that are enabled (including dependencies)
+        return allFeatureDescriptors
             .Where(d => d.StartupType != null &&
                         typeof(IWebShellFeature).IsAssignableFrom(d.StartupType) &&
-                        settings.EnabledFeatures.Contains(d.Id, StringComparer.OrdinalIgnoreCase))
+                        enabledFeatures.Contains(d.Id, StringComparer.OrdinalIgnoreCase))
             .Select(d => (d.Id, d.StartupType!));
     }
 
@@ -198,5 +226,54 @@ public class ShellEndpointRegistrationHandler :
         if (trimmedPath.EndsWith('/') && trimmedPath.Length > 1) trimmedPath = trimmedPath.TrimEnd('/');
 
         return trimmedPath;
+    }
+
+    /// <summary>
+    /// Gets the global route prefix from shell configuration data (configured in appsettings.json).
+    /// </summary>
+    private static string? GetGlobalRoutePrefix(ShellSettings settings)
+    {
+        // Read directly from ConfigurationData (populated from appsettings.json "Settings" section)
+        const string fastEndpointsGlobalRoutePrefixKey = "FastEndpoints:GlobalRoutePrefix";
+
+        if (settings.ConfigurationData.TryGetValue(fastEndpointsGlobalRoutePrefixKey, out var prefix) &&
+            prefix != null)
+        {
+            var prefixStr = prefix.ToString();
+            if (string.IsNullOrWhiteSpace(prefixStr))
+                return null;
+
+            var trimmedPrefix = prefixStr.Trim();
+
+            // Ensure prefix doesn't start or end with '/'
+            if (trimmedPrefix.StartsWith('/')) trimmedPrefix = trimmedPrefix.TrimStart('/');
+            if (trimmedPrefix.EndsWith('/')) trimmedPrefix = trimmedPrefix.TrimEnd('/');
+
+            return trimmedPrefix;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Combines the shell path prefix with a global route prefix.
+    /// </summary>
+    /// <example>
+    /// CombinePrefixes("/foo", "elsa/api") => "/foo/elsa/api"
+    /// CombinePrefixes("/foo", null) => "/foo"
+    /// CombinePrefixes(null, "elsa/api") => "/elsa/api"
+    /// </example>
+    private static string? CombinePrefixes(string? shellPathPrefix, string? globalRoutePrefix)
+    {
+        if (string.IsNullOrWhiteSpace(shellPathPrefix) && string.IsNullOrWhiteSpace(globalRoutePrefix))
+            return null;
+
+        if (string.IsNullOrWhiteSpace(shellPathPrefix))
+            return "/" + globalRoutePrefix;
+
+        if (string.IsNullOrWhiteSpace(globalRoutePrefix))
+            return shellPathPrefix;
+
+        return $"{shellPathPrefix}/{globalRoutePrefix}";
     }
 }

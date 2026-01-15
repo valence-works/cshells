@@ -9,35 +9,18 @@ namespace CShells.AspNetCore.Routing;
 /// An endpoint route builder that scopes all endpoints to a specific shell.
 /// Routes are prefixed with the shell's path and tagged with shell metadata.
 /// </summary>
-public class ShellEndpointRouteBuilder : IEndpointRouteBuilder
+public class ShellEndpointRouteBuilder(
+    IEndpointRouteBuilder inner,
+    ShellId shellId,
+    ShellSettings shellSettings,
+    IServiceProvider shellContextServiceProvider,
+    string? pathPrefix)
+    : IEndpointRouteBuilder
 {
-    private readonly IEndpointRouteBuilder _inner;
-    private readonly ShellId _shellId;
-    private readonly ShellSettings _shellSettings;
-    private readonly string? _pathPrefix;
     private readonly List<EndpointDataSource> _dataSources = [];
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ShellEndpointRouteBuilder"/> class.
-    /// </summary>
-    /// <param name="inner">The inner endpoint route builder.</param>
-    /// <param name="shellId">The shell ID.</param>
-    /// <param name="shellSettings">The shell settings.</param>
-    /// <param name="pathPrefix">Optional path prefix for all routes (e.g., "/acme").</param>
-    public ShellEndpointRouteBuilder(
-        IEndpointRouteBuilder inner,
-        ShellId shellId,
-        ShellSettings shellSettings,
-        string? pathPrefix)
-    {
-        _inner = inner;
-        _shellId = shellId;
-        _shellSettings = shellSettings;
-        _pathPrefix = pathPrefix;
-    }
-
     /// <inheritdoc />
-    public IServiceProvider ServiceProvider => _inner.ServiceProvider;
+    public IServiceProvider ServiceProvider { get; } = shellContextServiceProvider;
 
     /// <inheritdoc />
     public ICollection<EndpointDataSource> DataSources => _dataSources;
@@ -45,7 +28,7 @@ public class ShellEndpointRouteBuilder : IEndpointRouteBuilder
     /// <inheritdoc />
     public IApplicationBuilder CreateApplicationBuilder()
     {
-        return _inner.CreateApplicationBuilder();
+        return inner.CreateApplicationBuilder();
     }
 
     /// <summary>
@@ -72,17 +55,17 @@ public class ShellEndpointRouteBuilder : IEndpointRouteBuilder
 
         // Apply path prefix if configured
         var pattern = routeEndpoint.RoutePattern;
-        if (!string.IsNullOrEmpty(_pathPrefix))
+        if (!string.IsNullOrEmpty(pathPrefix))
         {
             var prefixedPattern = RoutePatternFactory.Combine(
-                RoutePatternFactory.Parse(_pathPrefix),
+                RoutePatternFactory.Parse(pathPrefix),
                 pattern);
             pattern = prefixedPattern;
         }
 
         // Add shell metadata
         var metadata = new EndpointMetadataCollection(
-            routeEndpoint.Metadata.Concat([new ShellEndpointMetadata(_shellId, _shellSettings)]));
+            routeEndpoint.Metadata.Concat([new ShellEndpointMetadata(shellId, shellSettings)]));
 
         return new RouteEndpoint(
             routeEndpoint.RequestDelegate!,
