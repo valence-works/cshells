@@ -1,8 +1,13 @@
 using System.Reflection;
+using CShells.AspNetCore.Authentication;
+using CShells.AspNetCore.Authorization;
 using CShells.AspNetCore.Configuration;
 using CShells.AspNetCore.Middleware;
 using CShells.DependencyInjection;
+using CShells.Hosting;
 using CShells.Resolution;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -20,6 +25,9 @@ public static class ServiceCollectionExtensions
     /// <item>Web routing resolver (path and host-based routing)</item>
     /// <item>Endpoint routing support</item>
     /// <item>Shell resolver orchestrator</item>
+    /// <item>Shell-aware authentication scheme provider (enables per-shell auth configurations)</item>
+    /// <item>Shell-aware authorization policy provider (enables per-shell authz policies)</item>
+    /// <item>HTTP context accessor (required by shell-aware providers)</item>
     /// </list>
     /// The default resolver strategy can be customized using configuration actions.
     /// </summary>
@@ -85,6 +93,19 @@ public static class ServiceCollectionExtensions
 
         // Register endpoint routing by default
         builder.WithEndpointRouting();
+
+        // Register ASP.NET Core-specific service exclusion provider
+        // This provides types like IAuthorizationPolicyProvider that should not be copied to shells
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellServiceExclusionProvider, CShells.AspNetCore.Hosting.AspNetCoreShellServiceExclusionProvider>());
+
+        // Register HTTP context accessor (required by shell-aware authentication and authorization providers)
+        services.AddHttpContextAccessor();
+
+        // Register shell-aware authentication and authorization providers
+        // These enable per-shell authentication schemes and authorization policies
+        // They bridge the root middleware to shell-specific configurations
+        services.TryAddSingleton<IAuthenticationSchemeProvider, ShellAuthenticationSchemeProvider>();
+        services.TryAddSingleton<IAuthorizationPolicyProvider, ShellAuthorizationPolicyProvider>();
 
         return builder;
     }

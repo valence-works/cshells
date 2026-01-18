@@ -37,6 +37,12 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IRootServiceCollectionAccessor>(
             _ => new RootServiceCollectionAccessor(services));
 
+        // Register the default exclusion provider for core CShells infrastructure types
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<Hosting.IShellServiceExclusionProvider, Hosting.DefaultShellServiceExclusionProvider>());
+
+        // Register the service exclusion registry (aggregates all providers)
+        services.TryAddSingleton<Hosting.IShellServiceExclusionRegistry, Hosting.ShellServiceExclusionRegistry>();
+
         // Register the feature factory for consistent feature instantiation across the framework
         services.TryAddSingleton<IShellFeatureFactory, DefaultShellFeatureFactory>();
 
@@ -65,9 +71,10 @@ public static class ServiceCollectionExtensions
             var logger = sp.GetService<ILogger<DefaultShellHost>>();
             var rootServicesAccessor = sp.GetRequiredService<IRootServiceCollectionAccessor>();
             var featureFactory = sp.GetRequiredService<IShellFeatureFactory>();
+            var exclusionRegistry = sp.GetRequiredService<Hosting.IShellServiceExclusionRegistry>();
             var assembliesToScan = assemblies ?? ResolveAssembliesToScan();
 
-            return new DefaultShellHost(shellCache, assembliesToScan, rootProvider: sp, rootServicesAccessor, featureFactory, logger);
+            return new DefaultShellHost(shellCache, assembliesToScan, rootProvider: sp, rootServicesAccessor, featureFactory, exclusionRegistry, logger);
         });
 
         // Register the default shell context scope factory.
