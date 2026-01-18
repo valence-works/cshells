@@ -26,4 +26,8 @@
     <ProjectReference Include="..\CShells.Abstractions\CShells.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="FastEndpoints" />
+  </ItemGroup>
+
 </Project>
