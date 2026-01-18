@@ -89,9 +89,28 @@ public static class FeatureDiscovery
             Dependencies = attribute?.DependsOn ?? []
         };
 
+        // Add DisplayName and Description to metadata if provided via attribute
+        if (attribute != null)
+        {
+            if (!string.IsNullOrWhiteSpace(attribute.DisplayName))
+            {
+                descriptor.Metadata["DisplayName"] = attribute.DisplayName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(attribute.Description))
+            {
+                descriptor.Metadata["Description"] = attribute.Description;
+            }
+        }
+
+        // Parse additional custom metadata from the attribute
         if (attribute?.Metadata is { Length: > 0 })
         {
-            descriptor.Metadata = ParseMetadata(featureName, attribute.Metadata);
+            var customMetadata = ParseMetadata(featureName, attribute.Metadata);
+            foreach (var kvp in customMetadata)
+            {
+                descriptor.Metadata[kvp.Key] = kvp.Value;
+            }
         }
 
         return descriptor;

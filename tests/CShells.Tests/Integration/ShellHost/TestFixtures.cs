@@ -1,6 +1,7 @@
 using CShells.Configuration;
 using CShells.DependencyInjection;
 using CShells.Features;
+using CShells.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Integration.ShellHost;
@@ -116,7 +117,8 @@ public static class TestFixtures
         var (services, provider) = CreateRootServices();
         var accessor = CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost(cache, [assembly], provider, accessor, factory);
+        var exclusionRegistry = new ShellServiceExclusionRegistry([]);
+        var host = new Hosting.DefaultShellHost(cache, [assembly], provider, accessor, factory, exclusionRegistry);
         hostsToDispose.Add(host);
         return host;
     }

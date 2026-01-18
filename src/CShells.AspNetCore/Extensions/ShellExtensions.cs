@@ -33,9 +33,9 @@ public static class ShellExtensions
         /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>
         public WebApplicationBuilder AddShells(IEnumerable<Type> featureAssemblyMarkerTypes)
         {
-            Guard.Against.Null(featureAssemblyMarkerTypes);
-            
-            return builder.AddShells(featureAssemblyMarkerTypes.Select(t => t.Assembly));
+            var assemblyMarkerTypes = featureAssemblyMarkerTypes as Type[] ?? featureAssemblyMarkerTypes.ToArray();
+            Guard.Against.Null(assemblyMarkerTypes);
+            return builder.AddShells(assemblyMarkerTypes.Select(t => t.Assembly));
         }
 
         /// <summary>
@@ -72,7 +72,11 @@ public static class ShellExtensions
         /// </summary>
         /// <param name="configureCShells">Callback used to configure the CShells builder (e.g., shell settings provider).</param>
         /// <param name="assemblies">The assemblies to scan for CShells features. If <c>null</c>, all loaded assemblies are scanned.</param>
-        /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>        
+        /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>
+        /// <remarks>
+        /// If the configuration callback doesn't explicitly call <c>WithConfigurationProvider</c> or <c>WithProvider</c>,
+        /// this method will automatically register the configuration-based provider using the default "CShells" section.
+        /// </remarks>
         public WebApplicationBuilder AddShells(
             Action<CShellsBuilder> configureCShells,
             IEnumerable<Assembly>? assemblies = null)
@@ -81,7 +85,17 @@ public static class ShellExtensions
             Guard.Against.Null(configureCShells);
 
             // Register ASP.NET Core integration for CShells
-            builder.Services.AddCShellsAspNetCore(configureCShells, assemblies);
+            builder.Services.AddCShellsAspNetCore(cshells =>
+            {
+                // Apply user configuration first
+                configureCShells(cshells);
+
+                // If no IShellSettingsProvider was registered, add the default configuration provider
+                if (!cshells.Services.Any(d => d.ServiceType == typeof(IShellSettingsProvider)))
+                {
+                    cshells.WithConfigurationProvider(builder.Configuration);
+                }
+            }, assemblies);
 
             return builder;
         }

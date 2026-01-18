@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Authors>Sipke Schoorstra</Authors>
+    <Description>FastEndpoints abstractions for CShells. Contains interfaces for integrating FastEndpoints with shell features. Reference this package when building shell features that expose FastEndpoints.</Description>
+    <RootNamespace>CShells.FastEndpoints</RootNamespace>
+    <PackageTags>multi-tenancy;tenancy;shell;tenant;isolation;saas;fastendpoints;abstractions;interfaces</PackageTags>
+    <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" Link="README.md" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\branding\logo.png" Pack="true" PackagePath="\" Link="logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CShells.Abstractions\CShells.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FastEndpoints" />
+  </ItemGroup>
+
+</Project>

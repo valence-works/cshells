@@ -15,7 +15,8 @@ namespace CShells.Features;
 ///   <item>
 ///     <description>
 ///     Constructors may only depend on root-level services (e.g., logging, configuration, options)
-///     and optionally <see cref="ShellSettings"/> which is passed explicitly during activation.
+///     and optionally <see cref="ShellSettings"/> or <see cref="ShellFeatureContext"/> which are
+///     passed explicitly during activation.
 ///     </description>
 ///   </item>
 ///   <item>
@@ -31,6 +32,22 @@ namespace CShells.Features;
 ///     </description>
 ///   </item>
 /// </list>
+/// <para>
+/// Features can choose their injection style based on their needs:
+/// </para>
+/// <list type="bullet">
+///   <item>
+///     <description>
+///     Simple features that only need shell settings: inject <see cref="ShellSettings"/> directly.
+///     </description>
+///   </item>
+///   <item>
+///     <description>
+///     Complex features that need additional metadata: inject <see cref="ShellFeatureContext"/>
+///     which provides access to shell settings and all discovered feature descriptors.
+///     </description>
+///   </item>
+/// </list>
 /// </remarks>
 public interface IShellFeature
 {
@@ -43,8 +60,9 @@ public interface IShellFeature
     /// The order ensures that dependencies are configured before dependents,
     /// but this is purely for registration order - features should not consume
     /// services from other features during configuration.
-    /// If a feature needs access to <see cref="ShellSettings"/>, it should inject
-    /// it via its constructor.
+    /// If a feature needs access to <see cref="ShellSettings"/> or additional metadata,
+    /// it should inject <see cref="ShellSettings"/> or <see cref="ShellFeatureContext"/>
+    /// via its constructor.
     /// </remarks>
     void ConfigureServices(IServiceCollection services);
 }

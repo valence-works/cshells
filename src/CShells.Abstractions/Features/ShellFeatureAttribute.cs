@@ -17,6 +17,11 @@ public sealed class ShellFeatureAttribute(string? name = null) : Attribute
     public string? DisplayName { get; set; }
 
     /// <summary>
+    /// Gets or sets the description of this feature.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
     /// Gets or sets the feature names that this feature depends on.
     /// </summary>
     public string[] DependsOn { get; set; } = [];

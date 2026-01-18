@@ -37,7 +37,8 @@ public sealed class DefaultShellHostFixture : IDisposable
 
     public Hosting.DefaultShellHost CreateHost(ShellSettingsCache cache, params System.Reflection.Assembly[] assemblies)
     {
-        var host = new Hosting.DefaultShellHost(cache, assemblies, _rootProvider, _accessor, _featureFactory);
+        var exclusionRegistry = new ShellServiceExclusionRegistry([]);
+        var host = new Hosting.DefaultShellHost(cache, assemblies, _rootProvider, _accessor, _featureFactory, exclusionRegistry);
         _hosts.Add(host);
         return host;
     }

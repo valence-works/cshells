@@ -83,4 +83,49 @@ public class ServiceResolutionIntegrationTests : IDisposable
         Assert.Contains("Weather report generated at", report);
         Assert.Contains("UTC", report);
     }
+
+    [Fact(DisplayName = "Shell can resolve feature descriptors as IReadOnlyCollection")]
+    public void Shell_CanResolveFeatureDescriptors_AsIReadOnlyCollection()
+    {
+        // Arrange
+        var host = TestFixtures.CreateDefaultHostWithWeatherFeature(_hostsToDispose);
+
+        // Act
+        var shell = host.GetShell(new("Default"));
+        var descriptors = shell.ServiceProvider.GetService<IReadOnlyCollection<CShells.Features.ShellFeatureDescriptor>>();
+
+        // Assert
+        Assert.NotNull(descriptors);
+        Assert.NotEmpty(descriptors);
+    }
+
+    [Fact(DisplayName = "Shell can resolve feature descriptors as IEnumerable")]
+    public void Shell_CanResolveFeatureDescriptors_AsIEnumerable()
+    {
+        // Arrange
+        var host = TestFixtures.CreateDefaultHostWithWeatherFeature(_hostsToDispose);
+
+        // Act
+        var shell = host.GetShell(new("Default"));
+        var descriptors = shell.ServiceProvider.GetService<IEnumerable<CShells.Features.ShellFeatureDescriptor>>();
+
+        // Assert
+        Assert.NotNull(descriptors);
+        Assert.NotEmpty(descriptors);
+    }
+
+    [Fact(DisplayName = "Both IReadOnlyCollection and IEnumerable resolve to same instance")]
+    public void Shell_FeatureDescriptors_BothInterfacesResolveSameInstance()
+    {
+        // Arrange
+        var host = TestFixtures.CreateDefaultHostWithWeatherFeature(_hostsToDispose);
+
+        // Act
+        var shell = host.GetShell(new("Default"));
+        var asCollection = shell.ServiceProvider.GetRequiredService<IReadOnlyCollection<CShells.Features.ShellFeatureDescriptor>>();
+        var asEnumerable = shell.ServiceProvider.GetRequiredService<IEnumerable<CShells.Features.ShellFeatureDescriptor>>();
+
+        // Assert - both should resolve to the same instance (singleton)
+        Assert.Same(asCollection, asEnumerable);
+    }
 }

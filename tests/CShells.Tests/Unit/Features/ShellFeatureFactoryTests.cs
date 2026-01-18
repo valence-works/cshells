@@ -121,6 +121,79 @@ public class ShellFeatureFactoryTests
         Assert.Equal("featureType", ex.ParamName);
     }
 
+    [Fact(DisplayName = "CreateFeature creates feature with ShellFeatureContext when constructor requires it")]
+    public void CreateFeature_WithShellFeatureContext_CreatesFeatureWithContext()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+        var factory = new DefaultShellFeatureFactory(serviceProvider);
+        var shellSettings = new ShellSettings(new("TestShell"), ["Feature1"]);
+        var featureDescriptors = new List<ShellFeatureDescriptor>
+        {
+            new("Feature1") { StartupType = typeof(SimpleFeature) },
+            new("Feature2") { StartupType = typeof(FeatureWithShellSettings) }
+        }.AsReadOnly();
+        var context = new ShellFeatureContext(shellSettings, featureDescriptors);
+
+        // Act
+        var feature = factory.CreateFeature<IShellFeature>(typeof(FeatureWithContext), shellSettings, context);
+
+        // Assert
+        Assert.NotNull(feature);
+        var typedFeature = Assert.IsType<FeatureWithContext>(feature);
+        Assert.Same(context, typedFeature.Context);
+        Assert.Same(shellSettings, typedFeature.Context.Settings);
+        Assert.Equal(2, typedFeature.Context.AllFeatures.Count);
+    }
+
+    [Fact(DisplayName = "CreateFeature prefers ShellFeatureContext over ShellSettings when both are available")]
+    public void CreateFeature_WithBothContextAndSettings_PrefersContext()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+        var factory = new DefaultShellFeatureFactory(serviceProvider);
+        var shellSettings = new ShellSettings(new("TestShell"), ["Feature1"]);
+        var featureDescriptors = new List<ShellFeatureDescriptor>
+        {
+            new("Feature1") { StartupType = typeof(SimpleFeature) }
+        }.AsReadOnly();
+        var context = new ShellFeatureContext(shellSettings, featureDescriptors);
+
+        // Act - Feature constructor accepts ShellFeatureContext, so it should be injected
+        var feature = factory.CreateFeature<IShellFeature>(typeof(FeatureWithContext), shellSettings, context);
+
+        // Assert
+        Assert.NotNull(feature);
+        var typedFeature = Assert.IsType<FeatureWithContext>(feature);
+        Assert.Same(context, typedFeature.Context);
+    }
+
+    [Fact(DisplayName = "CreateFeature with ShellFeatureContext and dependencies injects both")]
+    public void CreateFeature_WithContextAndDependencies_InjectsBoth()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+        var factory = new DefaultShellFeatureFactory(serviceProvider);
+        var shellSettings = new ShellSettings(new("TestShell"), ["Feature1"]);
+        var featureDescriptors = new List<ShellFeatureDescriptor>().AsReadOnly();
+        var context = new ShellFeatureContext(shellSettings, featureDescriptors);
+
+        // Act
+        var feature = factory.CreateFeature<IShellFeature>(typeof(FeatureWithContextAndDependencies), shellSettings, context);
+
+        // Assert
+        Assert.NotNull(feature);
+        var typedFeature = Assert.IsType<FeatureWithContextAndDependencies>(feature);
+        Assert.Same(context, typedFeature.Context);
+        Assert.NotNull(typedFeature.Logger);
+    }
+
     // Test feature implementations
     private class SimpleFeature : IShellFeature
     {
@@ -145,6 +218,21 @@ public class ShellFeatureFactoryTests
     {
         public ShellSettings Settings { get; } = settings;
         public ILogger<FeatureWithBoth> Logger { get; } = logger;
+
+        public void ConfigureServices(IServiceCollection services) { }
+    }
+
+    private class FeatureWithContext(ShellFeatureContext context) : IShellFeature
+    {
+        public ShellFeatureContext Context { get; } = context;
+
+        public void ConfigureServices(IServiceCollection services) { }
+    }
+
+    private class FeatureWithContextAndDependencies(ILogger<FeatureWithContextAndDependencies> logger, ShellFeatureContext context) : IShellFeature
+    {
+        public ShellFeatureContext Context { get; } = context;
+        public ILogger<FeatureWithContextAndDependencies> Logger { get; } = logger;
 
         public void ConfigureServices(IServiceCollection services) { }
     }

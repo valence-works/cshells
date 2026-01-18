@@ -1,4 +1,5 @@
 using CShells.Configuration;
+using CShells.Resolution;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -67,6 +68,57 @@ public static class CShellsBuilderExtensions
                 _ => new ConfigurationShellSettingsProvider(configuration, sectionName));
 
             return builder;
+        }
+
+        /// <summary>
+        /// Configures the shell resolver strategy pipeline with explicit control over which strategies
+        /// are registered and their execution order.
+        /// </summary>
+        /// <param name="configure">Configuration action for the resolver pipeline.</param>
+        /// <returns>The updated CShells builder.</returns>
+        /// <remarks>
+        /// When this method is called, it replaces the default resolver strategy registration behavior.
+        /// Use this for advanced scenarios where you need full control over the resolver pipeline.
+        /// For common scenarios, consider using convenience methods like <c>WithWebRouting</c> or <c>WithDefaultResolver</c>.
+        /// </remarks>
+        /// <example>
+        /// <code>
+        /// builder.AddCShells(shells => shells
+        ///     .ConfigureResolverPipeline(pipeline => pipeline
+        ///         .Use&lt;WebRoutingShellResolver&gt;(order: 0)
+        ///         .Use&lt;ClaimsBasedResolver&gt;(order: 50)
+        ///         .UseFallback&lt;DefaultShellResolverStrategy&gt;()
+        ///     )
+        /// );
+        /// </code>
+        /// </example>
+        public CShellsBuilder ConfigureResolverPipeline(Action<ResolverPipelineBuilder> configure)
+        {
+            Guard.Against.Null(builder);
+            Guard.Against.Null(configure);
+
+            var pipelineBuilder = new ResolverPipelineBuilder(builder.Services);
+            configure(pipelineBuilder);
+            pipelineBuilder.Build();
+
+            return builder;
+        }
+
+        /// <summary>
+        /// Configures the shell resolver to use the default fallback strategy.
+        /// This strategy always resolves to a shell with Id "Default".
+        /// </summary>
+        /// <returns>The updated CShells builder.</returns>
+        /// <remarks>
+        /// This is a convenience method that configures the resolver pipeline with just the <see cref="DefaultShellResolverStrategy"/>.
+        /// It's typically used in non-web scenarios where simple default shell resolution is sufficient.
+        /// </remarks>
+        public CShellsBuilder WithDefaultResolver()
+        {
+            Guard.Against.Null(builder);
+
+            return builder.ConfigureResolverPipeline(pipeline => pipeline
+                .Use<DefaultShellResolverStrategy>());
         }
     }
 }

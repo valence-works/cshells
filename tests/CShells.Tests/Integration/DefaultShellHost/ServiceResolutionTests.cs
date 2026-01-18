@@ -31,7 +31,8 @@ public class ServiceResolutionTests : IDisposable
         var (services, provider) = TestFixtures.CreateRootServices();
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost(cache, assemblies, provider, accessor, factory);
+        var exclusionRegistry = new ShellServiceExclusionRegistry([]);
+        var host = new Hosting.DefaultShellHost(cache, assemblies, provider, accessor, factory, exclusionRegistry);
         _hostsToDispose.Add(host);
         return host;
     }

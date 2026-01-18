@@ -22,7 +22,7 @@ public class FeatureDependencyResolver
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        ResolveDependenciesRecursive(featureName, features, visited, visiting, result);
+        ResolveDependenciesRecursive(featureName, null, features, visited, visiting, result);
 
         // Remove the original feature from the result (only return dependencies)
         result.Remove(featureName);
@@ -46,7 +46,7 @@ public class FeatureDependencyResolver
 
         foreach (var featureName in features.Keys)
         {
-            ResolveDependenciesRecursive(featureName, features, visited, visiting, result);
+            ResolveDependenciesRecursive(featureName, null, features, visited, visiting, result);
         }
 
         return result;
@@ -71,7 +71,7 @@ public class FeatureDependencyResolver
 
         foreach (var featureName in featureNames)
         {
-            ResolveDependenciesRecursive(featureName, features, visited, visiting, result);
+            ResolveDependenciesRecursive(featureName, null, features, visited, visiting, result);
         }
 
         return result;
@@ -93,6 +93,7 @@ public class FeatureDependencyResolver
     /// </remarks>
     private static void ResolveDependenciesRecursive(
         string featureName,
+        ShellFeatureDescriptor? dependentFeature,
         IReadOnlyDictionary<string, ShellFeatureDescriptor> features,
         HashSet<string> visited,
         HashSet<string> visiting,
@@ -112,8 +113,11 @@ public class FeatureDependencyResolver
         // Validate feature exists
         if (!features.TryGetValue(featureName, out var descriptor))
         {
-            throw new InvalidOperationException(
-                $"Feature '{featureName}' not found in the feature dictionary.");
+            var errorMessage = dependentFeature != null
+                ? $"Feature '{featureName}' not found in the feature dictionary. Required by feature '{dependentFeature.Id}'."
+                : $"Feature '{featureName}' not found in the feature dictionary.";
+
+            throw new InvalidOperationException(errorMessage);
         }
 
         // Mark as being processed (gray)
@@ -122,7 +126,7 @@ public class FeatureDependencyResolver
         // Process all dependencies first (depth-first traversal)
         foreach (var dependency in descriptor.Dependencies)
         {
-            ResolveDependenciesRecursive(dependency, features, visited, visiting, result);
+            ResolveDependenciesRecursive(dependency, descriptor, features, visited, visiting, result);
         }
 
         // Done processing this feature - mark as complete (black) and add to result

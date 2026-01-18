@@ -3,6 +3,7 @@
   <PropertyGroup>
     <Authors>Sipke Schoorstra</Authors>
     <Description>ASP.NET Core abstractions for CShells. Contains interfaces and models for building web shell features without dependencies on the full CShells framework. Reference this package in your ASP.NET Core feature libraries.</Description>
+    <RootNamespace>CShells.AspNetCore</RootNamespace>
     <PackageTags>multi-tenancy;tenancy;shell;tenant;isolation;saas;asp.net-core;abstractions;interfaces</PackageTags>
     <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
     <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>

@@ -19,12 +19,6 @@ public static class CShellsBuilderExtensions
         Guard.Against.Null(builder);
 
         var shells = builder.GetShells();
-        if (shells.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "No shells have been configured. Use AddShell() to configure at least one shell before calling WithInMemoryShells().");
-        }
-
         builder.Services.TryAddSingleton<IShellSettingsProvider>(
             new InMemoryShellSettingsProvider(shells));
 

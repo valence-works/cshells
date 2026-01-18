@@ -1,5 +1,7 @@
+using CShells.Hosting;
 using CShells.Resolution;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.AspNetCore.Extensions;
 
@@ -12,12 +14,17 @@ public static class HttpContextExtensions
     /// Converts an <see cref="HttpContext"/> to a <see cref="ShellResolutionContext"/>.
     /// </summary>
     /// <param name="httpContext">The HTTP context to convert.</param>
+    /// <param name="shellHost">The shell host to use for resolution.</param>
     /// <returns>A <see cref="ShellResolutionContext"/> populated with HTTP request data.</returns>
-    public static ShellResolutionContext ToShellResolutionContext(this HttpContext httpContext)
+    public static ShellResolutionContext ToShellResolutionContext(this HttpContext httpContext, IShellHost shellHost)
     {
         Guard.Against.Null(httpContext);
+        Guard.Against.Null(shellHost);
 
-        var context = new ShellResolutionContext();
+        var context = new ShellResolutionContext
+        {
+            ShellHost = shellHost
+        };
         
         // Populate common context keys
         context.Set(ShellResolutionContextKeys.Path, httpContext.Request.Path.Value ?? string.Empty);

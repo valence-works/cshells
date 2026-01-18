@@ -9,6 +9,7 @@ builder.AddShells([typeof(CoreFeature)]);
 
 // Configure header-based routing after the fact by replacing the options
 var services = builder.Services;
+
 var optionsDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(WebRoutingShellResolverOptions));
 if (optionsDescriptor != null)
 {
@@ -18,13 +19,13 @@ if (optionsDescriptor != null)
 }
 
 // Register background work observer
-builder.Services.AddSingleton<IBackgroundWorkObserver, ConsoleBackgroundWorkObserver>();
+services.AddSingleton<IBackgroundWorkObserver, ConsoleBackgroundWorkObserver>();
 
 // Register background worker
-builder.Services.AddHostedService<ShellDemoWorker>();
+services.AddHostedService<ShellDemoWorker>();
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+services.AddEndpointsApiExplorer();
+services.AddSwaggerGen();
 
 var app = builder.Build();
 
@@ -37,7 +38,6 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseRouting();
 app.MapShells();
-
 app.Run();
 
 // Make Program class accessible for WebApplicationFactory

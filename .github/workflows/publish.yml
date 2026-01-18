@@ -83,9 +83,13 @@ jobs:
 
           projects=(
             "src/CShells/CShells.csproj"
-            "src/CShells.AspNetCore/CShells.AspNetCore.csproj"
             "src/CShells.Abstractions/CShells.Abstractions.csproj"
+            "src/CShells.AspNetCore/CShells.AspNetCore.csproj"
             "src/CShells.AspNetCore.Abstractions/CShells.AspNetCore.Abstractions.csproj"
+            "src/CShells.AspNetCore.Testing/CShells.AspNetCore.Testing.csproj"
+            "src/CShells.FastEndpoints/CShells.FastEndpoints.csproj"
+            "src/CShells.FastEndpoints.Abstractions/CShells.FastEndpoints.Abstractions.csproj"
+            "src/CShells.Providers.FluentStorage/CShells.Providers.FluentStorage.csproj"
           )
 
           for proj in "${projects[@]}"; do

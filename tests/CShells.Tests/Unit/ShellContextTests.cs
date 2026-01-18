@@ -11,7 +11,7 @@ public class ShellContextTests
         var serviceProvider = new TestServiceProvider();
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellContext(null!, serviceProvider));
+        var ex = Assert.Throws<ArgumentNullException>(() => new ShellContext(null!, serviceProvider, Array.Empty<string>()));
         Assert.Equal("settings", ex.ParamName);
     }
 
@@ -22,7 +22,7 @@ public class ShellContextTests
         var settings = new ShellSettings(new("Test"));
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellContext(settings, null!));
+        var ex = Assert.Throws<ArgumentNullException>(() => new ShellContext(settings, null!, Array.Empty<string>()));
         Assert.Equal("serviceProvider", ex.ParamName);
     }
 
@@ -34,7 +34,7 @@ public class ShellContextTests
         var serviceProvider = new TestServiceProvider();
 
         // Act
-        var context = new ShellContext(settings, serviceProvider);
+        var context = new ShellContext(settings, serviceProvider, Array.Empty<string>());
 
         // Assert
         Assert.Same(settings, context.Settings);

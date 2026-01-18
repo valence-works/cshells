@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace CShells.Hosting;
 
@@ -39,6 +40,7 @@ public class DefaultShellHost : IShellHost, IDisposable
     private readonly IServiceProvider _rootProvider;
     private readonly IServiceCollection _rootServices;
     private readonly IShellFeatureFactory _featureFactory;
+    private readonly IShellServiceExclusionRegistry _exclusionRegistry;
     private readonly ConcurrentDictionary<ShellId, ShellContext> _shellContexts = new();
     private readonly FeatureDependencyResolver _dependencyResolver = new();
     private readonly ILogger<DefaultShellHost> _logger;
@@ -48,44 +50,6 @@ public class DefaultShellHost : IShellHost, IDisposable
     // Cached copy of root service descriptors for efficient bulk-copy to shell service collections.
     // This avoids re-enumerating the root IServiceCollection for each shell.
     private List<ServiceDescriptor>? _cachedRootDescriptors;
-
-    /// <summary>
-    /// CShell infrastructure service types that should NOT be copied into shell containers.
-    /// Copying these would cause shells to resolve a new DefaultShellHost using the shell provider
-    /// as the "root," breaking the documented semantics and fragmenting the shell cache.
-    /// </summary>
-    private static readonly HashSet<Type> ExcludedInfrastructureTypes =
-    [
-        typeof(IShellHost),
-        typeof(IShellContextScopeFactory),
-        typeof(IRootServiceCollectionAccessor),
-        typeof(IReadOnlyCollection<ShellSettings>)
-    ];
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="DefaultShellHost"/> class.
-    /// </summary>
-    /// <param name="shellSettingsCache">The cache providing access to shell settings.</param>
-    /// <param name="rootProvider">
-    /// The application's root <see cref="IServiceProvider"/> used to instantiate <see cref="IShellFeature"/> implementations.
-    /// Feature constructors can resolve root-level services (logging, configuration, etc.).
-    /// </param>
-    /// <param name="rootServicesAccessor">
-    /// An accessor to the root <see cref="IServiceCollection"/>. Root service registrations
-    /// are copied into each shell's service collection, enabling inheritance of root services.
-    /// </param>
-    /// <param name="featureFactory">The factory used to create shell feature instances.</param>
-    /// <param name="logger">Optional logger for diagnostic output.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettingsCache"/>, <paramref name="rootProvider"/>, <paramref name="rootServicesAccessor"/>, or <paramref name="featureFactory"/> is null.</exception>
-    public DefaultShellHost(
-        IShellSettingsCache shellSettingsCache,
-        IServiceProvider rootProvider,
-        IRootServiceCollectionAccessor rootServicesAccessor,
-        IShellFeatureFactory featureFactory,
-        ILogger<DefaultShellHost>? logger = null)
-        : this(shellSettingsCache, AppDomain.CurrentDomain.GetAssemblies(), rootProvider, rootServicesAccessor, featureFactory, logger)
-    {
-    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DefaultShellHost"/> class with custom assemblies and root service collection.
@@ -101,6 +65,7 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// are copied into each shell's service collection, enabling inheritance of root services.
     /// </param>
     /// <param name="featureFactory">The factory used to create shell feature instances.</param>
+    /// <param name="exclusionRegistry"> The registry of service types to exclude from root service inheritance.</param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="shellSettingsCache"/>, <paramref name="assemblies"/>, <paramref name="rootProvider"/>, <paramref name="rootServicesAccessor"/>, or <paramref name="featureFactory"/> is null.</exception>
     public DefaultShellHost(
@@ -109,12 +74,14 @@ public class DefaultShellHost : IShellHost, IDisposable
         IServiceProvider rootProvider,
         IRootServiceCollectionAccessor rootServicesAccessor,
         IShellFeatureFactory featureFactory,
+        IShellServiceExclusionRegistry exclusionRegistry,
         ILogger<DefaultShellHost>? logger = null)
     {
         _shellSettingsCache = Guard.Against.Null(shellSettingsCache);
         _rootProvider = Guard.Against.Null(rootProvider);
         _rootServices = Guard.Against.Null(rootServicesAccessor).Services;
         _featureFactory = Guard.Against.Null(featureFactory);
+        _exclusionRegistry = Guard.Against.Null(exclusionRegistry);
         _logger = logger ?? NullLogger<DefaultShellHost>.Instance;
 
         // Discover all features from specified assemblies
@@ -262,7 +229,7 @@ public class DefaultShellHost : IShellHost, IDisposable
     {
         var contextHolder = new ShellContextHolder();
         var serviceProvider = BuildServiceProvider(settings, orderedFeatures, contextHolder);
-        var context = new ShellContext(settings, serviceProvider);
+        var context = new ShellContext(settings, serviceProvider, orderedFeatures.AsReadOnly());
 
         // Populate the holder so ShellContext can be resolved from DI
         contextHolder.Context = context;
@@ -327,7 +294,7 @@ public class DefaultShellHost : IShellHost, IDisposable
 
         // Step 2: Register shell-specific core services (ShellSettings, ShellId, ShellContext, IConfiguration).
         // These are added after root services, so they override any root registrations.
-        RegisterCoreServices(shellServices, settings, contextHolder, _rootProvider);
+        RegisterCoreServices(shellServices, settings, contextHolder, _rootProvider, _featureMap.Values);
 
         // Step 3: Configure feature services in dependency order.
         // Features can override root services by registering the same service type.
@@ -371,7 +338,7 @@ public class DefaultShellHost : IShellHost, IDisposable
         // This avoids repeatedly enumerating and filtering the root IServiceCollection.
         // Thread-safe: This method is always called under _buildLock (see BuildShellContextInternal).
         _cachedRootDescriptors ??= _rootServices
-            .Where(d => !ExcludedInfrastructureTypes.Contains(d.ServiceType))
+            .Where(d => !_exclusionRegistry.ExcludedTypes.Contains(d.ServiceType))
             .ToList();
 
         // Bulk-copy cached descriptors to the shell's service collection
@@ -382,13 +349,18 @@ public class DefaultShellHost : IShellHost, IDisposable
 
         _logger.LogDebug("Copied {Count} service descriptors from root service collection (excluded {ExcludedCount} infrastructure types)",
             _cachedRootDescriptors.Count,
-            ExcludedInfrastructureTypes.Count);
+            _exclusionRegistry.ExcludedTypes.Count);
     }
 
     /// <summary>
     /// Registers core services required by all shells.
     /// </summary>
-    private static void RegisterCoreServices(ServiceCollection services, ShellSettings settings, ShellContextHolder contextHolder, IServiceProvider rootProvider)
+    private static void RegisterCoreServices(
+        ServiceCollection services,
+        ShellSettings settings,
+        ShellContextHolder contextHolder,
+        IServiceProvider rootProvider,
+        IEnumerable<ShellFeatureDescriptor> allFeatureDescriptors)
     {
         // Register shell settings and shell ID for convenience
         services.AddSingleton(settings);
@@ -406,6 +378,13 @@ public class DefaultShellHost : IShellHost, IDisposable
             var rootConfiguration = rootProvider.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
             return new ShellConfiguration(settings, rootConfiguration);
         });
+
+        // Register all discovered feature descriptors so features can query them.
+        // Registered as both IReadOnlyCollection<> and IEnumerable<> for maximum flexibility.
+        // Both registrations point to the same instance for efficiency.
+        var featureDescriptorsList = allFeatureDescriptors.ToList().AsReadOnly();
+        services.AddSingleton<IReadOnlyCollection<ShellFeatureDescriptor>>(featureDescriptorsList);
+        services.AddSingleton<IEnumerable<ShellFeatureDescriptor>>(featureDescriptorsList);
 
         // Register the ShellContext using the holder pattern
         // The holder will be populated after the service provider is built
@@ -469,11 +448,18 @@ public class DefaultShellHost : IShellHost, IDisposable
     /// <returns>The instantiated feature.</returns>
     /// <remarks>
     /// Uses the <see cref="IShellFeatureFactory"/> to instantiate the feature with proper
-    /// dependency injection and automatic ShellSettings parameter handling.
+    /// dependency injection and automatic ShellSettings or ShellFeatureContext parameter handling.
     /// </remarks>
     private IShellFeature CreateFeatureInstance(Type featureType, ShellSettings shellSettings)
     {
-        return _featureFactory.CreateFeature<IShellFeature>(featureType, shellSettings);
+        // Create a ShellFeatureContext that contains all the metadata a feature might need
+        var featureContext = new ShellFeatureContext(shellSettings, _featureMap.Values.ToList().AsReadOnly());
+
+        // The factory will automatically choose the right parameter based on what the feature constructor accepts:
+        // - ShellFeatureContext (if available)
+        // - ShellSettings (if available)
+        // - No special parameters
+        return _featureFactory.CreateFeature<IShellFeature>(featureType, shellSettings, featureContext);
     }
 
     /// <summary>

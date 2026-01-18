@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Authors>Sipke Schoorstra</Authors>
+    <Description>FastEndpoints integration for CShells. Provides a shell feature that automatically discovers and registers FastEndpoints from all enabled features. Reference this package in your host application to enable FastEndpoints support.</Description>
+    <PackageTags>multi-tenancy;tenancy;shell;tenant;isolation;saas;fastendpoints;asp.net-core</PackageTags>
+    <PackageProjectUrl>https://github.com/sfmskywalker/cshells</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sfmskywalker/cshells</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" Link="README.md" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\branding\logo.png" Pack="true" PackagePath="\" Link="logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CShells.FastEndpoints.Abstractions\CShells.FastEndpoints.Abstractions.csproj"/>
+    <ProjectReference Include="..\CShells.AspNetCore\CShells.AspNetCore.csproj"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FastEndpoints" />
+  </ItemGroup>
+
+</Project>

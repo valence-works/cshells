@@ -28,25 +28,17 @@ public class ShellFeatureDescriptor
     /// </summary>
     public string Id { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Gets or sets the collection of feature IDs that this feature depends on.
-    /// </summary>
-    private IReadOnlyList<string> _dependencies = [];
     public IReadOnlyList<string> Dependencies
     {
-        get => _dependencies;
-        set => _dependencies = Guard.Against.Null(value);
-    }
+        get;
+        set => field = Guard.Against.Null(value);
+    } = [];
 
-    /// <summary>
-    /// Gets or sets the metadata associated with this feature.
-    /// </summary>
-    private IDictionary<string, object> _metadata = new Dictionary<string, object>();
     public IDictionary<string, object> Metadata
     {
-        get => _metadata;
-        set => _metadata = Guard.Against.Null(value);
-    }
+        get;
+        set => field = Guard.Against.Null(value);
+    } = new Dictionary<string, object>();
 
     /// <summary>
     /// Gets or initializes the startup type that implements <c>IShellStartup</c> for this feature.

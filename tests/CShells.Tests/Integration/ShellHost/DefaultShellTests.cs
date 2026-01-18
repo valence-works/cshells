@@ -1,4 +1,5 @@
 using CShells.Configuration;
+using CShells.Hosting;
 
 namespace CShells.Tests.Integration.ShellHost;
 
@@ -46,7 +47,8 @@ public class DefaultShellTests : IDisposable
         var (services, provider) = TestFixtures.CreateRootServices();
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new CShells.Features.DefaultShellFeatureFactory(provider);
-        var host = new Hosting.DefaultShellHost(cache, [assembly], provider, accessor, factory);
+        var exclusionRegistry = new ShellServiceExclusionRegistry([]);
+        var host = new Hosting.DefaultShellHost(cache, [assembly], provider, accessor, factory, exclusionRegistry);
         _hostsToDispose.Add(host);
 
         // Act

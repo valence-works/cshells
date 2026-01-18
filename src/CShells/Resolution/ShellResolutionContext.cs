@@ -1,3 +1,5 @@
+using CShells.Hosting;
+
 namespace CShells.Resolution;
 
 /// <summary>
@@ -5,6 +7,8 @@ namespace CShells.Resolution;
 /// </summary>
 public class ShellResolutionContext
 {
+    public IShellHost ShellHost { get; set; } = null!;
+    
     public IDictionary<string, object> Data { get; init; } = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
     public T? Get<T>(string key) => Data.TryGetValue(key, out var value) && value is T typed ? typed : default;

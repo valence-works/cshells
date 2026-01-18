@@ -1,5 +1,6 @@
 using CShells.Configuration;
 using CShells.Features;
+using CShells.Hosting;
 using CShells.Tests.Integration.ShellHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,7 +38,8 @@ public class ShellConfigurationIntegrationTests
 
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new DefaultShellFeatureFactory(rootProvider);
-        var shellHost = new Hosting.DefaultShellHost(cache, [], rootProvider, accessor, factory);
+        var exclusionRegistry = new ShellServiceExclusionRegistry([]);
+        var shellHost = new Hosting.DefaultShellHost(cache, [], rootProvider, accessor, factory, exclusionRegistry);
 
         // Act
         var shellContext = shellHost.GetShell(shellSettings.Id);
@@ -82,7 +84,8 @@ public class ShellConfigurationIntegrationTests
 
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new DefaultShellFeatureFactory(rootProvider);
-        var shellHost = new Hosting.DefaultShellHost(cache, [], rootProvider, accessor, factory);
+        var exclusionRegistry = new ShellServiceExclusionRegistry([]);
+        var shellHost = new Hosting.DefaultShellHost(cache, [], rootProvider, accessor, factory, exclusionRegistry);
 
         // Act
         var context1 = shellHost.GetShell(shell1.Id);
@@ -126,7 +129,8 @@ public class ShellConfigurationIntegrationTests
 
         var accessor = TestFixtures.CreateRootServicesAccessor(services);
         var factory = new DefaultShellFeatureFactory(rootProvider);
-        var shellHost = new Hosting.DefaultShellHost(cache, [], rootProvider, accessor, factory);
+        var exclusionRegistry = new ShellServiceExclusionRegistry([]);
+        var shellHost = new Hosting.DefaultShellHost(cache, [], rootProvider, accessor, factory, exclusionRegistry);
 
         // Act
         var shellContext = shellHost.GetShell(shellSettings.Id);
