@@ -38,7 +38,7 @@ public static class ServiceCollectionExtensions
             _ => new RootServiceCollectionAccessor(services));
 
         // Register the default exclusion provider for core CShells infrastructure types
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<Hosting.IShellServiceExclusionProvider, Hosting.DefaultShellServiceExclusionProvider>());
+        services.AddSingleton<IShellServiceExclusionProvider, DefaultShellServiceExclusionProvider>();
 
         // Register the service exclusion registry (aggregates all providers)
         services.TryAddSingleton<Hosting.IShellServiceExclusionRegistry, Hosting.ShellServiceExclusionRegistry>();

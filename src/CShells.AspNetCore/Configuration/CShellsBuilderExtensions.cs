@@ -73,7 +73,7 @@ public static class CShellsBuilderExtensions
             configure?.Invoke(options);
 
             builder.Services.TryAddSingleton(options);
-            builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, WebRoutingShellResolver>());
+            builder.Services.AddSingleton<IShellResolverStrategy, WebRoutingShellResolver>();
 
             // Configure order if specified
             if (order.HasValue)
@@ -135,7 +135,7 @@ public static class CShellsBuilderExtensions
         {
             Guard.Against.Null(builder);
 
-            builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy, TStrategy>());
+            builder.Services.AddSingleton<IShellResolverStrategy, TStrategy>();
 
             // Configure order if specified
             if (order.HasValue)
@@ -170,7 +170,7 @@ public static class CShellsBuilderExtensions
             Guard.Against.Null(builder);
             Guard.Against.Null(strategy);
 
-            builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy>(strategy));
+            builder.Services.AddSingleton(strategy);
 
             // Configure order if specified
             if (order.HasValue)
@@ -204,9 +204,10 @@ public static class CShellsBuilderExtensions
             builder.Services.TryAddSingleton<EndpointRouteBuilderAccessor>();
 
             // Register the endpoint registration notification handler
-            builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<INotificationHandler<ShellAddedNotification>, Notifications.ShellEndpointRegistrationHandler>());
-            builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<INotificationHandler<ShellRemovedNotification>, Notifications.ShellEndpointRegistrationHandler>());
-            builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<INotificationHandler<ShellsReloadedNotification>, Notifications.ShellEndpointRegistrationHandler>());
+            builder.Services.AddSingleton<INotificationHandler<ShellAddedNotification>, Notifications.ShellEndpointRegistrationHandler>();
+            builder.Services.AddSingleton<INotificationHandler<ShellRemovedNotification>, Notifications.ShellEndpointRegistrationHandler>();
+            builder.Services.AddSingleton<INotificationHandler<ShellsReloadedNotification>, Notifications.ShellEndpointRegistrationHandler>();
+
             return builder;
         }
 

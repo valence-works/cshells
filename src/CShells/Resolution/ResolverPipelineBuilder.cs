@@ -103,12 +103,11 @@ public class ResolverPipelineBuilder
         {
             if (registration.Instance != null)
             {
-                _services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellResolverStrategy>(registration.Instance));
+                _services.AddSingleton(registration.Instance);
             }
             else
             {
-                _services.TryAddEnumerable(
-                    ServiceDescriptor.Singleton(typeof(IShellResolverStrategy), registration.StrategyType));
+                _services.AddSingleton(typeof(IShellResolverStrategy), registration.StrategyType);
             }
 
             // Configure order if specified

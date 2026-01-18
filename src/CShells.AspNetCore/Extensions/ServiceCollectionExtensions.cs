@@ -101,7 +101,7 @@ public static class ServiceCollectionExtensions
 
         // Register ASP.NET Core-specific service exclusion provider
         // This provides types like IAuthorizationPolicyProvider that should not be copied to shells
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IShellServiceExclusionProvider, CShells.AspNetCore.Hosting.AspNetCoreShellServiceExclusionProvider>());
+        services.AddSingleton<IShellServiceExclusionProvider, Hosting.AspNetCoreShellServiceExclusionProvider>();
 
         // Register HTTP context accessor (required by shell-aware authentication and authorization providers if used)
         services.AddHttpContextAccessor();
