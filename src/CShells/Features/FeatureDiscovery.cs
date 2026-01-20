@@ -30,7 +30,7 @@ public static class FeatureDiscovery
                 continue;
 
             var featureTypes = GetExportedTypes(assembly)
-                .Where(type => type.IsClass && !type.IsAbstract && typeof(IShellFeature).IsAssignableFrom(type));
+                .Where(type => type is { IsClass: true, IsAbstract: false } && typeof(IShellFeature).IsAssignableFrom(type));
 
             foreach (var type in featureTypes)
             {
@@ -52,18 +52,21 @@ public static class FeatureDiscovery
     /// </summary>
     private static string GetFeatureName(Type type, ShellFeatureAttribute? attribute)
     {
-        // Use attribute name if provided
-        if (attribute?.Name != null)
-            return attribute.Name;
-
-        // Derive from class name
-        var className = type.Name;
-
-        // Remove "Feature" suffix if present
-        if (className.EndsWith("Feature", StringComparison.Ordinal) && className.Length > "Feature".Length)
-            return className[..^"Feature".Length];
-
-        return className;
+        return attribute?.Name ?? StripSuffixes(type.Name, "ShellFeature", "Feature");
+    }
+    
+    private static string StripSuffixes(string source, params string[] suffixes)
+    {
+        foreach (var suffix in suffixes)
+        {
+            if (string.IsNullOrEmpty(suffix))
+                continue;
+    
+            if (source.EndsWith(suffix, StringComparison.Ordinal) && source.Length > suffix.Length)
+                return source[..^suffix.Length];
+        }
+    
+        return source;
     }
 
     /// <summary>
