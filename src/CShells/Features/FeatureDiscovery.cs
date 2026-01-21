@@ -61,12 +61,31 @@ public static class FeatureDiscovery
         {
             if (string.IsNullOrEmpty(suffix))
                 continue;
-    
+
             if (source.EndsWith(suffix, StringComparison.Ordinal) && source.Length > suffix.Length)
                 return source[..^suffix.Length];
         }
-    
+
         return source;
+    }
+
+    /// <summary>
+    /// Gets inferred dependencies from types implementing IInfersDependenciesFrom&lt;TBaseFeature&gt;.
+    /// </summary>
+    private static IEnumerable<string> GetInferredDependencies(Type type)
+    {
+        var infersDependenciesFromInterfaces = type.GetInterfaces()
+            .Where(i => i.IsGenericType &&
+                        i.GetGenericTypeDefinition().FullName == "CShells.Features.IInfersDependenciesFrom`1");
+
+        foreach (var interfaceType in infersDependenciesFromInterfaces)
+        {
+            var baseFeatureType = interfaceType.GetGenericArguments()[0];
+            var baseFeatureAttribute = baseFeatureType.GetCustomAttribute<ShellFeatureAttribute>();
+            var baseFeatureName = GetFeatureName(baseFeatureType, baseFeatureAttribute);
+
+            yield return baseFeatureName;
+        }
     }
 
     /// <summary>
@@ -86,10 +105,19 @@ public static class FeatureDiscovery
     /// </summary>
     private static ShellFeatureDescriptor CreateFeatureDescriptor(Type type, ShellFeatureAttribute? attribute, string featureName)
     {
+        // Get explicit dependencies from attribute
+        var explicitDependencies = attribute?.DependsOn ?? [];
+
+        // Get inferred dependencies from IInfersDependenciesFrom<> interface
+        var inferredDependencies = GetInferredDependencies(type);
+
+        // Combine and deduplicate dependencies
+        var allDependencies = explicitDependencies.Concat(inferredDependencies).Distinct().ToArray();
+
         var descriptor = new ShellFeatureDescriptor(featureName)
         {
             StartupType = type,
-            Dependencies = attribute?.DependsOn ?? []
+            Dependencies = allDependencies
         };
 
         // Add DisplayName and Description to metadata if provided via attribute

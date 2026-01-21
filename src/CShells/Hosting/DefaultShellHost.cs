@@ -3,6 +3,7 @@ using System.Reflection;
 using CShells.Configuration;
 using CShells.DependencyInjection;
 using CShells.Features;
+using CShells.Features.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -426,6 +427,10 @@ public class DefaultShellHost : IShellHost, IAsyncDisposable
             // Create the feature instance using the root provider with ShellSettings as explicit parameter.
             // This ensures features can only depend on root-level services and ShellSettings, not shell services.
             var startup = CreateFeatureInstance(descriptor.StartupType!, settings);
+
+            // Apply configuration to the feature before calling ConfigureServices
+            ApplyFeatureConfiguration(startup, settings, featureName);
+
             startup.ConfigureServices(services);
 
             _logger.LogDebug("Configured services from feature '{FeatureName}' startup type '{StartupType}'",
@@ -436,6 +441,47 @@ public class DefaultShellHost : IShellHost, IAsyncDisposable
             _logger.LogError(ex, "Failed to configure services for feature '{FeatureName}'", featureName);
             throw new InvalidOperationException(
                 $"Failed to configure services for feature '{featureName}': {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Applies configuration to a feature from the shell configuration.
+    /// This includes auto-binding feature properties and invoking IConfigurableFeature&lt;T&gt; Configure methods.
+    /// </summary>
+    private void ApplyFeatureConfiguration(IShellFeature feature, ShellSettings settings, string featureName)
+    {
+        try
+        {
+            // Get root configuration
+            var rootConfiguration = _rootProvider.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+
+            // Create shell-specific configuration
+            var shellConfiguration = new ShellConfiguration(settings, rootConfiguration);
+
+            // Get or create validator
+            var validator = _rootProvider.GetService<IFeatureConfigurationValidator>()
+                           ?? new DataAnnotationsFeatureConfigurationValidator();
+
+            // Create configuration binder
+            var binder = new FeatureConfigurationBinder(
+                shellConfiguration,
+                validator,
+                _rootProvider.GetService<ILogger<FeatureConfigurationBinder>>());
+
+            // Bind and configure
+            binder.BindAndConfigure(feature, featureName);
+
+            _logger.LogDebug("Applied configuration to feature '{FeatureName}'", featureName);
+        }
+        catch (FeatureConfigurationValidationException ex)
+        {
+            _logger.LogError(ex, "Configuration validation failed for feature '{FeatureName}'", featureName);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to apply configuration to feature '{FeatureName}'. Feature will use default configuration.", featureName);
+            // Don't throw - allow feature to use default configuration
         }
     }
 
