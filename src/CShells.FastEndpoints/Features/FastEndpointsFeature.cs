@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.Json;
 using CShells.AspNetCore.Features;
 using CShells.FastEndpoints.Contracts;
 using CShells.FastEndpoints.Options;
@@ -110,8 +109,7 @@ public class FastEndpointsFeature(
         // Configuration data is flattened with colon separators (e.g., "FastEndpoints:GlobalRoutePrefix")
         const string globalRoutePrefixKey = "FastEndpoints:GlobalRoutePrefix";
 
-        if (settings.ConfigurationData.TryGetValue(globalRoutePrefixKey, out var prefixValue) &&
-            prefixValue != null)
+        if (settings.ConfigurationData.TryGetValue(globalRoutePrefixKey, out var prefixValue) && prefixValue != null!)
         {
             options.GlobalRoutePrefix = prefixValue.ToString();
             log.LogInformation("Set GlobalRoutePrefix from ConfigurationData: {Prefix}", options.GlobalRoutePrefix);
