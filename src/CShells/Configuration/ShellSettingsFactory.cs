@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
 namespace CShells.Configuration;
@@ -19,60 +18,24 @@ public static class ShellSettingsFactory
         Guard.Against.Null(config);
 
         var shellId = new ShellId(config.Name);
-        var normalizedFeatures = config.Features
-            .Where(f => !string.IsNullOrWhiteSpace(f))
-            .Select(f => f!.Trim())
-            .ToArray();
+        var normalizedFeatures = ConfigurationHelper.NormalizeFeatures(config.Features);
         var settings = new ShellSettings(shellId, normalizedFeatures);
 
         // Convert property values to JsonElement for consistent serialization
         foreach (var property in config.Properties)
         {
-            var converted = ConvertToJsonElement(property.Value);
+            var converted = ConfigurationHelper.ConvertToJsonElement(property.Value);
             if (converted != null)
                 settings.Properties[property.Key] = converted;
         }
 
+        // Populate configuration data from settings
+        foreach (var setting in config.Settings.Where(s => s.Value != null))
+        {
+            settings.ConfigurationData[setting.Key] = setting.Value!;
+        }
+
         return settings;
-    }
-
-    /// <summary>
-    /// Converts a value to JsonElement for consistent serialization.
-    /// </summary>
-    private static object? ConvertToJsonElement(object? value)
-    {
-        if (value == null)
-            return null;
-
-        // Already a JsonElement, return as-is
-        if (value is JsonElement)
-            return value;
-
-        // For primitives and strings, serialize to JsonElement
-        if (value is string || value.GetType().IsPrimitive)
-        {
-            var json = JsonSerializer.Serialize(value);
-            return JsonSerializer.Deserialize<JsonElement>(json);
-        }
-
-        // For complex objects, serialize and deserialize to JsonElement
-        // Use options that handle complex nested structures
-        try
-        {
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                WriteIndented = false
-            };
-
-            var json = JsonSerializer.Serialize(value, value.GetType(), options);
-            return JsonSerializer.Deserialize<JsonElement>(json, options);
-        }
-        catch
-        {
-            // If serialization fails, return the original value
-            return value;
-        }
     }
 
     /// <summary>
@@ -118,103 +81,19 @@ public static class ShellSettingsFactory
         Guard.Against.Null(section);
 
         var name = section.GetValue<string>("Name") ?? throw new InvalidOperationException("Shell name is required");
-        var features = section.GetSection("Features").Get<string[]>() ?? [];
+        var normalizedFeatures = ConfigurationHelper.GetNormalizedFeatures(section);
 
         var shellId = new ShellId(name);
-        var normalizedFeatures = features
-            .Where(f => !string.IsNullOrWhiteSpace(f))
-            .Select(f => f.Trim())
-            .ToArray();
         var settings = new ShellSettings(shellId, normalizedFeatures);
 
-        // Manually bind properties from configuration
+        // Load properties from configuration
         var propertiesSection = section.GetSection("Properties");
-        foreach (var propertySection in propertiesSection.GetChildren())
-        {
-            var key = propertySection.Key;
+        ConfigurationHelper.LoadPropertiesFromConfiguration(propertiesSection, settings.Properties);
 
-            // Check if this is a complex object or a simple value
-            if (propertySection.GetChildren().Any())
-            {
-                // Complex object - serialize to JSON and store as JsonElement
-                var json = SerializeConfigurationSection(propertySection);
-                var jsonElement = JsonSerializer.Deserialize<JsonElement>(json);
-                settings.Properties[key] = jsonElement;
-            }
-            else
-            {
-                // Simple value
-                var value = propertySection.Value;
-                var converted = ConvertToJsonElement(value);
-                if (converted != null)
-                    settings.Properties[key] = converted;
-            }
-        }
-
-        // Process shell-specific settings (configuration data)
+        // Load shell-specific settings (configuration data)
         var settingsSection = section.GetSection("Settings");
-        foreach (var settingSection in settingsSection.GetChildren())
-        {
-            var key = settingSection.Key;
-
-            // Check if this is a complex object or a simple value
-            if (settingSection.GetChildren().Any())
-            {
-                // Complex object - flatten to key-value pairs for IConfiguration
-                FlattenConfigurationSection(settingSection, key, settings.ConfigurationData);
-            }
-            else
-            {
-                // Simple value
-                settings.ConfigurationData[key] = settingSection.Value!;
-            }
-        }
+        ConfigurationHelper.LoadSettingsFromConfiguration(settingsSection, settings.ConfigurationData);
 
         return settings;
-    }
-
-    /// <summary>
-    /// Flattens a configuration section into key-value pairs suitable for IConfiguration.
-    /// </summary>
-    private static void FlattenConfigurationSection(IConfigurationSection section, string prefix, IDictionary<string, object> target)
-    {
-        foreach (var child in section.GetChildren())
-        {
-            var key = $"{prefix}:{child.Key}";
-
-            if (child.GetChildren().Any())
-            {
-                // Recursively flatten nested sections
-                FlattenConfigurationSection(child, key, target);
-            }
-            else
-            {
-                target[key] = child.Value!;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Serializes an IConfigurationSection to JSON string.
-    /// </summary>
-    private static string SerializeConfigurationSection(IConfigurationSection section)
-    {
-        var dict = new Dictionary<string, object?>();
-
-        foreach (var child in section.GetChildren())
-        {
-            if (child.GetChildren().Any())
-            {
-                // Nested object
-                dict[child.Key] = JsonSerializer.Deserialize<JsonElement>(SerializeConfigurationSection(child));
-            }
-            else
-            {
-                // Simple value
-                dict[child.Key] = child.Value;
-            }
-        }
-
-        return JsonSerializer.Serialize(dict);
     }
 }
