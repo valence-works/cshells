@@ -154,10 +154,9 @@ public class ShellBuilder
         }
 
         // Merge settings (configuration data)
-        foreach (var setting in config.Settings)
+        foreach (var setting in config.Settings.Where(s => s.Value != null))
         {
-            if (setting.Value != null)
-                _settings.ConfigurationData[setting.Key] = setting.Value;
+            _settings.ConfigurationData[setting.Key] = setting.Value!;
         }
 
         return this;

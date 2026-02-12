@@ -29,6 +29,12 @@ public static class ShellSettingsFactory
                 settings.Properties[property.Key] = converted;
         }
 
+        // Populate configuration data from settings
+        foreach (var setting in config.Settings.Where(s => s.Value != null))
+        {
+            settings.ConfigurationData[setting.Key] = setting.Value!;
+        }
+
         return settings;
     }
 

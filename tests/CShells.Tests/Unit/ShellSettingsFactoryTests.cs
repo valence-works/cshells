@@ -112,6 +112,58 @@ public class ShellSettingsFactoryTests
         Assert.Contains("duplicate", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact(DisplayName = "Create with config.Settings populates ConfigurationData")]
+    public void Create_WithConfigSettings_PopulatesConfigurationData()
+    {
+        // Arrange
+        var config = new ShellConfig
+        {
+            Name = "TestShell",
+            Features = ["Feature1"],
+            Properties = new() { ["Prop1"] = "PropValue1" },
+            Settings = new()
+            {
+                ["Setting1"] = "SettingValue1",
+                ["Setting2"] = "SettingValue2"
+            }
+        };
+
+        // Act
+        var settings = ShellSettingsFactory.Create(config);
+
+        // Assert
+        Assert.Equal("TestShell", settings.Id.Name);
+        Assert.Single(settings.Properties);
+        Assert.Equal(2, settings.ConfigurationData.Count);
+        Assert.Equal("SettingValue1", settings.ConfigurationData["Setting1"]);
+        Assert.Equal("SettingValue2", settings.ConfigurationData["Setting2"]);
+    }
+
+    [Fact(DisplayName = "Create ignores null settings values")]
+    public void Create_IgnoresNullSettingsValues()
+    {
+        // Arrange
+        var config = new ShellConfig
+        {
+            Name = "TestShell",
+            Settings = new()
+            {
+                ["Setting1"] = "Value1",
+                ["Setting2"] = null,
+                ["Setting3"] = "Value3"
+            }
+        };
+
+        // Act
+        var settings = ShellSettingsFactory.Create(config);
+
+        // Assert
+        Assert.Equal(2, settings.ConfigurationData.Count);
+        Assert.Equal("Value1", settings.ConfigurationData["Setting1"]);
+        Assert.Equal("Value3", settings.ConfigurationData["Setting3"]);
+        Assert.False(settings.ConfigurationData.ContainsKey("Setting2"));
+    }
+
     private static ShellConfig BuildShellConfig() => new()
     {
         Name = "TestShell",
