@@ -70,7 +70,17 @@ public class ShellStartupHostedService : IHostedService
     {
         _logger.LogInformation("Deactivating all shells on application shutdown");
 
-        var shells = _shellHost.AllShells;
+        IReadOnlyCollection<ShellContext> shells;
+        try
+        {
+            shells = _shellHost.AllShells;
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.LogDebug("Shell host already disposed, skipping deactivation");
+            return;
+        }
+
         _logger.LogInformation("Found {ShellCount} shell(s) to deactivate", shells.Count);
 
         var failedCount = 0;
