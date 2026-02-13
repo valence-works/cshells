@@ -14,7 +14,8 @@ public static class CShellsBuilderExtensions
     extension(CShellsBuilder builder)
     {
         /// <summary>
-        /// Configures CShells to use a specific shell settings provider.
+        /// Adds a shell settings provider to the provider pipeline.
+        /// Multiple providers can be registered and will be queried in registration order.
         /// </summary>
         /// <typeparam name="TProvider">The type of the shell settings provider.</typeparam>
         /// <returns>The updated CShells builder.</returns>
@@ -22,12 +23,19 @@ public static class CShellsBuilderExtensions
             where TProvider : class, IShellSettingsProvider
         {
             Guard.Against.Null(builder);
-            builder.Services.AddSingleton<IShellSettingsProvider, TProvider>();
+            
+            builder.RegisterProvider((sp, providers) =>
+            {
+                var provider = ActivatorUtilities.CreateInstance<TProvider>(sp);
+                providers.Add(provider);
+            });
+            
             return builder;
         }
 
         /// <summary>
-        /// Configures CShells to use a specific shell settings provider instance.
+        /// Adds a shell settings provider instance to the provider pipeline.
+        /// Multiple providers can be registered and will be queried in registration order.
         /// </summary>
         /// <param name="provider">The shell settings provider instance.</param>
         /// <returns>The updated CShells builder.</returns>
@@ -35,12 +43,18 @@ public static class CShellsBuilderExtensions
         {
             Guard.Against.Null(builder);
             Guard.Against.Null(provider);
-            builder.Services.AddSingleton(provider);
+            
+            builder.RegisterProvider((_, providers) =>
+            {
+                providers.Add(provider);
+            });
+            
             return builder;
         }
 
         /// <summary>
-        /// Configures CShells to use a specific shell settings provider factory.
+        /// Adds a shell settings provider using a factory function to the provider pipeline.
+        /// Multiple providers can be registered and will be queried in registration order.
         /// </summary>
         /// <param name="factory">The factory function to create the shell settings provider.</param>
         /// <returns>The updated CShells builder.</returns>
@@ -48,12 +62,19 @@ public static class CShellsBuilderExtensions
         {
             Guard.Against.Null(builder);
             Guard.Against.Null(factory);
-            builder.Services.AddSingleton(factory);
+            
+            builder.RegisterProvider((sp, providers) =>
+            {
+                var provider = factory(sp);
+                providers.Add(provider);
+            });
+            
             return builder;
         }
 
         /// <summary>
-        /// Configures CShells to use the configuration-based shell settings provider.
+        /// Adds the configuration-based shell settings provider to the provider pipeline.
+        /// Multiple providers can be registered and will be queried in registration order.
         /// </summary>
         /// <param name="configuration">The application configuration.</param>
         /// <param name="sectionName">The configuration section name (default: "CShells").</param>
@@ -64,8 +85,10 @@ public static class CShellsBuilderExtensions
             Guard.Against.Null(builder);
             Guard.Against.Null(configuration);
 
-            builder.Services.AddSingleton<IShellSettingsProvider>(
-                _ => new ConfigurationShellSettingsProvider(configuration, sectionName));
+            builder.RegisterProvider((_, providers) =>
+            {
+                providers.Add(new ConfigurationShellSettingsProvider(configuration, sectionName));
+            });
 
             return builder;
         }

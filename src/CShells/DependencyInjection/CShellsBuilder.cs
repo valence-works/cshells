@@ -1,3 +1,4 @@
+using CShells.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.DependencyInjection;
@@ -8,7 +9,8 @@ namespace CShells.DependencyInjection;
 /// </summary>
 public class CShellsBuilder
 {
-    private readonly List<ShellSettings> _shells = new();
+    private readonly List<ShellSettings> _codeFirstShells = new();
+    private readonly List<Action<IServiceProvider, List<IShellSettingsProvider>>> _providerRegistrations = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CShellsBuilder"/> class.
@@ -25,6 +27,34 @@ public class CShellsBuilder
     public IServiceCollection Services { get; }
 
     /// <summary>
+    /// Gets all code-first shell settings configured via AddShell.
+    /// </summary>
+    internal IReadOnlyList<ShellSettings> CodeFirstShells => _codeFirstShells.AsReadOnly();
+
+    /// <summary>
+    /// Registers a provider registration action.
+    /// </summary>
+    internal void RegisterProvider(Action<IServiceProvider, List<IShellSettingsProvider>> registration)
+    {
+        _providerRegistrations.Add(registration);
+    }
+
+    /// <summary>
+    /// Builds all registered providers and returns them.
+    /// </summary>
+    internal List<IShellSettingsProvider> BuildProviders(IServiceProvider serviceProvider)
+    {
+        var providers = new List<IShellSettingsProvider>();
+        
+        foreach (var registration in _providerRegistrations)
+        {
+            registration(serviceProvider, providers);
+        }
+        
+        return providers;
+    }
+
+    /// <summary>
     /// Adds a shell using a fluent builder.
     /// </summary>
     /// <param name="configure">Configuration action for the shell builder.</param>
@@ -34,7 +64,7 @@ public class CShellsBuilder
         Guard.Against.Null(configure);
         var shellBuilder = new Configuration.ShellBuilder(new ShellId(Guid.NewGuid().ToString()));
         configure(shellBuilder);
-        _shells.Add(shellBuilder.Build());
+        _codeFirstShells.Add(shellBuilder.Build());
         return this;
     }
 
@@ -50,7 +80,7 @@ public class CShellsBuilder
         Guard.Against.Null(configure);
         var shellBuilder = new Configuration.ShellBuilder(new ShellId(id));
         configure(shellBuilder);
-        _shells.Add(shellBuilder.Build());
+        _codeFirstShells.Add(shellBuilder.Build());
         return this;
     }
 
@@ -61,13 +91,7 @@ public class CShellsBuilder
     /// <returns>This builder for method chaining.</returns>
     public CShellsBuilder AddShell(ShellSettings settings)
     {
-        _shells.Add(Guard.Against.Null(settings));
+        _codeFirstShells.Add(Guard.Against.Null(settings));
         return this;
     }
-
-    /// <summary>
-    /// Gets all configured shells.
-    /// </summary>
-    /// <returns>A read-only list of shell settings.</returns>
-    public IReadOnlyList<ShellSettings> GetShells() => _shells.AsReadOnly();
 }

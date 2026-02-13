@@ -91,7 +91,39 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IShellManager, DefaultShellManager>();
             
         var builder = new CShellsBuilder(services);
+        
+        // Register the composite shell settings provider factory immediately
+        // This must be done BEFORE configure is called so that DefaultShellManager can be constructed
+        services.TryAddSingleton<IShellSettingsProvider>(sp =>
+        {
+            var providers = new List<IShellSettingsProvider>();
             
+            // Add code-first shells provider if any shells were defined
+            if (builder.CodeFirstShells.Count > 0)
+            {
+                providers.Add(new InMemoryShellSettingsProvider(builder.CodeFirstShells));
+            }
+            
+            // Build and add all registered providers
+            var registeredProviders = builder.BuildProviders(sp);
+            providers.AddRange(registeredProviders);
+            
+            // If no providers were registered, return an empty provider
+            if (providers.Count == 0)
+            {
+                return new InMemoryShellSettingsProvider([]);
+            }
+            
+            // If only one provider, return it directly (optimization)
+            if (providers.Count == 1)
+            {
+                return providers[0];
+            }
+            
+            // Return composite provider for multiple providers
+            return new CompositeShellSettingsProvider(providers);
+        });
+        
         configure?.Invoke(builder);
             
         return builder;

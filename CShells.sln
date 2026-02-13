@@ -43,6 +43,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{09843463-D39C-41EC-BD73-DE2487FCB7B8}"
 	ProjectSection(SolutionItems) = preProject
 		docs\integration-patterns.md = docs\integration-patterns.md
+		docs\multiple-shell-providers.md = docs\multiple-shell-providers.md
+		docs\feature-configuration.md = docs\feature-configuration.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CShells.Abstractions", "src\CShells.Abstractions\CShells.Abstractions.csproj", "{74347258-04C0-4C48-AC85-90B0DE0CC8D8}"

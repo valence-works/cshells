@@ -68,10 +68,6 @@ public static class ShellExtensions
         /// <param name="configureCShells">Callback used to configure the CShells builder (e.g., shell settings provider).</param>
         /// <param name="assemblies">The assemblies to scan for CShells features. If <c>null</c>, all loaded assemblies are scanned.</param>
         /// <returns>The same <see cref="WebApplicationBuilder"/> instance for chaining.</returns>
-        /// <remarks>
-        /// If the configuration callback doesn't explicitly call <c>WithConfigurationProvider</c> or <c>WithProvider</c>,
-        /// this method will automatically register the configuration-based provider using the default "CShells" section.
-        /// </remarks>
         public WebApplicationBuilder AddShells(
             Action<CShellsBuilder> configureCShells,
             IEnumerable<Assembly>? assemblies = null)
@@ -79,15 +75,7 @@ public static class ShellExtensions
             Guard.Against.Null(configureCShells);
 
             // Register ASP.NET Core integration for CShells
-            builder.Services.AddCShellsAspNetCore(cshells =>
-            {
-                // Apply user configuration first
-                configureCShells(cshells);
-
-                // If no IShellSettingsProvider was registered, add the default configuration provider
-                if (cshells.Services.All(d => d.ServiceType != typeof(IShellSettingsProvider))) 
-                    cshells.WithConfigurationProvider(builder.Configuration);
-            }, assemblies);
+            builder.Services.AddCShellsAspNetCore(configureCShells, assemblies);
 
             return builder;
         }
