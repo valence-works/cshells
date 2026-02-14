@@ -107,15 +107,15 @@ public class ShellEndpointRegistrationHandler :
         _logger.LogInformation("Shell '{ShellId}' has {ConfigCount} configuration entries", settings.Id, settings.ConfigurationData.Count);
 
         var shellPathPrefix = GetPathPrefix(settings);
-        var globalRoutePrefix = GetGlobalRoutePrefix(settings);
+        var routePrefix = GetRoutePrefix(settings);
 
-        // Combine shell path prefix with global route prefix (e.g., "/foo" + "elsa/api" = "/foo/elsa/api")
-        var combinedPrefix = CombinePrefixes(shellPathPrefix, globalRoutePrefix);
+        // Combine shell path prefix with route prefix (e.g., "/foo" + "api/v1" = "/foo/api/v1")
+        var combinedPrefix = CombinePrefixes(shellPathPrefix, routePrefix);
 
-        _logger.LogInformation("Shell '{ShellId}' path prefix: '{PathPrefix}', global route prefix: '{GlobalPrefix}', combined: '{Combined}'",
+        _logger.LogInformation("Shell '{ShellId}' path prefix: '{PathPrefix}', route prefix: '{RoutePrefix}', combined: '{Combined}'",
             settings.Id,
             shellPathPrefix ?? "(none)",
-            globalRoutePrefix ?? "(none)",
+            routePrefix ?? "(none)",
             combinedPrefix ?? "(none)");
 
         // Get the shell context for accessing service provider and feature descriptors
@@ -219,14 +219,14 @@ public class ShellEndpointRegistrationHandler :
     }
 
     /// <summary>
-    /// Gets the global route prefix from shell configuration data (configured in appsettings.json).
+    /// Gets the route prefix for endpoints from shell configuration data.
     /// </summary>
-    private static string? GetGlobalRoutePrefix(ShellSettings settings)
+    private static string? GetRoutePrefix(ShellSettings settings)
     {
-        // Read directly from ConfigurationData (populated from appsettings.json "Settings" section)
-        const string fastEndpointsGlobalRoutePrefixKey = "FastEndpoints:GlobalRoutePrefix";
+        // Read from WebRouting:RoutePrefix in ConfigurationData
+        const string routePrefixKey = "WebRouting:RoutePrefix";
 
-        if (settings.ConfigurationData.TryGetValue(fastEndpointsGlobalRoutePrefixKey, out var prefix) &&
+        if (settings.ConfigurationData.TryGetValue(routePrefixKey, out var prefix) &&
             prefix != null)
         {
             var prefixStr = prefix.ToString();
@@ -246,24 +246,24 @@ public class ShellEndpointRegistrationHandler :
     }
 
     /// <summary>
-    /// Combines the shell path prefix with a global route prefix.
+    /// Combines the shell path prefix with a route prefix.
     /// </summary>
     /// <example>
-    /// CombinePrefixes("/foo", "elsa/api") => "/foo/elsa/api"
+    /// CombinePrefixes("/foo", "api/v1") => "/foo/api/v1"
     /// CombinePrefixes("/foo", null) => "/foo"
-    /// CombinePrefixes(null, "elsa/api") => "/elsa/api"
+    /// CombinePrefixes(null, "api/v1") => "/api/v1"
     /// </example>
-    private static string? CombinePrefixes(string? shellPathPrefix, string? globalRoutePrefix)
+    private static string? CombinePrefixes(string? shellPathPrefix, string? routePrefix)
     {
-        if (string.IsNullOrWhiteSpace(shellPathPrefix) && string.IsNullOrWhiteSpace(globalRoutePrefix))
+        if (string.IsNullOrWhiteSpace(shellPathPrefix) && string.IsNullOrWhiteSpace(routePrefix))
             return null;
 
         if (string.IsNullOrWhiteSpace(shellPathPrefix))
-            return "/" + globalRoutePrefix;
+            return "/" + routePrefix;
 
-        if (string.IsNullOrWhiteSpace(globalRoutePrefix))
+        if (string.IsNullOrWhiteSpace(routePrefix))
             return shellPathPrefix;
 
-        return $"{shellPathPrefix}/{globalRoutePrefix}";
+        return $"{shellPathPrefix}/{routePrefix}";
     }
 }

@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace CShells.FastEndpoints.Features;
 
@@ -26,7 +27,6 @@ public class FastEndpointsFeature(
     private readonly ShellSettings _shellSettings = context.Settings;
     private readonly IReadOnlyCollection<ShellFeatureDescriptor> _allFeatureDescriptors = context.AllFeatures;
     private readonly ILogger<FastEndpointsFeature> _logger = logger ?? NullLogger<FastEndpointsFeature>.Instance;
-    private readonly FastEndpointsOptions _options = GetOptions(context.Settings, logger);
 
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services)
@@ -37,12 +37,9 @@ public class FastEndpointsFeature(
         _logger.LogInformation("Configuring FastEndpoints for shell '{ShellId}' with {AssemblyCount} assembly(ies)",
             _shellSettings.Id, assemblies.Count);
 
-        // Log the global route prefix if configured
-        if (!string.IsNullOrWhiteSpace(_options.GlobalRoutePrefix))
-        {
-            _logger.LogInformation("FastEndpoints global route prefix for shell '{ShellId}': {Prefix}",
-                _shellSettings.Id, _options.GlobalRoutePrefix);
-        }
+        services
+            .AddOptions<FastEndpointsOptions>()
+            .BindConfiguration("FastEndpoints");
 
         // Register FastEndpoints with the discovered assemblies
         services.AddFastEndpoints(options =>
@@ -56,11 +53,20 @@ public class FastEndpointsFeature(
     public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment)
     {
         _logger.LogInformation("Mapping FastEndpoints for shell '{ShellId}'", _shellSettings.Id);
-
+        
+        var options = endpoints.ServiceProvider.GetRequiredService<IOptions<FastEndpointsOptions>>().Value;
+        
         // Map FastEndpoints - the ShellEndpointRouteBuilder will automatically apply both
-        // the shell's path prefix and the global route prefix (if configured)
+        // the shell's path prefix and the WebRouting:RoutePrefix (if configured)
         endpoints.MapFastEndpoints(config =>
         {
+            // Apply FastEndpoints-specific endpoint route prefix if configured
+            if (!string.IsNullOrWhiteSpace(options.EndpointRoutePrefix))
+            {
+                config.Endpoints.RoutePrefix = options.EndpointRoutePrefix;
+                _logger.LogInformation("Applied FastEndpoints route prefix '{Prefix}' for shell '{ShellId}'", options.EndpointRoutePrefix, _shellSettings.Id);
+            }
+
             // Discover and invoke all registered configurators
             var serviceProvider = endpoints.ServiceProvider;
             var configurators = serviceProvider.GetServices<IFastEndpointsConfigurator>();
@@ -94,31 +100,5 @@ public class FastEndpointsFeature(
             .ToList();
 
         return fastEndpointsAssemblies;
-    }
-
-    /// <summary>
-    /// Extracts FastEndpoints options from shell configuration data.
-    /// </summary>
-    private static FastEndpointsOptions GetOptions(ShellSettings settings, ILogger<FastEndpointsFeature>? logger)
-    {
-        var options = new FastEndpointsOptions();
-        var log = logger ?? NullLogger<FastEndpointsFeature>.Instance;
-
-        log.LogInformation("ConfigurationData keys: {Keys}", string.Join(", ", settings.ConfigurationData.Keys));
-
-        // Configuration data is flattened with colon separators (e.g., "FastEndpoints:GlobalRoutePrefix")
-        const string globalRoutePrefixKey = "FastEndpoints:GlobalRoutePrefix";
-
-        if (settings.ConfigurationData.TryGetValue(globalRoutePrefixKey, out var prefixValue) && prefixValue != null!)
-        {
-            options.GlobalRoutePrefix = prefixValue.ToString();
-            log.LogInformation("Set GlobalRoutePrefix from ConfigurationData: {Prefix}", options.GlobalRoutePrefix);
-        }
-        else
-        {
-            log.LogInformation("No FastEndpoints:GlobalRoutePrefix configuration found in ConfigurationData");
-        }
-
-        return options;
     }
 }
