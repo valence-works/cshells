@@ -192,7 +192,10 @@ public class WeatherFeature : IShellFeature
       },
       {
         "Name": "Admin",
-        "Features": [ "Core", "Admin" ],
+        "Features": [
+          "Core",
+          { "Name": "Admin", "MaxUsers": 100, "EnableAuditLog": true }
+        ],
         "Properties": {
           "WebRouting": {
             "Path": "admin"
@@ -248,7 +251,10 @@ builder.AddShells(cshells =>
         .WithPath(""));
 
     cshells.AddShell("Admin", shell => shell
-        .WithFeatures("Core", "Admin")
+        .WithFeature("Core")
+        .WithFeature("Admin", settings => settings
+            .WithSetting("MaxUsers", 100)
+            .WithSetting("EnableAuditLog", true))
         .WithPath("admin"));
 
     cshells.WithInMemoryShells();

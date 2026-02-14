@@ -21,11 +21,11 @@ public class FraudDetectionFeature : IWebShellFeature
     public void ConfigureServices(IServiceCollection services)
     {
         // Bind shell-scoped configuration to FraudDetectionOptions
-        // Look for settings under "Features:FraudDetection" section
+        // Settings are now directly under the feature name (e.g., "FraudDetection:Threshold")
         services.AddOptions<FraudDetectionOptions>()
             .Configure<IConfiguration>((options, config) =>
             {
-                config.GetSection("Features:FraudDetection").Bind(options);
+                config.GetSection("FraudDetection").Bind(options);
             });
 
         services.AddSingleton<IFraudDetectionService, FraudDetectionService>();

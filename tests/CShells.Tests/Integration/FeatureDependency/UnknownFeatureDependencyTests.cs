@@ -19,21 +19,21 @@ public class UnknownFeatureDependencyTests
         var features = FeatureTestHelpers.CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.GetOrderedFeatures(roots, features));
+        var ex = Assert.Throws<FeatureNotFoundException>(() => _resolver.GetOrderedFeatures(roots, features));
         Assert.Contains(missingFeature, ex.Message);
         Assert.Contains("not found", ex.Message);
     }
 
-    [Theory(DisplayName = "ResolveDependencies with unknown feature throws InvalidOperationException")]
+    [Theory(DisplayName = "ResolveDependencies with unknown feature throws FeatureNotFoundException")]
     [MemberData(nameof(FeatureDependencyData.UnknownDependencyCases), MemberType = typeof(FeatureDependencyData))]
-    public void ResolveDependencies_WithUnknownFeature_ThrowsInvalidOperationException(IEnumerable<string> _, string missingFeature, string[] dependencyMap)
+    public void ResolveDependencies_WithUnknownFeature_ThrowsFeatureNotFoundException(IEnumerable<string> _, string missingFeature, string[] dependencyMap)
     {
         // Arrange
         var featureList = FeatureTestHelpers.ParseFeatureDependencies(dependencyMap);
         var features = FeatureTestHelpers.CreateFeatureDictionary(featureList);
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies(missingFeature, features));
+        var ex = Assert.Throws<FeatureNotFoundException>(() => _resolver.ResolveDependencies(missingFeature, features));
         Assert.Contains(missingFeature, ex.Message);
         Assert.Contains("not found", ex.Message);
     }

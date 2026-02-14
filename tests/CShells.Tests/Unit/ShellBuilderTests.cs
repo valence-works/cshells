@@ -183,20 +183,17 @@ public class ShellBuilderTests
         Assert.Equal("Value2", key2Value.GetString());
     }
 
-    [Fact(DisplayName = "FromConfiguration with IConfigurationSection loads nested settings into ConfigurationData")]
-    public void FromConfiguration_LoadsNestedSettings_IntoConfigurationData()
+    [Fact(DisplayName = "FromConfiguration with IConfigurationSection loads feature settings into ConfigurationData")]
+    public void FromConfiguration_LoadsFeatureSettings_IntoConfigurationData()
     {
         // Arrange
         var json = @"{
             ""Shell"": {
                 ""Name"": ""TestShell"",
-                ""Settings"": {
-                    ""Database"": {
-                        ""ConnectionString"": ""Server=localhost"",
-                        ""Timeout"": ""30""
-                    },
-                    ""SimpleValue"": ""Test""
-                }
+                ""Features"": [
+                    { ""Name"": ""Database"", ""ConnectionString"": ""Server=localhost"", ""Timeout"": ""30"" },
+                    ""SimpleFeature""
+                ]
             }
         }";
         
@@ -211,11 +208,11 @@ public class ShellBuilderTests
         builder.FromConfiguration(config.GetSection("Shell"));
         var settings = builder.Build();
 
-        // Assert - Nested settings should be flattened
-        Assert.Equal(3, settings.ConfigurationData.Count);
+        // Assert - Feature settings should be flattened under feature name
+        Assert.Equal(2, settings.ConfigurationData.Count);
         Assert.Equal("Server=localhost", settings.ConfigurationData["Database:ConnectionString"]);
         Assert.Equal("30", settings.ConfigurationData["Database:Timeout"]);
-        Assert.Equal("Test", settings.ConfigurationData["SimpleValue"]);
+        Assert.Equal(["Database", "SimpleFeature"], settings.EnabledFeatures);
     }
 
     [Fact(DisplayName = "FromConfiguration with ShellConfig merges all data")]
@@ -225,16 +222,23 @@ public class ShellBuilderTests
         var config = new ShellConfig
         {
             Name = "TestShell",
-            Features = ["Feature2", "Feature3"],
+            Features =
+            [
+                FeatureEntry.FromName("Feature2"),
+                new FeatureEntry
+                {
+                    Name = "Feature3",
+                    Settings = new()
+                    {
+                        ["Setting1"] = "SettingValue1",
+                        ["Setting2"] = "SettingValue2"
+                    }
+                }
+            ],
             Properties = new Dictionary<string, object?>
             {
                 ["Key1"] = "NewValue1",
                 ["Key2"] = "Value2"
-            },
-            Settings = new Dictionary<string, object?>
-            {
-                ["Setting1"] = "SettingValue1",
-                ["Setting2"] = "SettingValue2"
             }
         };
 
@@ -250,8 +254,8 @@ public class ShellBuilderTests
         Assert.Equal(["Feature1", "Feature2", "Feature3"], settings.EnabledFeatures);
         Assert.Equal(2, settings.Properties.Count);
         Assert.Equal(2, settings.ConfigurationData.Count);
-        Assert.Equal("SettingValue1", settings.ConfigurationData["Setting1"]);
-        Assert.Equal("SettingValue2", settings.ConfigurationData["Setting2"]);
+        Assert.Equal("SettingValue1", settings.ConfigurationData["Feature3:Setting1"]);
+        Assert.Equal("SettingValue2", settings.ConfigurationData["Feature3:Setting2"]);
     }
 
     [Fact(DisplayName = "FromConfiguration with ShellConfig ignores null settings")]
@@ -261,12 +265,19 @@ public class ShellBuilderTests
         var config = new ShellConfig
         {
             Name = "TestShell",
-            Settings = new Dictionary<string, object?>
-            {
-                ["Setting1"] = "Value1",
-                ["Setting2"] = null,
-                ["Setting3"] = "Value3"
-            }
+            Features =
+            [
+                new FeatureEntry
+                {
+                    Name = "Feature1",
+                    Settings = new()
+                    {
+                        ["Setting1"] = "Value1",
+                        ["Setting2"] = null,
+                        ["Setting3"] = "Value3"
+                    }
+                }
+            ]
         };
 
         var builder = new ShellBuilder("TestShell");
@@ -277,9 +288,9 @@ public class ShellBuilderTests
 
         // Assert - Null settings should be filtered out
         Assert.Equal(2, settings.ConfigurationData.Count);
-        Assert.Equal("Value1", settings.ConfigurationData["Setting1"]);
-        Assert.Equal("Value3", settings.ConfigurationData["Setting3"]);
-        Assert.False(settings.ConfigurationData.ContainsKey("Setting2"));
+        Assert.Equal("Value1", settings.ConfigurationData["Feature1:Setting1"]);
+        Assert.Equal("Value3", settings.ConfigurationData["Feature1:Setting3"]);
+        Assert.False(settings.ConfigurationData.ContainsKey("Feature1:Setting2"));
     }
 
     [Fact(DisplayName = "Multiple FromConfiguration calls accumulate features")]
@@ -289,13 +300,13 @@ public class ShellBuilderTests
         var config1 = new ShellConfig
         {
             Name = "TestShell",
-            Features = ["Feature1", "Feature2"]
+            Features = [FeatureEntry.FromName("Feature1"), FeatureEntry.FromName("Feature2")]
         };
 
         var config2 = new ShellConfig
         {
             Name = "TestShell",
-            Features = ["Feature2", "Feature3"]
+            Features = [FeatureEntry.FromName("Feature2"), FeatureEntry.FromName("Feature3")]
         };
 
         var builder = new ShellBuilder("TestShell");
@@ -360,6 +371,63 @@ public class ShellBuilderTests
         Assert.Equal(["Feature1"], settings.EnabledFeatures);
     }
 
+    [Fact(DisplayName = "WithFeature with configure action adds feature and settings")]
+    public void WithFeature_WithConfigureAction_AddsFeatureAndSettings()
+    {
+        // Arrange
+        var builder = new ShellBuilder("TestShell");
+
+        // Act
+        builder.WithFeature("FraudDetection", settings =>
+        {
+            settings.WithSetting("Threshold", 0.85);
+            settings.WithSetting("MaxAmount", 5000);
+        });
+        var shellSettings = builder.Build();
+
+        // Assert
+        Assert.Equal(["FraudDetection"], shellSettings.EnabledFeatures);
+        Assert.Equal(2, shellSettings.ConfigurationData.Count);
+        Assert.Equal(0.85, shellSettings.ConfigurationData["FraudDetection:Threshold"]);
+        Assert.Equal(5000, shellSettings.ConfigurationData["FraudDetection:MaxAmount"]);
+    }
+
+    [Fact(DisplayName = "WithFeature with FeatureEntry adds feature and settings")]
+    public void WithFeature_WithFeatureEntry_AddsFeatureAndSettings()
+    {
+        // Arrange
+        var builder = new ShellBuilder("TestShell");
+        var featureEntry = new FeatureEntry
+        {
+            Name = "Database",
+            Settings = new() { ["ConnectionString"] = "Server=localhost" }
+        };
+
+        // Act
+        builder.WithFeature(featureEntry);
+        var shellSettings = builder.Build();
+
+        // Assert
+        Assert.Equal(["Database"], shellSettings.EnabledFeatures);
+        Assert.Single(shellSettings.ConfigurationData);
+        Assert.Equal("Server=localhost", shellSettings.ConfigurationData["Database:ConnectionString"]);
+    }
+
+    [Fact(DisplayName = "WithFeature does not duplicate feature names")]
+    public void WithFeature_DoesNotDuplicateFeatureNames()
+    {
+        // Arrange
+        var builder = new ShellBuilder("TestShell")
+            .WithFeature("Feature1");
+
+        // Act
+        builder.WithFeature("Feature1", settings => settings.WithSetting("Key", "Value"));
+        var shellSettings = builder.Build();
+
+        // Assert - Feature1 should appear only once
+        Assert.Equal(["Feature1"], shellSettings.EnabledFeatures);
+    }
+
     [Fact(DisplayName = "Guard clauses throw ArgumentNullException")]
     public void GuardClauses_ThrowArgumentNullException()
     {
@@ -368,7 +436,9 @@ public class ShellBuilderTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => builder.WithFeatures(null!));
-        Assert.Throws<ArgumentNullException>(() => builder.WithFeature(null!));
+        Assert.Throws<ArgumentNullException>(() => builder.WithFeature((string)null!));
+        Assert.Throws<ArgumentNullException>(() => builder.WithFeature("Feature", (Action<FeatureSettingsBuilder>)null!));
+        Assert.Throws<ArgumentNullException>(() => builder.WithFeature((FeatureEntry)null!));
         Assert.Throws<ArgumentNullException>(() => builder.WithProperty(null!, "value"));
         Assert.Throws<ArgumentNullException>(() => builder.WithProperty("key", null!));
         Assert.Throws<ArgumentNullException>(() => builder.WithProperties(null!));

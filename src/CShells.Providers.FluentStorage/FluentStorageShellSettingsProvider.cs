@@ -31,7 +31,8 @@ public class FluentStorageShellSettingsProvider : IShellSettingsProvider
         _path = path ?? string.Empty;
         _jsonOptions = jsonOptions ?? new JsonSerializerOptions
         {
-            PropertyNameCaseInsensitive = true
+            PropertyNameCaseInsensitive = true,
+            Converters = { new FeatureEntryListJsonConverter() }
         };
     }
 

@@ -20,14 +20,14 @@ public class FeatureDependencyResolverTests
         Assert.Equal(expectedParamName, ex.ParamName);
     }
 
-    [Fact(DisplayName = "ResolveDependencies with unknown feature throws InvalidOperationException")]
-    public void ResolveDependencies_WithFeatureNotFound_ThrowsInvalidOperationException()
+    [Fact(DisplayName = "ResolveDependencies with unknown feature throws FeatureNotFoundException")]
+    public void ResolveDependencies_WithFeatureNotFound_ThrowsFeatureNotFoundException()
     {
         // Arrange
         var features = new Dictionary<string, ShellFeatureDescriptor>();
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies("NonExistent", features));
+        var ex = Assert.Throws<FeatureNotFoundException>(() => _resolver.ResolveDependencies("NonExistent", features));
         Assert.Contains("not found", ex.Message);
         Assert.Contains("NonExistent", ex.Message);
     }
@@ -97,8 +97,8 @@ public class FeatureDependencyResolverTests
         Assert.Contains("Circular dependency", ex.Message);
     }
 
-    [Fact(DisplayName = "ResolveDependencies with missing dependency throws InvalidOperationException")]
-    public void ResolveDependencies_WithMissingDependency_ThrowsInvalidOperationException()
+    [Fact(DisplayName = "ResolveDependencies with missing dependency throws FeatureNotFoundException")]
+    public void ResolveDependencies_WithMissingDependency_ThrowsFeatureNotFoundException()
     {
         // Arrange
         var features = FeatureTestHelpers.CreateFeatureDictionary(
@@ -106,7 +106,7 @@ public class FeatureDependencyResolverTests
         );
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => _resolver.ResolveDependencies("Feature1", features));
+        var ex = Assert.Throws<FeatureNotFoundException>(() => _resolver.ResolveDependencies("Feature1", features));
         Assert.Contains("not found", ex.Message);
         Assert.Contains("NonExistent", ex.Message);
     }

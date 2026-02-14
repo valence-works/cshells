@@ -6,35 +6,15 @@ CShells provides an elegant, convention-based configuration system that allows f
 
 Features can be configured in three ways:
 
-1. **Auto-Configuration** - Public settable properties are automatically bound from configuration
+1. **Inline Configuration** - Settings are defined directly with the feature in the Features array
 2. **Explicit Configuration** - Implement `IConfigurableFeature<TOptions>` for strongly-typed options
 3. **Manual Configuration** - Use `IConfiguration` or `IOptions<T>` directly in `ConfigureServices`
 
-## Auto-Configuration
+## Inline Configuration (Recommended)
 
-The simplest way to configure a feature is through auto-configuration. Any public settable property on a feature class will be automatically bound from the configuration section matching the feature name.
-
-### Example
-
-```csharp
-[ShellFeature(
-    DisplayName = "SQLite Workflow Persistence",
-    Description = "Provides SQLite persistence for workflows")]
-public class SqliteWorkflowPersistenceFeature : IShellFeature
-{
-    // These properties are automatically bound from configuration
-    public string ConnectionString { get; set; } = "Data Source=workflows.db";
-    public bool EnableSensitiveDataLogging { get; set; }
-    public int CommandTimeout { get; set; } = 30;
-
-    public void ConfigureServices(IServiceCollection services)
-    {
-        // Properties are already configured before this method is called
-        services.AddDbContext<WorkflowDbContext>(options =>
-            options.UseSqlite(ConnectionString));
-    }
-}
-```
+The most elegant way to configure a feature is inline, where the feature name and settings are colocated in the Features array. Each feature can be either:
+- A simple string (feature name only)
+- An object with `Name` and any settings as properties
 
 ### Configuration (appsettings.json)
 
@@ -44,17 +24,52 @@ public class SqliteWorkflowPersistenceFeature : IShellFeature
     "Shells": [
       {
         "Name": "Default",
-        "Settings": {
-          "SqliteWorkflowPersistence": {
+        "Features": [
+          "Core",
+          {
+            "Name": "SqliteWorkflowPersistence",
             "ConnectionString": "Data Source=production.db;Cache=Shared",
             "EnableSensitiveDataLogging": false,
             "CommandTimeout": 60
-          }
-        },
-        "Features": ["SqliteWorkflowPersistence"]
+          },
+          "Logging"
+        ]
       }
     ]
   }
+}
+```
+
+### Feature Implementation
+
+```csharp
+[ShellFeature(
+    DisplayName = "SQLite Workflow Persistence",
+    Description = "Provides SQLite persistence for workflows")]
+public class SqliteWorkflowPersistenceFeature : IShellFeature
+{
+    public void ConfigureServices(IServiceCollection services)
+    {
+        // Bind settings from the feature's configuration section
+        services.AddOptions<SqliteWorkflowPersistenceOptions>()
+            .Configure<IConfiguration>((options, config) =>
+            {
+                config.GetSection("SqliteWorkflowPersistence").Bind(options);
+            });
+
+        services.AddDbContext<WorkflowDbContext>((sp, options) =>
+        {
+            var persistenceOptions = sp.GetRequiredService<IOptions<SqliteWorkflowPersistenceOptions>>().Value;
+            options.UseSqlite(persistenceOptions.ConnectionString);
+        });
+    }
+}
+
+public class SqliteWorkflowPersistenceOptions
+{
+    public string ConnectionString { get; set; } = "Data Source=workflows.db";
+    public bool EnableSensitiveDataLogging { get; set; }
+    public int CommandTimeout { get; set; } = 30;
 }
 ```
 
@@ -64,7 +79,7 @@ Environment variables override configuration file settings using hierarchical na
 
 ```bash
 # Override connection string for specific shell and feature
-Shells__Default__Settings__SqliteWorkflowPersistence__ConnectionString="Data Source=prod.db"
+Shells__Default__Features__1__ConnectionString="Data Source=prod.db"
 
 # Or use environment-specific secrets
 ConnectionStrings__Workflows="Server=prod;Database=Workflows;..."

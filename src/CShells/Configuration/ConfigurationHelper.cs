@@ -69,6 +69,78 @@ internal static class ConfigurationHelper
     }
 
     /// <summary>
+    /// Flattens a dictionary of settings into key-value pairs suitable for IConfiguration.
+    /// </summary>
+    public static void FlattenSettings(Dictionary<string, object?> settings, string prefix, IDictionary<string, object> target)
+    {
+        foreach (var (key, value) in settings)
+        {
+            if (value == null)
+                continue;
+
+            var fullKey = $"{prefix}:{key}";
+
+            if (value is JsonElement jsonElement)
+            {
+                FlattenJsonElement(jsonElement, fullKey, target);
+            }
+            else if (value is Dictionary<string, object?> nested)
+            {
+                FlattenSettings(nested, fullKey, target);
+            }
+            else
+            {
+                target[fullKey] = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Flattens a JsonElement into key-value pairs suitable for IConfiguration.
+    /// </summary>
+    public static void FlattenJsonElement(JsonElement element, string prefix, IDictionary<string, object> target)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    FlattenJsonElement(property.Value, $"{prefix}:{property.Name}", target);
+                }
+                break;
+
+            case JsonValueKind.Array:
+                var index = 0;
+                foreach (var item in element.EnumerateArray())
+                {
+                    FlattenJsonElement(item, $"{prefix}:{index}", target);
+                    index++;
+                }
+                break;
+
+            case JsonValueKind.String:
+                target[prefix] = element.GetString()!;
+                break;
+
+            case JsonValueKind.Number:
+                target[prefix] = element.GetRawText();
+                break;
+
+            case JsonValueKind.True:
+                target[prefix] = "True";
+                break;
+
+            case JsonValueKind.False:
+                target[prefix] = "False";
+                break;
+
+            case JsonValueKind.Null:
+                // Skip null values
+                break;
+        }
+    }
+
+    /// <summary>
     /// Serializes an IConfigurationSection to JSON string.
     /// </summary>
     public static string SerializeConfigurationSection(IConfigurationSection section)
@@ -116,48 +188,80 @@ internal static class ConfigurationHelper
     }
 
     /// <summary>
-    /// Loads settings (configuration data) from a configuration section into a dictionary.
+    /// Extracts feature names from a list of feature entries.
     /// </summary>
-    public static void LoadSettingsFromConfiguration(IConfigurationSection settingsSection, IDictionary<string, object> targetConfigurationData)
+    public static string[] ExtractFeatureNames(IEnumerable<FeatureEntry> features)
     {
-        foreach (var settingSection in settingsSection.GetChildren())
-        {
-            var key = settingSection.Key;
+        return features
+            .Where(f => !string.IsNullOrWhiteSpace(f.Name))
+            .Select(f => f.Name.Trim())
+            .ToArray();
+    }
 
-            // Check if this is a complex object or a simple value
-            if (settingSection.GetChildren().Any())
-            {
-                // Complex object - flatten to key-value pairs for IConfiguration
-                FlattenConfigurationSection(settingSection, key, targetConfigurationData);
-            }
-            else
-            {
-                // Simple value
-                targetConfigurationData[key] = settingSection.Value!;
-            }
+    /// <summary>
+    /// Populates configuration data from feature entries.
+    /// Settings from each feature are namespaced under the feature name.
+    /// </summary>
+    public static void PopulateFeatureSettings(IEnumerable<FeatureEntry> features, IDictionary<string, object> configurationData)
+    {
+        foreach (var feature in features)
+        {
+            if (feature.Settings.Count == 0)
+                continue;
+
+            FlattenSettings(feature.Settings, feature.Name, configurationData);
         }
     }
 
     /// <summary>
-    /// Normalizes and retrieves features from a configuration section.
+    /// Parses feature entries from a configuration section.
+    /// Handles both string and object formats in the Features array.
     /// </summary>
-    public static string[] GetNormalizedFeatures(IConfigurationSection section)
+    public static List<FeatureEntry> ParseFeaturesFromConfiguration(IConfigurationSection featuresSection)
     {
-        var features = section.GetSection("Features").Get<string[]>() ?? [];
-        return features
-            .Where(f => !string.IsNullOrWhiteSpace(f))
-            .Select(f => f.Trim())
-            .ToArray();
-    }
+        var entries = new List<FeatureEntry>();
 
-    /// <summary>
-    /// Normalizes features from a string array.
-    /// </summary>
-    public static string[] NormalizeFeatures(IEnumerable<string?> features)
-    {
-        return features
-            .Where(f => !string.IsNullOrWhiteSpace(f))
-            .Select(f => f!.Trim())
-            .ToArray();
+        foreach (var featureSection in featuresSection.GetChildren())
+        {
+            // Check if this is a simple string value
+            if (!featureSection.GetChildren().Any())
+            {
+                var name = featureSection.Value;
+                if (!string.IsNullOrWhiteSpace(name))
+                    entries.Add(FeatureEntry.FromName(name.Trim()));
+            }
+            else
+            {
+                // This is an object with Name and settings
+                var name = featureSection["Name"];
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+
+                var entry = new FeatureEntry { Name = name.Trim() };
+
+                // All other children are settings
+                foreach (var settingSection in featureSection.GetChildren())
+                {
+                    if (settingSection.Key.Equals("Name", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (settingSection.GetChildren().Any())
+                    {
+                        // Complex nested setting - store as JsonElement
+                        var json = SerializeConfigurationSection(settingSection);
+                        entry.Settings[settingSection.Key] = JsonSerializer.Deserialize<JsonElement>(json);
+                    }
+                    else
+                    {
+                        // Simple value
+                        entry.Settings[settingSection.Key] = settingSection.Value;
+                    }
+                }
+
+                entries.Add(entry);
+            }
+        }
+
+        return entries;
     }
 }
