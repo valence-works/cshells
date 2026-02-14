@@ -43,8 +43,8 @@ Create JSON files in a `Shells` folder (e.g., `Default.json`, `Admin.json`):
 ```json
 {
   "Name": "Default",
-  "Features": [ "Core", "Weather" ],
-  "Properties": {
+  "Features": ["Core", "Weather"],
+  "Configuration": {
     "WebRouting": {
       "Path": ""
     }
@@ -56,10 +56,11 @@ Create JSON files in a `Shells` folder (e.g., `Default.json`, `Admin.json`):
 ```json
 {
   "Name": "Admin",
-  "Features": [ "Core", "Admin" ],
-  "Properties": {
+  "Features": ["Core", "Admin"],
+  "Configuration": {
     "WebRouting": {
-      "Path": "admin"
+      "Path": "admin",
+      "RoutePrefix": "api/v1"
     }
   }
 }
@@ -148,13 +149,14 @@ Each JSON file should contain a complete shell configuration:
 ```json
 {
   "Name": "ShellName",
-  "Features": [ "Feature1", "Feature2" ],
-  "Properties": {
+  "Features": ["Feature1", "Feature2"],
+  "Configuration": {
     "WebRouting": {
       "Path": "path",
-      "Host": "example.com"
+      "Host": "example.com",
+      "RoutePrefix": "api/v1"
     },
-    "CustomProperty": "value"
+    "CustomSetting": "value"
   }
 }
 ```

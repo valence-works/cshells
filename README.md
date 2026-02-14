@@ -180,7 +180,7 @@ public class WeatherFeature : IShellFeature
     "Shells": [
       {
         "Name": "Default",
-        "Features": [ "Core", "Weather" ],
+        "Features": ["Core", "Weather"],
         "Configuration": {
           "WebRouting": {
             "Path": ""
@@ -195,9 +195,14 @@ public class WeatherFeature : IShellFeature
         ],
         "Configuration": {
           "WebRouting": {
-            "Path": "admin"
+            "Path": "admin",
+            "RoutePrefix": "api/v1"
           }
         }
+      }
+    ]
+  }
+}
       }
     ]
   }
@@ -212,9 +217,9 @@ Create JSON files in a `Shells` folder (e.g., `Default.json`, `Admin.json`):
 
 ```json
 {
-  "name": "Default",
-  "features": [ "Core", "Weather" ],
-  "configuration": {
+  "Name": "Default",
+  "Features": ["Core", "Weather"],
+  "Configuration": {
     "WebRouting": {
       "Path": ""
     }
@@ -245,14 +250,15 @@ builder.AddShells(cshells =>
 {
     cshells.AddShell("Default", shell => shell
         .WithFeatures("Core", "Weather")
-        .WithPath(""));
+        .WithConfiguration("WebRouting:Path", ""));
 
     cshells.AddShell("Admin", shell => shell
         .WithFeature("Core")
         .WithFeature("Admin", settings => settings
             .WithSetting("MaxUsers", 100)
             .WithSetting("EnableAuditLog", true))
-        .WithPath("admin"));
+        .WithConfiguration("WebRouting:Path", "admin")
+        .WithConfiguration("WebRouting:RoutePrefix", "api/v1"));
 
     cshells.WithInMemoryShells();
 });
@@ -330,8 +336,10 @@ app.Run();
 - **IWebShellFeature** - Extends `IShellFeature` to add HTTP endpoint registration via `MapEndpoints()`
 - **Optional `[ShellFeature]` attribute** - Use only when you need explicit names, display names, dependencies, or metadata
 - **Automatic endpoint routing** - `MapShells()` handles middleware and endpoint registration in one call
-- **Shell path prefixes** - Routes are automatically prefixed based on the `WebRouting.Path` property
+- **Shell path prefixes** - Routes are automatically prefixed based on `WebRouting:Path`
+- **Route prefixes** - Apply additional route prefixes to all endpoints via `WebRouting:RoutePrefix`
 - **Per-shell DI containers** - Each shell has its own isolated service provider with shell-specific services
+- **Shell-scoped IConfiguration** - Each shell gets its own `IConfiguration` built from its `Configuration` section
 - **Multiple configuration sources** - Configure shells via appsettings.json, external JSON files, or code
 - **Flexible shell resolution** - Built-in path and host resolvers, plus extensibility for custom strategies
 - **Feature dependencies** - Features can depend on other features with automatic topological ordering
@@ -377,8 +385,8 @@ builder.AddShells(cshells =>
 {
     cshells.AddShell("Default", shell => shell
         .WithFeatures("Core", "Weather")
-        .WithPath("")
-        .WithProperty("Title", "Default Site"));
+        .WithConfiguration("WebRouting:Path", "")
+        .WithConfiguration("Theme", "Dark"));
 
     cshells.WithInMemoryShells();
 });

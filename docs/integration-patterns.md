@@ -19,7 +19,7 @@ Use unique path prefixes for each shell to isolate shell routes from host routes
 {
   "Name": "Acme",
   "Features": ["Core", "Payment"],
-  "Properties": {
+  "Configuration": {
     "WebRouting": {
       "Path": "tenants/acme"
     }
@@ -30,7 +30,7 @@ Use unique path prefixes for each shell to isolate shell routes from host routes
 {
   "Name": "Contoso",
   "Features": ["Core", "Payment"],
-  "Properties": {
+  "Configuration": {
     "WebRouting": {
       "Path": "tenants/contoso"
     }
@@ -51,7 +51,7 @@ Use host-based routing to isolate shells by subdomain:
 // Acme.json
 {
   "Name": "Acme",
-  "Properties": {
+  "Configuration": {
     "WebRouting": {
       "Host": "acme.example.com"
     }
@@ -103,7 +103,7 @@ Use an empty path prefix when the **entire application** is multi-tenant:
 ```json
 {
   "Name": "Default",
-  "Properties": {
+  "Configuration": {
     "WebRouting": {
       "Path": ""
     }
@@ -223,7 +223,7 @@ The request matched multiple endpoints
 
 **Solutions:**
 1. Verify `MapShells()` is called in the pipeline
-2. Check shell configuration files have correct path prefixes (`WebRouting.Path`)
+2. Check shell configuration files have correct path prefixes (`Configuration.WebRouting.Path`)
 3. Ensure shell settings are loaded (check logs: "Loaded N shell(s)")
 4. Verify shell resolver is configured (defaults to path and host routing)
 

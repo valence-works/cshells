@@ -108,7 +108,8 @@ builder.Services.AddCShells(cshells =>
 {
     cshells.AddShell("Default", shell => shell
         .WithFeatures("Core", "Weather")
-        .WithProperty("Title", "Default Site"));
+        .WithConfiguration("Theme", "Dark")
+        .WithConfiguration("MaxItems", "100"));
 
     cshells.WithInMemoryShells();
 });

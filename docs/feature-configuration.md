@@ -137,7 +137,26 @@ public class DatabaseFeature : IShellFeature, IConfigurableFeature<DatabaseOptio
     "Shells": [
       {
         "Name": "Default",
-        "Settings": {
+        "Features": [
+          "Core",
+          { "Name": "Database", "ConnectionString": "Server=localhost;Database=App;...", "CommandTimeout": 60, "EnableRetryOnFailure": true }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Alternatively, use the shell's `Configuration` section for shared settings:
+
+```json
+{
+  "CShells": {
+    "Shells": [
+      {
+        "Name": "Default",
+        "Features": ["Core", "Database"],
+        "Configuration": {
           "Database": {
             "ConnectionString": "Server=localhost;Database=App;...",
             "CommandTimeout": 60,
@@ -291,10 +310,11 @@ builder.Services.AddCustomFeatureValidation<CustomValidator>();
 
 Configuration follows a precedence order (highest to lowest):
 
-1. **Environment Variables** - `Shells__Default__Settings__FeatureName__PropertyName`
-2. **Shell Settings** - `CShells:Shells[].Settings.FeatureName`
-3. **Root Configuration** - `FeatureName:PropertyName`
-4. **Feature Defaults** - Property default values
+1. **Environment Variables** - `Shells__Default__Configuration__FeatureName__PropertyName`
+2. **Inline Feature Configuration** - Settings defined with the feature in the Features array
+3. **Shell Configuration** - `CShells:Shells[].Configuration.FeatureName`
+4. **Root Configuration** - `FeatureName:PropertyName`
+5. **Feature Defaults** - Property default values
 
 ### Example
 
@@ -307,7 +327,8 @@ Configuration follows a precedence order (highest to lowest):
     "Shells": [
       {
         "Name": "Default",
-        "Settings": {
+        "Features": ["Core", "Database"],
+        "Configuration": {
           "Database": {
             "ConnectionString": "ShellSpecificConnection"
           }
@@ -320,7 +341,7 @@ Configuration follows a precedence order (highest to lowest):
 
 With environment variable:
 ```bash
-Shells__Default__Settings__Database__ConnectionString="EnvironmentConnection"
+Shells__Default__Configuration__Database__ConnectionString="EnvironmentConnection"
 ```
 
 The feature will use `"EnvironmentConnection"` (environment variables win).
@@ -332,14 +353,14 @@ Never store secrets in `appsettings.json`. Use environment variables or secret m
 ### Development (User Secrets)
 
 ```bash
-dotnet user-secrets set "Shells:Default:Settings:Database:ConnectionString" "Server=localhost;..."
+dotnet user-secrets set "Shells:Default:Configuration:Database:ConnectionString" "Server=localhost;..."
 ```
 
 ### Production (Environment Variables)
 
 ```bash
 # Docker
-docker run -e Shells__Default__Settings__Database__ConnectionString="Server=prod;..." myapp
+docker run -e Shells__Default__Configuration__Database__ConnectionString="Server=prod;..." myapp
 
 # Kubernetes
 apiVersion: v1
@@ -361,7 +382,7 @@ builder.Configuration.AddAzureKeyVault(
 ```
 
 Configuration keys in Key Vault:
-- `Shells--Default--Settings--Database--ConnectionString`
+- `Shells--Default--Configuration--Database--ConnectionString`
 
 ## Best Practices
 
@@ -432,7 +453,7 @@ public class NewFeature : IShellFeature
 
 1. **Check feature name matches configuration section**
    - Feature name from `[ShellFeature]` attribute or class name
-   - Configuration section in `Settings.{FeatureName}`
+   - Configuration section in `Configuration.{FeatureName}` or inline in Features array
 
 2. **Check property is public and settable**
    ```csharp

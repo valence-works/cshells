@@ -57,8 +57,8 @@ public class WeatherFeature : IWebShellFeature
     "Shells": [
       {
         "Name": "Default",
-        "Features": [ "Weather" ],
-        "Properties": {
+        "Features": ["Weather"],
+        "Configuration": {
           "WebRouting": {
             "Path": ""
           }
@@ -66,10 +66,11 @@ public class WeatherFeature : IWebShellFeature
       },
       {
         "Name": "Admin",
-        "Features": [ "Admin" ],
-        "Properties": {
+        "Features": ["Admin"],
+        "Configuration": {
           "WebRouting": {
-            "Path": "admin"
+            "Path": "admin",
+            "RoutePrefix": "api/v1"
           }
         }
       }
@@ -124,7 +125,7 @@ Shells are resolved based on the URL path prefix:
 
 ```json
 {
-  "Properties": {
+  "Configuration": {
     "WebRouting": {
       "Path": "admin"
     }
@@ -140,13 +141,30 @@ Configure shells to respond to specific hostnames:
 
 ```json
 {
-  "Properties": {
+  "Configuration": {
     "WebRouting": {
       "Host": "admin.example.com"
     }
   }
 }
 ```
+
+### Route Prefix
+
+Apply a route prefix to all endpoints in a shell:
+
+```json
+{
+  "Configuration": {
+    "WebRouting": {
+      "Path": "tenant1",
+      "RoutePrefix": "api/v1"
+    }
+  }
+}
+```
+
+With this configuration, an endpoint mapped at `weather` will be accessible at `/tenant1/api/v1/weather`.
 
 ### Custom Resolution
 
