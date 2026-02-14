@@ -203,10 +203,6 @@ public class WeatherFeature : IShellFeature
     ]
   }
 }
-      }
-    ]
-  }
-}
 ```
 
 You can also override the configuration section name via `builder.AddShells("MySection")`.
