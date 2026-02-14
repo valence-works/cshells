@@ -2,3 +2,14 @@ GET {{SampleApp_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###
+POST {{SampleApp_HostAddress}}/acme/fraud-check
+Content-Type: application/json
+Accept: application/json
+
+{
+  "transactionAmount": 1000,
+  "customerId": "12345",
+  "metadata": {}
+}
+
+###

@@ -10,21 +10,7 @@ namespace CShells.Configuration;
 public class ShellConfiguration(ShellSettings shellSettings, IConfiguration rootConfiguration) : IConfiguration
 {
     private readonly IConfiguration _rootConfiguration = Guard.Against.Null(rootConfiguration);
-    private readonly IConfiguration _shellConfiguration = BuildShellConfiguration(Guard.Against.Null(shellSettings));
-
-    private static IConfiguration BuildShellConfiguration(ShellSettings settings)
-    {
-        var builder = new ConfigurationBuilder();
-
-        if (settings.ConfigurationData.Count > 0)
-        {
-            builder.AddInMemoryCollection(
-                settings.ConfigurationData.Select(kvp =>
-                    new KeyValuePair<string, string?>(kvp.Key, kvp.Value?.ToString())));
-        }
-
-        return builder.Build();
-    }
+    private readonly IConfiguration _shellConfiguration = Guard.Against.Null(shellSettings).GetConfigurationRoot();
 
     /// <inheritdoc />
     public string? this[string key]

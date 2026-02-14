@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+
 namespace CShells;
 
 /// <summary>
@@ -5,6 +7,47 @@ namespace CShells;
 /// </summary>
 public static class ShellSettingsExtensions
 {
+    // Cache for IConfiguration instances per ShellSettings
+    // Using ConditionalWeakTable to avoid memory leaks - entries are removed when ShellSettings is GC'd
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ShellSettings, IConfiguration> ConfigurationCache = new();
+
+    /// <summary>
+    /// Gets an <see cref="IConfiguration"/> view of the shell's configuration data.
+    /// This allows using familiar patterns like <c>GetSection()</c> and <c>Bind()</c>.
+    /// </summary>
+    /// <param name="settings">The shell settings.</param>
+    /// <returns>An IConfiguration representing the shell's configuration data.</returns>
+    /// <example>
+    /// <code>
+    /// // In a feature constructor
+    /// public MyFeature(ShellSettings settings)
+    /// {
+    ///     var options = new MyOptions();
+    ///     settings.GetConfigurationRoot().GetSection("MyFeature").Bind(options);
+    /// }
+    /// </code>
+    /// </example>
+    public static IConfiguration GetConfigurationRoot(this ShellSettings settings)
+    {
+        Guard.Against.Null(settings);
+
+        return ConfigurationCache.GetValue(settings, BuildConfiguration);
+    }
+
+    private static IConfiguration BuildConfiguration(ShellSettings settings)
+    {
+        var builder = new ConfigurationBuilder();
+
+        if (settings.ConfigurationData.Count > 0)
+        {
+            builder.AddInMemoryCollection(
+                settings.ConfigurationData.Select(kvp =>
+                    new KeyValuePair<string, string?>(kvp.Key, kvp.Value?.ToString())));
+        }
+
+        return builder.Build();
+    }
+
     /// <summary>
     /// Gets a configuration value from the shell settings.
     /// </summary>

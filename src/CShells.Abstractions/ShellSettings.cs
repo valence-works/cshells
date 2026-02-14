@@ -31,9 +31,8 @@ public class ShellSettings
     } = [];
 
     /// <summary>
-    /// Gets or sets shell-specific configuration data.
-    /// This includes both shell-level configuration and feature-specific settings.
-    /// All values are available via IConfiguration when resolved from the shell's service provider.
+    /// Gets or sets shell-specific configuration data as a dictionary.
+    /// Keys use colon-separated format for hierarchical data (e.g., "WebRouting:Path").
     /// </summary>
     public IDictionary<string, object> ConfigurationData { get; set; } = new Dictionary<string, object>();
 }

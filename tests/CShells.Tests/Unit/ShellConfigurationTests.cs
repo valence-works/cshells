@@ -5,6 +5,76 @@ namespace CShells.Tests.Unit;
 
 public class ShellConfigurationTests
 {
+    [Fact(DisplayName = "ShellSettings.GetConfigurationRoot provides IConfiguration view")]
+    public void ShellSettings_GetConfigurationRoot_ProvidesIConfigurationView()
+    {
+        // Arrange
+        var shellSettings = new ShellSettings
+        {
+            Id = new ShellId("TestShell"),
+            ConfigurationData = new Dictionary<string, object>
+            {
+                ["MyFeature:ApiKey"] = "secret-key",
+                ["MyFeature:MaxRetries"] = "3"
+            }
+        };
+
+        // Act - Access configuration directly from ShellSettings
+        var config = shellSettings.GetConfigurationRoot();
+        var section = config.GetSection("MyFeature");
+
+        // Assert
+        Assert.True(section.Exists());
+        Assert.Equal("secret-key", section["ApiKey"]);
+        Assert.Equal("3", section["MaxRetries"]);
+    }
+
+    [Fact(DisplayName = "ShellSettings.GetConfigurationRoot allows Bind() for options")]
+    public void ShellSettings_GetConfigurationRoot_AllowsBindForOptions()
+    {
+        // Arrange - This simulates what a feature developer would do
+        var shellSettings = new ShellSettings
+        {
+            Id = new ShellId("TestShell"),
+            ConfigurationData = new Dictionary<string, object>
+            {
+                ["FraudDetection:Threshold"] = "0.85",
+                ["FraudDetection:MaxTransactionAmount"] = "5000",
+                ["FraudDetection:EnableLogging"] = "true"
+            }
+        };
+
+        // Act - Bind options directly from ShellSettings.GetConfigurationRoot()
+        var options = new FraudDetectionOptions();
+        shellSettings.GetConfigurationRoot().GetSection("FraudDetection").Bind(options);
+
+        // Assert
+        Assert.Equal(0.85, options.Threshold);
+        Assert.Equal(5000, options.MaxTransactionAmount);
+        Assert.True(options.EnableLogging);
+    }
+
+    [Fact(DisplayName = "ShellSettings.GetConfigurationRoot is cached")]
+    public void ShellSettings_GetConfigurationRoot_IsCached()
+    {
+        // Arrange
+        var shellSettings = new ShellSettings
+        {
+            Id = new ShellId("TestShell"),
+            ConfigurationData = new Dictionary<string, object>
+            {
+                ["Key"] = "Value1"
+            }
+        };
+
+        // Act - Get configuration (should be cached)
+        var config1 = shellSettings.GetConfigurationRoot();
+        var config2 = shellSettings.GetConfigurationRoot();
+
+        // Assert - Same instance (cached)
+        Assert.Same(config1, config2);
+    }
+
     [Fact(DisplayName = "ShellConfiguration provides feature settings via GetSection")]
     public void ShellConfiguration_ProvidesFeatureSettings_ViaGetSection()
     {
