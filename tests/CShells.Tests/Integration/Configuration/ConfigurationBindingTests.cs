@@ -55,7 +55,7 @@ namespace CShells.Tests.Configuration
         // loaded when MapCShells() is called, not when services are registered.
 
         [Fact]
-        public void CreateFromOptions_Throws_On_DuplicateNames()
+        public void CreateFromConfiguration_DetectsDuplicateNames()
         {
             var json = @"{ ""CShells"": { ""Shells"": [ { ""Name"": ""X"" }, { ""Name"": ""x"" } ] } }";
             using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
@@ -67,7 +67,7 @@ namespace CShells.Tests.Configuration
                 .Select(ShellSettingsFactory.CreateFromConfiguration)
                 .ToList();
 
-            // Check for duplicates manually since we're not using CreateFromOptions
+            // Check for duplicates manually
             var duplicates = shellConfigs
                 .GroupBy(s => s.Id.Name, StringComparer.OrdinalIgnoreCase)
                 .Where(g => g.Count() > 1)

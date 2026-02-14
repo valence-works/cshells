@@ -119,7 +119,11 @@ internal static class ConfigurationHelper
                 break;
 
             case JsonValueKind.String:
-                target[prefix] = element.GetString()!;
+                var stringValue = element.GetString();
+                if (stringValue != null)
+                {
+                    target[prefix] = stringValue;
+                }
                 break;
 
             case JsonValueKind.Number:
