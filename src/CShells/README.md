@@ -110,8 +110,6 @@ builder.Services.AddCShells(cshells =>
         .WithFeatures("Core", "Weather")
         .WithConfiguration("Theme", "Dark")
         .WithConfiguration("MaxItems", "100"));
-
-    cshells.WithInMemoryShells();
 });
 ```
 
