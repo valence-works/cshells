@@ -20,8 +20,7 @@ public static class ShellBuilderExtensions
             Guard.Against.Null(builder);
             Guard.Against.Null(path);
 
-            var options = new WebRoutingShellOptions { Path = path };
-            return builder.WithProperty(ShellPropertyKeys.WebRouting, options);
+            return builder.WithConfiguration("WebRouting:Path", path);
         }
 
         /// <summary>
@@ -34,8 +33,7 @@ public static class ShellBuilderExtensions
             Guard.Against.Null(builder);
             Guard.Against.Null(host);
 
-            var options = new WebRoutingShellOptions { Host = host };
-            return builder.WithProperty(ShellPropertyKeys.WebRouting, options);
+            return builder.WithConfiguration("WebRouting:Host", host);
         }
 
         /// <summary>
@@ -48,7 +46,16 @@ public static class ShellBuilderExtensions
             Guard.Against.Null(builder);
             Guard.Against.Null(options);
 
-            return builder.WithProperty(ShellPropertyKeys.WebRouting, options);
+            if (options.Path != null)
+                builder.WithConfiguration("WebRouting:Path", options.Path);
+            if (options.Host != null)
+                builder.WithConfiguration("WebRouting:Host", options.Host);
+            if (options.HeaderName != null)
+                builder.WithConfiguration("WebRouting:HeaderName", options.HeaderName);
+            if (options.ClaimKey != null)
+                builder.WithConfiguration("WebRouting:ClaimKey", options.ClaimKey);
+
+            return builder;
         }
     }
 }

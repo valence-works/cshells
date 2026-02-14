@@ -1,104 +1,117 @@
-using CShells.Serialization;
-
 namespace CShells;
 
 /// <summary>
-/// Extension methods for <see cref="ShellSettings"/> to simplify property access.
+/// Extension methods for <see cref="ShellSettings"/> to simplify configuration access.
 /// </summary>
 public static class ShellSettingsExtensions
 {
-    private static IShellPropertySerializer? _defaultSerializer;
-
     /// <summary>
-    /// Gets or sets the default property serializer used when no serializer is explicitly provided.
-    /// Defaults to <see cref="SystemTextJsonShellPropertySerializer"/>.
+    /// Gets a configuration value from the shell settings.
     /// </summary>
-    public static IShellPropertySerializer DefaultSerializer
-    {
-        get => _defaultSerializer ??= new SystemTextJsonShellPropertySerializer();
-        set => _defaultSerializer = Guard.Against.Null(value);
-    }
-
-    /// <summary>
-    /// Gets a property value from the shell settings and converts it to the specified type.
-    /// </summary>
-    /// <typeparam name="T">The target type to convert the property value to.</typeparam>
+    /// <typeparam name="T">The target type to convert the value to.</typeparam>
     /// <param name="settings">The shell settings.</param>
-    /// <param name="key">The property key.</param>
-    /// <param name="serializer">Optional custom serializer. If null, uses the default serializer.</param>
-    /// <returns>The property value converted to the specified type, or default(T) if the property doesn't exist or conversion fails.</returns>
-    public static T? GetProperty<T>(this ShellSettings settings, string key, IShellPropertySerializer? serializer = null)
+    /// <param name="key">The configuration key.</param>
+    /// <returns>The configuration value converted to the specified type, or default(T) if not found.</returns>
+    public static T? GetConfiguration<T>(this ShellSettings settings, string key)
     {
         Guard.Against.Null(settings);
         Guard.Against.NullOrWhiteSpace(key);
 
-        if (!settings.Properties.TryGetValue(key, out var value))
+        if (!settings.ConfigurationData.TryGetValue(key, out var value))
             return default;
 
-        var actualSerializer = serializer ?? DefaultSerializer;
-        return actualSerializer.Deserialize<T>(value);
+        if (value is T typedValue)
+            return typedValue;
+
+        // Try to convert string values
+        if (value is string stringValue && typeof(T) != typeof(string))
+        {
+            try
+            {
+                return (T)Convert.ChangeType(stringValue, typeof(T));
+            }
+            catch
+            {
+                return default;
+            }
+        }
+
+        return default;
     }
 
     /// <summary>
-    /// Gets a property value from the shell settings and converts it to the specified type.
+    /// Gets a configuration value from the shell settings as a string.
     /// </summary>
     /// <param name="settings">The shell settings.</param>
-    /// <param name="key">The property key.</param>
-    /// <param name="targetType">The target type to convert the property value to.</param>
-    /// <param name="serializer">Optional custom serializer. If null, uses the default serializer.</param>
-    /// <returns>The property value converted to the specified type, or null if the property doesn't exist or conversion fails.</returns>
-    public static object? GetProperty(this ShellSettings settings, string key, Type targetType, IShellPropertySerializer? serializer = null)
+    /// <param name="key">The configuration key.</param>
+    /// <returns>The configuration value as string, or null if not found.</returns>
+    public static string? GetConfiguration(this ShellSettings settings, string key)
     {
         Guard.Against.Null(settings);
         Guard.Against.NullOrWhiteSpace(key);
-        Guard.Against.Null(targetType);
 
-        if (!settings.Properties.TryGetValue(key, out var value))
+        if (!settings.ConfigurationData.TryGetValue(key, out var value))
             return null;
 
-        var actualSerializer = serializer ?? DefaultSerializer;
-        return actualSerializer.Deserialize(value, targetType);
+        return value?.ToString();
     }
 
     /// <summary>
-    /// Sets a property value in the shell settings, serializing it if necessary.
+    /// Tries to get a configuration value from the shell settings.
     /// </summary>
-    /// <typeparam name="T">The type of the property value.</typeparam>
+    /// <typeparam name="T">The target type to convert the value to.</typeparam>
     /// <param name="settings">The shell settings.</param>
-    /// <param name="key">The property key.</param>
-    /// <param name="value">The property value.</param>
-    /// <param name="serializer">Optional custom serializer. If null, uses the default serializer.</param>
-    public static void SetProperty<T>(this ShellSettings settings, string key, T value, IShellPropertySerializer? serializer = null)
+    /// <param name="key">The configuration key.</param>
+    /// <param name="value">When this method returns, contains the value if found; otherwise, default(T).</param>
+    /// <returns>true if the configuration was found; otherwise, false.</returns>
+    public static bool TryGetConfiguration<T>(this ShellSettings settings, string key, out T? value)
     {
         Guard.Against.Null(settings);
         Guard.Against.NullOrWhiteSpace(key);
 
-        var actualSerializer = serializer ?? DefaultSerializer;
-        settings.Properties[key] = actualSerializer.Serialize(value) ?? value!;
-    }
-
-    /// <summary>
-    /// Tries to get a property value from the shell settings and converts it to the specified type.
-    /// </summary>
-    /// <typeparam name="T">The target type to convert the property value to.</typeparam>
-    /// <param name="settings">The shell settings.</param>
-    /// <param name="key">The property key.</param>
-    /// <param name="value">When this method returns, contains the property value if found and converted successfully; otherwise, default(T).</param>
-    /// <param name="serializer">Optional custom serializer. If null, uses the default serializer.</param>
-    /// <returns>true if the property was found and converted successfully; otherwise, false.</returns>
-    public static bool TryGetProperty<T>(this ShellSettings settings, string key, out T? value, IShellPropertySerializer? serializer = null)
-    {
-        Guard.Against.Null(settings);
-        Guard.Against.NullOrWhiteSpace(key);
-
-        if (!settings.Properties.TryGetValue(key, out var rawValue))
+        if (!settings.ConfigurationData.TryGetValue(key, out var rawValue))
         {
             value = default;
             return false;
         }
 
-        var actualSerializer = serializer ?? DefaultSerializer;
-        value = actualSerializer.Deserialize<T>(rawValue);
-        return value != null || rawValue == null;
+        if (rawValue is T typedValue)
+        {
+            value = typedValue;
+            return true;
+        }
+
+        // Try to convert string values
+        if (rawValue is string stringValue && typeof(T) != typeof(string))
+        {
+            try
+            {
+                value = (T)Convert.ChangeType(stringValue, typeof(T));
+                return true;
+            }
+            catch
+            {
+                value = default;
+                return false;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Sets a configuration value in the shell settings.
+    /// </summary>
+    /// <param name="settings">The shell settings.</param>
+    /// <param name="key">The configuration key.</param>
+    /// <param name="value">The configuration value.</param>
+    public static void SetConfiguration(this ShellSettings settings, string key, object value)
+    {
+        Guard.Against.Null(settings);
+        Guard.Against.NullOrWhiteSpace(key);
+        Guard.Against.Null(value);
+
+        settings.ConfigurationData[key] = value;
     }
 }

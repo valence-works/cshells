@@ -160,29 +160,26 @@ internal static class ConfigurationHelper
     }
 
     /// <summary>
-    /// Loads properties from a configuration section into a dictionary.
+    /// Loads shell configuration from a configuration section into ConfigurationData.
+    /// Complex objects are flattened using colon-separated keys for IConfiguration compatibility.
     /// </summary>
-    public static void LoadPropertiesFromConfiguration(IConfigurationSection propertiesSection, IDictionary<string, object> targetProperties)
+    public static void LoadConfigurationFromSection(IConfigurationSection configSection, IDictionary<string, object> targetConfigurationData)
     {
-        foreach (var propertySection in propertiesSection.GetChildren())
+        foreach (var section in configSection.GetChildren())
         {
-            var key = propertySection.Key;
+            var key = section.Key;
 
             // Check if this is a complex object or a simple value
-            if (propertySection.GetChildren().Any())
+            if (section.GetChildren().Any())
             {
-                // Complex object - serialize to JSON and store as JsonElement
-                var json = SerializeConfigurationSection(propertySection);
-                var jsonElement = JsonSerializer.Deserialize<JsonElement>(json);
-                targetProperties[key] = jsonElement;
+                // Complex object - flatten to key-value pairs for IConfiguration
+                FlattenConfigurationSection(section, key, targetConfigurationData);
             }
             else
             {
                 // Simple value
-                var value = propertySection.Value;
-                var converted = ConvertToJsonElement(value);
-                if (converted != null)
-                    targetProperties[key] = converted;
+                if (section.Value != null)
+                    targetConfigurationData[key] = section.Value;
             }
         }
     }
@@ -210,6 +207,32 @@ internal static class ConfigurationHelper
                 continue;
 
             FlattenSettings(feature.Settings, feature.Name, configurationData);
+        }
+    }
+
+    /// <summary>
+    /// Populates shell configuration from a dictionary into ConfigurationData.
+    /// Complex objects are flattened using colon-separated keys for IConfiguration compatibility.
+    /// </summary>
+    public static void PopulateShellConfiguration(Dictionary<string, object?> configuration, IDictionary<string, object> configurationData)
+    {
+        foreach (var (key, value) in configuration)
+        {
+            if (value == null)
+                continue;
+
+            if (value is JsonElement jsonElement)
+            {
+                FlattenJsonElement(jsonElement, key, configurationData);
+            }
+            else if (value is Dictionary<string, object?> nested)
+            {
+                PopulateShellConfiguration(nested, configurationData);
+            }
+            else
+            {
+                configurationData[key] = value;
+            }
         }
     }
 

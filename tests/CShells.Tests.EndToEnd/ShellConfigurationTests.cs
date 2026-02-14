@@ -27,8 +27,8 @@ public class ShellConfigurationTests(WorkbenchApplicationFactory factory)
         Assert.Contains(shells, s => s.Id.Name == "Contoso");
     }
 
-    [Fact(DisplayName = "Shell properties contain path mappings")]
-    public void ShellProperties_ContainPathMappings()
+    [Fact(DisplayName = "Shell configuration contains WebRouting path mappings")]
+    public void ShellConfiguration_ContainsPathMappings()
     {
         // Arrange
         using var scope = factory.Services.CreateScope();
@@ -39,32 +39,18 @@ public class ShellConfigurationTests(WorkbenchApplicationFactory factory)
         var acmeShell = shellHost.AllShells.First(s => s.Id.Name == "Acme");
         var contosoShell = shellHost.AllShells.First(s => s.Id.Name == "Contoso");
 
-        // Assert
-        Assert.True(defaultShell.Settings.Properties.ContainsKey("WebRouting"));
-        Assert.True(acmeShell.Settings.Properties.ContainsKey("WebRouting"));
-        Assert.True(contosoShell.Settings.Properties.ContainsKey("WebRouting"));
+        // Assert - Configuration is now flattened to ConfigurationData
+        Assert.True(defaultShell.Settings.ConfigurationData.ContainsKey("WebRouting:Path"));
+        Assert.True(acmeShell.Settings.ConfigurationData.ContainsKey("WebRouting:Path"));
+        Assert.True(contosoShell.Settings.ConfigurationData.ContainsKey("WebRouting:Path"));
 
-        // Properties are JsonElement objects, deserialize to WebRoutingShellOptions
-        var defaultWebRouting = GetWebRoutingOptions(defaultShell.Settings.Properties["WebRouting"]);
-        var acmeWebRouting = GetWebRoutingOptions(acmeShell.Settings.Properties["WebRouting"]);
-        var contosoWebRouting = GetWebRoutingOptions(contosoShell.Settings.Properties["WebRouting"]);
+        var defaultPath = defaultShell.Settings.GetConfiguration("WebRouting:Path");
+        var acmePath = acmeShell.Settings.GetConfiguration("WebRouting:Path");
+        var contosoPath = contosoShell.Settings.GetConfiguration("WebRouting:Path");
 
-        Assert.NotNull(defaultWebRouting);
-        Assert.NotNull(acmeWebRouting);
-        Assert.NotNull(contosoWebRouting);
-
-        // Configuration system may convert empty strings to null in nested objects
-        Assert.True(string.IsNullOrEmpty(defaultWebRouting.Path), $"Expected empty or null path for Default shell, got: '{defaultWebRouting.Path}'");
-        Assert.Equal("acme", acmeWebRouting.Path);
-        Assert.Equal("contoso", contosoWebRouting.Path);
-    }
-
-    private static WebRoutingShellOptions? GetWebRoutingOptions(object value)
-    {
-        if (value is System.Text.Json.JsonElement jsonElement)
-        {
-            return System.Text.Json.JsonSerializer.Deserialize<WebRoutingShellOptions>(jsonElement.GetRawText());
-        }
-        return null;
+        // Configuration system may convert empty strings to null or empty
+        Assert.True(string.IsNullOrEmpty(defaultPath), $"Expected empty or null path for Default shell, got: '{defaultPath}'");
+        Assert.Equal("acme", acmePath);
+        Assert.Equal("contoso", contosoPath);
     }
 }

@@ -5,7 +5,7 @@
     "StripePayment",
     "EmailNotification"
   ],
-  "properties": {
+  "configuration": {
     "WebRouting": {
       "Path": ""
     }

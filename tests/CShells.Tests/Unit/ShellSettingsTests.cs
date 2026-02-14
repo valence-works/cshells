@@ -41,8 +41,8 @@ public class ShellSettingsTests
         // Assert
         Assert.Equal(shellId, settings.Id);
         Assert.Equal(features, settings.EnabledFeatures);
-        Assert.NotNull(settings.Properties);
-        Assert.Empty(settings.Properties);
+        Assert.NotNull(settings.ConfigurationData);
+        Assert.Empty(settings.ConfigurationData);
     }
 
     [Fact(DisplayName = "Constructor with null features throws ArgumentNullException")]
@@ -94,7 +94,7 @@ public class ShellSettingsTests
     {
         Assert.NotNull(settings.EnabledFeatures);
         Assert.Empty(settings.EnabledFeatures);
-        Assert.NotNull(settings.Properties);
-        Assert.Empty(settings.Properties);
+        Assert.NotNull(settings.ConfigurationData);
+        Assert.Empty(settings.ConfigurationData);
     }
 }

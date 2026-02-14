@@ -7,7 +7,7 @@
     { "Name": "FraudDetection", "Threshold": 0.6, "MaxTransactionAmount": 25000 },
     "Reporting"
   ],
-  "properties": {
+  "configuration": {
     "WebRouting": {
       "Path": "contoso"
     }

@@ -31,11 +31,8 @@ public class ShellSettingsFactoryTests
         // Assert
         Assert.Equal("TestShell", settings.Id.Name);
         Assert.Equal(["Feature1", "Feature2"], settings.EnabledFeatures);
-        Assert.Single(settings.Properties);
-
-        // Properties are stored as JsonElement now
-        var propertyValue = Assert.IsType<JsonElement>(settings.Properties["Key1"]);
-        Assert.Equal("Value1", propertyValue.GetString());
+        Assert.Single(settings.ConfigurationData);
+        Assert.Equal("Value1", settings.ConfigurationData["Key1"]);
     }
 
     [Fact(DisplayName = "Create with empty config returns ShellSettings with empty collections")]
@@ -50,7 +47,7 @@ public class ShellSettingsFactoryTests
         // Assert
         Assert.Equal("EmptyShell", settings.Id.Name);
         Assert.Empty(settings.EnabledFeatures);
-        Assert.Empty(settings.Properties);
+        Assert.Empty(settings.ConfigurationData);
     }
 
     [Fact(DisplayName = "CreateAll with valid options returns ShellSettings collection")]
@@ -133,7 +130,7 @@ public class ShellSettingsFactoryTests
                     Settings = new() { ["Threshold"] = 0.85, ["MaxAmount"] = 5000 }
                 }
             ],
-            Properties = new() { ["Prop1"] = "PropValue1" }
+            Configuration = new() { ["Prop1"] = "PropValue1" }
         };
 
         // Act
@@ -141,8 +138,8 @@ public class ShellSettingsFactoryTests
 
         // Assert
         Assert.Equal("TestShell", settings.Id.Name);
-        Assert.Single(settings.Properties);
-        Assert.Equal(2, settings.ConfigurationData.Count);
+        Assert.Equal(3, settings.ConfigurationData.Count); // Prop1 + 2 feature settings
+        Assert.Equal("PropValue1", settings.ConfigurationData["Prop1"]);
         Assert.Equal(0.85, settings.ConfigurationData["FraudDetection:Threshold"]);
         Assert.Equal(5000, settings.ConfigurationData["FraudDetection:MaxAmount"]);
     }
@@ -211,7 +208,7 @@ public class ShellSettingsFactoryTests
     {
         Name = "TestShell",
         Features = [FeatureEntry.FromName("Feature1"), FeatureEntry.FromName("Feature2")],
-        Properties = new()
+        Configuration = new()
         {
             ["Key1"] = "Value1"
         }

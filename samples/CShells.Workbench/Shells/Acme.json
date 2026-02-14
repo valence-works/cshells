@@ -6,7 +6,7 @@
     "SmsNotification",
     { "Name": "FraudDetection", "Threshold": 0.85, "MaxTransactionAmount": 5000 }
   ],
-  "properties": {
+  "configuration": {
     "WebRouting": {
       "Path": "acme",
       "HeaderName": "X-Tenant-Id"

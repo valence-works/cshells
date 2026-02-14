@@ -92,32 +92,10 @@ public class ShellBuilder
     }
 
     /// <summary>
-    /// Adds a property to the shell settings.
-    /// </summary>
-    public ShellBuilder WithProperty(string key, object value)
-    {
-        Guard.Against.Null(key);
-        Guard.Against.Null(value);
-        _settings.Properties[key] = value;
-        return this;
-    }
-
-    /// <summary>
-    /// Adds multiple properties to the shell settings.
-    /// </summary>
-    public ShellBuilder WithProperties(IDictionary<string, object> properties)
-    {
-        Guard.Against.Null(properties);
-        foreach (var (key, value) in properties)
-            _settings.Properties[key] = value;
-        return this;
-    }
-
-    /// <summary>
-    /// Adds a configuration data entry to the shell settings.
+    /// Adds a configuration entry to the shell settings.
     /// Configuration data is used to populate the shell-scoped IConfiguration.
     /// </summary>
-    public ShellBuilder WithConfigurationData(string key, object value)
+    public ShellBuilder WithConfiguration(string key, object value)
     {
         Guard.Against.Null(key);
         Guard.Against.Null(value);
@@ -126,20 +104,20 @@ public class ShellBuilder
     }
 
     /// <summary>
-    /// Adds multiple configuration data entries to the shell settings.
+    /// Adds multiple configuration entries to the shell settings.
     /// Configuration data is used to populate the shell-scoped IConfiguration.
     /// </summary>
-    public ShellBuilder WithConfigurationData(IDictionary<string, object> configurationData)
+    public ShellBuilder WithConfiguration(IDictionary<string, object> configuration)
     {
-        Guard.Against.Null(configurationData);
-        foreach (var (key, value) in configurationData)
+        Guard.Against.Null(configuration);
+        foreach (var (key, value) in configuration)
             _settings.ConfigurationData[key] = value;
         return this;
     }
 
     /// <summary>
     /// Loads configuration from an <see cref="IConfigurationSection"/> and merges it with existing settings.
-    /// Features are merged (combined), while Properties and ConfigurationData from configuration take precedence.
+    /// Features are merged (combined), while Configuration from the section takes precedence.
     /// </summary>
     /// <param name="section">The configuration section representing a shell.</param>
     /// <returns>The builder for method chaining.</returns>
@@ -162,16 +140,16 @@ public class ShellBuilder
             ConfigurationHelper.PopulateFeatureSettings(features, _settings.ConfigurationData);
         }
 
-        // Load properties from configuration
-        var propertiesSection = section.GetSection("Properties");
-        ConfigurationHelper.LoadPropertiesFromConfiguration(propertiesSection, _settings.Properties);
+        // Load shell-level configuration
+        var configurationSection = section.GetSection("Configuration");
+        ConfigurationHelper.LoadConfigurationFromSection(configurationSection, _settings.ConfigurationData);
 
         return this;
     }
 
     /// <summary>
     /// Loads configuration from a <see cref="ShellConfig"/> and merges it with existing settings.
-    /// Features are merged (combined), while Properties and ConfigurationData from configuration take precedence.
+    /// Features are merged (combined), while Configuration takes precedence.
     /// </summary>
     /// <param name="config">The shell configuration.</param>
     /// <returns>The builder for method chaining.</returns>
@@ -192,13 +170,8 @@ public class ShellBuilder
         // Apply feature settings
         ConfigurationHelper.PopulateFeatureSettings(config.Features, _settings.ConfigurationData);
 
-        // Convert and merge properties
-        foreach (var property in config.Properties)
-        {
-            var converted = ConfigurationHelper.ConvertToJsonElement(property.Value);
-            if (converted != null)
-                _settings.Properties[property.Key] = converted;
-        }
+        // Apply shell-level configuration
+        ConfigurationHelper.PopulateShellConfiguration(config.Configuration, _settings.ConfigurationData);
 
         return this;
     }

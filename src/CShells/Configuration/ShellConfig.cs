@@ -29,9 +29,8 @@ public class ShellConfig
     public List<FeatureEntry> Features { get; set; } = [];
 
     /// <summary>
-    /// Gets or sets arbitrary properties associated with this shell.
-    /// Note: Configuration binding creates these as objects. They will be converted
-    /// to JsonElement during ShellSettings creation for proper serialization support.
+    /// Gets or sets shell-specific configuration.
+    /// These settings are available via IConfiguration in the shell's service provider.
     /// </summary>
-    public Dictionary<string, object?> Properties { get; set; } = new();
+    public Dictionary<string, object?> Configuration { get; set; } = new();
 }

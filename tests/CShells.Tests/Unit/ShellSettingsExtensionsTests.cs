@@ -1,351 +1,227 @@
-using CShells.Serialization;
-using System.Text.Json;
-
 namespace CShells.Tests.Unit;
 
 public class ShellSettingsExtensionsTests
 {
-    [Fact(DisplayName = "GetProperty with string value returns string")]
-    public void GetProperty_WithStringValue_ReturnsString()
+    [Fact(DisplayName = "GetConfiguration with string value returns string")]
+    public void GetConfiguration_WithStringValue_ReturnsString()
     {
         // Arrange
         var settings = new ShellSettings
         {
-            Properties = new Dictionary<string, object>
+            ConfigurationData = new Dictionary<string, object>
             {
                 ["key"] = "value"
             }
         };
 
         // Act
-        var result = settings.GetProperty<string>("key");
+        var result = settings.GetConfiguration("key");
 
         // Assert
         Assert.Equal("value", result);
     }
 
-    [Fact(DisplayName = "GetProperty with JsonElement returns deserialized value")]
-    public void GetProperty_WithJsonElement_ReturnsDeserializedValue()
+    [Fact(DisplayName = "GetConfiguration generic with string value returns typed value")]
+    public void GetConfiguration_Generic_WithStringValue_ReturnsTypedValue()
     {
         // Arrange
         var settings = new ShellSettings
         {
-            Properties = new Dictionary<string, object>
+            ConfigurationData = new Dictionary<string, object>
             {
-                ["key"] = JsonDocument.Parse("\"value\"").RootElement
+                ["count"] = "42"
             }
         };
 
         // Act
-        var result = settings.GetProperty<string>("key");
+        var result = settings.GetConfiguration<int>("count");
 
         // Assert
-        Assert.Equal("value", result);
+        Assert.Equal(42, result);
     }
 
-    [Fact(DisplayName = "GetProperty with complex object returns deserialized object")]
-    public void GetProperty_WithComplexObject_ReturnsDeserializedObject()
-    {
-        // Arrange
-        var json = """{"name": "Test", "value": 42}""";
-        var settings = new ShellSettings
-        {
-            Properties = new Dictionary<string, object>
-            {
-                ["key"] = JsonDocument.Parse(json).RootElement
-            }
-        };
-
-        // Act
-        var result = settings.GetProperty<TestData>("key");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal("Test", result.Name);
-        Assert.Equal(42, result.Value);
-    }
-
-    [Fact(DisplayName = "GetProperty with non-existent key returns default")]
-    public void GetProperty_WithNonExistentKey_ReturnsDefault()
+    [Fact(DisplayName = "GetConfiguration with non-existent key returns null")]
+    public void GetConfiguration_WithNonExistentKey_ReturnsNull()
     {
         // Arrange
         var settings = new ShellSettings();
 
         // Act
-        var result = settings.GetProperty<string>("nonexistent");
+        var result = settings.GetConfiguration("nonexistent");
 
         // Assert
         Assert.Null(result);
     }
 
-    [Fact(DisplayName = "GetProperty with null settings throws ArgumentNullException")]
-    public void GetProperty_WithNullSettings_ThrowsArgumentNullException()
+    [Fact(DisplayName = "GetConfiguration generic with non-existent key returns default")]
+    public void GetConfiguration_Generic_WithNonExistentKey_ReturnsDefault()
+    {
+        // Arrange
+        var settings = new ShellSettings();
+
+        // Act
+        var result = settings.GetConfiguration<int>("nonexistent");
+
+        // Assert
+        Assert.Equal(0, result);
+    }
+
+    [Fact(DisplayName = "GetConfiguration with null settings throws ArgumentNullException")]
+    public void GetConfiguration_WithNullSettings_ThrowsArgumentNullException()
     {
         // Arrange
         ShellSettings? settings = null;
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => settings!.GetProperty<string>("key"));
+        var ex = Assert.Throws<ArgumentNullException>(() => settings!.GetConfiguration("key"));
         Assert.Equal("settings", ex.ParamName);
     }
 
-    [Fact(DisplayName = "GetProperty with null key throws ArgumentException")]
-    public void GetProperty_WithNullKey_ThrowsArgumentException()
+    [Fact(DisplayName = "GetConfiguration with null key throws ArgumentException")]
+    public void GetConfiguration_WithNullKey_ThrowsArgumentException()
     {
         // Arrange
         var settings = new ShellSettings();
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => settings.GetProperty<string>(null!));
+        Assert.Throws<ArgumentNullException>(() => settings.GetConfiguration(null!));
     }
 
-    [Fact(DisplayName = "GetProperty with whitespace key throws ArgumentException")]
-    public void GetProperty_WithWhitespaceKey_ThrowsArgumentException()
+    [Fact(DisplayName = "GetConfiguration with whitespace key throws ArgumentException")]
+    public void GetConfiguration_WithWhitespaceKey_ThrowsArgumentException()
     {
         // Arrange
         var settings = new ShellSettings();
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => settings.GetProperty<string>("   "));
+        Assert.Throws<ArgumentException>(() => settings.GetConfiguration("   "));
     }
 
-    [Fact(DisplayName = "GetProperty non-generic with Type parameter returns object")]
-    public void GetProperty_NonGeneric_ReturnsObject()
-    {
-        // Arrange
-        var json = """{"name": "Test", "value": 42}""";
-        var settings = new ShellSettings
-        {
-            Properties = new Dictionary<string, object>
-            {
-                ["key"] = JsonDocument.Parse(json).RootElement
-            }
-        };
-
-        // Act
-        var result = settings.GetProperty("key", typeof(TestData));
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.IsType<TestData>(result);
-        var data = (TestData)result;
-        Assert.Equal("Test", data.Name);
-        Assert.Equal(42, data.Value);
-    }
-
-    [Fact(DisplayName = "GetProperty non-generic with null Type throws ArgumentNullException")]
-    public void GetProperty_NonGeneric_WithNullType_ThrowsArgumentNullException()
-    {
-        // Arrange
-        var settings = new ShellSettings();
-
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => settings.GetProperty("key", null!));
-        Assert.Equal("targetType", ex.ParamName);
-    }
-
-    [Fact(DisplayName = "SetProperty stores value in properties dictionary")]
-    public void SetProperty_StoresValueInDictionary()
+    [Fact(DisplayName = "SetConfiguration stores value in ConfigurationData")]
+    public void SetConfiguration_StoresValueInConfigurationData()
     {
         // Arrange
         var settings = new ShellSettings();
 
         // Act
-        settings.SetProperty("key", "value");
+        settings.SetConfiguration("key", "value");
 
         // Assert
-        Assert.True(settings.Properties.ContainsKey("key"));
-        Assert.Equal("value", settings.Properties["key"]);
+        Assert.True(settings.ConfigurationData.ContainsKey("key"));
+        Assert.Equal("value", settings.ConfigurationData["key"]);
     }
 
-    [Fact(DisplayName = "SetProperty with complex object serializes value")]
-    public void SetProperty_WithComplexObject_SerializesValue()
-    {
-        // Arrange
-        var settings = new ShellSettings();
-        var data = new TestData { Name = "Test", Value = 42 };
-
-        // Act
-        settings.SetProperty("key", data);
-
-        // Assert
-        Assert.True(settings.Properties.ContainsKey("key"));
-        Assert.IsType<JsonElement>(settings.Properties["key"]);
-    }
-
-    [Fact(DisplayName = "SetProperty with null settings throws ArgumentNullException")]
-    public void SetProperty_WithNullSettings_ThrowsArgumentNullException()
+    [Fact(DisplayName = "SetConfiguration with null settings throws ArgumentNullException")]
+    public void SetConfiguration_WithNullSettings_ThrowsArgumentNullException()
     {
         // Arrange
         ShellSettings? settings = null;
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => settings!.SetProperty("key", "value"));
+        var ex = Assert.Throws<ArgumentNullException>(() => settings!.SetConfiguration("key", "value"));
         Assert.Equal("settings", ex.ParamName);
     }
 
-    [Fact(DisplayName = "SetProperty with null key throws ArgumentException")]
-    public void SetProperty_WithNullKey_ThrowsArgumentException()
+    [Fact(DisplayName = "SetConfiguration with null key throws ArgumentException")]
+    public void SetConfiguration_WithNullKey_ThrowsArgumentException()
     {
         // Arrange
         var settings = new ShellSettings();
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => settings.SetProperty<string>(null!, "value"));
+        Assert.Throws<ArgumentNullException>(() => settings.SetConfiguration(null!, "value"));
     }
 
-    [Fact(DisplayName = "TryGetProperty with existing key returns true and value")]
-    public void TryGetProperty_WithExistingKey_ReturnsTrueAndValue()
+    [Fact(DisplayName = "SetConfiguration with null value throws ArgumentNullException")]
+    public void SetConfiguration_WithNullValue_ThrowsArgumentNullException()
+    {
+        // Arrange
+        var settings = new ShellSettings();
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => settings.SetConfiguration("key", null!));
+    }
+
+    [Fact(DisplayName = "TryGetConfiguration with existing key returns true and value")]
+    public void TryGetConfiguration_WithExistingKey_ReturnsTrueAndValue()
     {
         // Arrange
         var settings = new ShellSettings
         {
-            Properties = new Dictionary<string, object>
+            ConfigurationData = new Dictionary<string, object>
             {
                 ["key"] = "value"
             }
         };
 
         // Act
-        var result = settings.TryGetProperty<string>("key", out var value);
+        var result = settings.TryGetConfiguration<string>("key", out var value);
 
         // Assert
         Assert.True(result);
         Assert.Equal("value", value);
     }
 
-    [Fact(DisplayName = "TryGetProperty with non-existent key returns false")]
-    public void TryGetProperty_WithNonExistentKey_ReturnsFalse()
+    [Fact(DisplayName = "TryGetConfiguration with non-existent key returns false")]
+    public void TryGetConfiguration_WithNonExistentKey_ReturnsFalse()
     {
         // Arrange
         var settings = new ShellSettings();
 
         // Act
-        var result = settings.TryGetProperty<string>("nonexistent", out var value);
+        var result = settings.TryGetConfiguration<string>("nonexistent", out var value);
 
         // Assert
         Assert.False(result);
         Assert.Null(value);
     }
 
-    [Fact(DisplayName = "TryGetProperty with null settings throws ArgumentNullException")]
-    public void TryGetProperty_WithNullSettings_ThrowsArgumentNullException()
+    [Fact(DisplayName = "TryGetConfiguration with null settings throws ArgumentNullException")]
+    public void TryGetConfiguration_WithNullSettings_ThrowsArgumentNullException()
     {
         // Arrange
         ShellSettings? settings = null;
 
         // Act & Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => settings!.TryGetProperty<string>("key", out _));
+        var ex = Assert.Throws<ArgumentNullException>(() => settings!.TryGetConfiguration<string>("key", out _));
         Assert.Equal("settings", ex.ParamName);
     }
 
-    [Fact(DisplayName = "GetProperty with custom serializer uses that serializer")]
-    public void GetProperty_WithCustomSerializer_UsesCustomSerializer()
+    [Fact(DisplayName = "GetConfiguration with int value returns int")]
+    public void GetConfiguration_WithIntValue_ReturnsInt()
     {
         // Arrange
         var settings = new ShellSettings
         {
-            Properties = new Dictionary<string, object>
+            ConfigurationData = new Dictionary<string, object>
             {
-                ["key"] = "custom_value"
+                ["count"] = 42
             }
         };
-        var customSerializer = new TestCustomSerializer();
 
         // Act
-        var result = settings.GetProperty<string>("key", customSerializer);
+        var result = settings.GetConfiguration<int>("count");
 
         // Assert
-        Assert.Equal("CUSTOM_VALUE", result); // Our test serializer uppercases
+        Assert.Equal(42, result);
     }
 
-    [Fact(DisplayName = "SetProperty with custom serializer uses that serializer")]
-    public void SetProperty_WithCustomSerializer_UsesCustomSerializer()
+    [Fact(DisplayName = "GetConfiguration with colon-separated key works")]
+    public void GetConfiguration_WithColonSeparatedKey_Works()
     {
         // Arrange
-        var settings = new ShellSettings();
-        var customSerializer = new TestCustomSerializer();
+        var settings = new ShellSettings
+        {
+            ConfigurationData = new Dictionary<string, object>
+            {
+                ["WebRouting:Path"] = "acme"
+            }
+        };
 
         // Act
-        settings.SetProperty("key", "value", customSerializer);
+        var result = settings.GetConfiguration("WebRouting:Path");
 
         // Assert
-        Assert.Equal("VALUE", settings.Properties["key"]); // Our test serializer uppercases
-    }
-
-    [Fact(DisplayName = "DefaultSerializer can be set and retrieved")]
-    public void DefaultSerializer_CanBeSetAndRetrieved()
-    {
-        // Arrange
-        var originalSerializer = ShellSettingsExtensions.DefaultSerializer;
-        var newSerializer = new SystemTextJsonShellPropertySerializer();
-
-        try
-        {
-            // Act
-            ShellSettingsExtensions.DefaultSerializer = newSerializer;
-
-            // Assert
-            Assert.Same(newSerializer, ShellSettingsExtensions.DefaultSerializer);
-        }
-        finally
-        {
-            // Cleanup
-            ShellSettingsExtensions.DefaultSerializer = originalSerializer;
-        }
-    }
-
-    [Fact(DisplayName = "DefaultSerializer with null value throws ArgumentNullException")]
-    public void DefaultSerializer_WithNullValue_ThrowsArgumentNullException()
-    {
-        // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => ShellSettingsExtensions.DefaultSerializer = null!);
-    }
-
-    [Fact(DisplayName = "Round-trip set and get preserves data")]
-    public void RoundTrip_SetAndGet_PreservesData()
-    {
-        // Arrange
-        var settings = new ShellSettings();
-        var original = new TestData { Name = "Test", Value = 123 };
-
-        // Act
-        settings.SetProperty("key", original);
-        var result = settings.GetProperty<TestData>("key");
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal(original.Name, result.Name);
-        Assert.Equal(original.Value, result.Value);
-    }
-
-    private class TestData
-    {
-        public string? Name { get; set; }
-        public int Value { get; set; }
-    }
-
-    private class TestCustomSerializer : IShellPropertySerializer
-    {
-        public T? Deserialize<T>(object? value)
-        {
-            if (value is string str)
-                return (T)(object)str.ToUpperInvariant();
-            return default;
-        }
-
-        public object? Deserialize(object? value, Type targetType)
-        {
-            if (value is string str)
-                return str.ToUpperInvariant();
-            return null;
-        }
-
-        public object? Serialize(object? value)
-        {
-            if (value is string str)
-                return str.ToUpperInvariant();
-            return value;
-        }
+        Assert.Equal("acme", result);
     }
 }

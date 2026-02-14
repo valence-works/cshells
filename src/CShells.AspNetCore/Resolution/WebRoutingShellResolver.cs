@@ -42,7 +42,7 @@ public class WebRoutingShellResolver(IShellSettingsCache cache, WebRoutingShellR
         var slashIndex = pathValue.IndexOf('/');
         var firstSegment = slashIndex >= 0 ? pathValue[..slashIndex].ToString() : pathValue.ToString();
 
-        return FindMatchingShell(firstSegment, o => o.Path);
+        return FindMatchingShell(firstSegment, "Path");
     }
 
     private ShellId? TryResolveByHost(ShellResolutionContext context)
@@ -51,7 +51,7 @@ public class WebRoutingShellResolver(IShellSettingsCache cache, WebRoutingShellR
             return null;
 
         var host = context.Get<string>(ShellResolutionContextKeys.Host);
-        return string.IsNullOrEmpty(host) ? null : FindMatchingShell(host, o => o.Host);
+        return string.IsNullOrEmpty(host) ? null : FindMatchingShell(host, "Host");
     }
 
     private ShellId? TryResolveByHeader(ShellResolutionContext context)
@@ -60,7 +60,7 @@ public class WebRoutingShellResolver(IShellSettingsCache cache, WebRoutingShellR
             return null;
 
         var headerValue = context.Get<string>($"Header:{_options.HeaderName}");
-        return string.IsNullOrEmpty(headerValue) ? null : FindMatchingShellByIdentifier(headerValue, _options.HeaderName, o => o.HeaderName);
+        return string.IsNullOrEmpty(headerValue) ? null : FindMatchingShellByIdentifier(headerValue, _options.HeaderName, "HeaderName");
     }
 
     private ShellId? TryResolveByClaim(ShellResolutionContext context)
@@ -69,15 +69,14 @@ public class WebRoutingShellResolver(IShellSettingsCache cache, WebRoutingShellR
             return null;
 
         var claimValue = context.Get<string>($"Claim:{_options.ClaimKey}");
-        return string.IsNullOrEmpty(claimValue) ? null : FindMatchingShellByIdentifier(claimValue, _options.ClaimKey, o => o.ClaimKey);
+        return string.IsNullOrEmpty(claimValue) ? null : FindMatchingShellByIdentifier(claimValue, _options.ClaimKey, "ClaimKey");
     }
 
-    private ShellId? FindMatchingShell(string valueToMatch, Func<WebRoutingShellOptions, string?> getRouteValue)
+    private ShellId? FindMatchingShell(string valueToMatch, string configKey)
     {
         foreach (var shell in _cache.GetAll())
         {
-            var routingOptions = shell.GetProperty<WebRoutingShellOptions>(ShellPropertyKeys.WebRouting);
-            var routeValue = routingOptions != null ? getRouteValue(routingOptions) : null;
+            var routeValue = shell.GetConfiguration($"WebRouting:{configKey}");
             
             // If the path starts with a slash, throw a configuration exception:
             if (routeValue?.StartsWith('/') == true)
@@ -89,17 +88,15 @@ public class WebRoutingShellResolver(IShellSettingsCache cache, WebRoutingShellR
         return null;
     }
 
-    private ShellId? FindMatchingShellByIdentifier(string identifierValue, string configuredKey, Func<WebRoutingShellOptions, string?> getConfigKey)
+    private ShellId? FindMatchingShellByIdentifier(string identifierValue, string configuredKey, string configKey)
     {
         foreach (var shell in _cache.GetAll())
         {
-            var routingOptions = shell.GetProperty<WebRoutingShellOptions>(ShellPropertyKeys.WebRouting);
-            if (routingOptions == null)
+            var shellConfigKey = shell.GetConfiguration($"WebRouting:{configKey}");
+            if (string.IsNullOrEmpty(shellConfigKey))
                 continue;
 
-            var configKey = getConfigKey(routingOptions);
-            if (!string.IsNullOrEmpty(configKey) &&
-                configKey.Equals(configuredKey, StringComparison.OrdinalIgnoreCase) &&
+            if (shellConfigKey.Equals(configuredKey, StringComparison.OrdinalIgnoreCase) &&
                 identifierValue.Equals(shell.Id.Name, StringComparison.OrdinalIgnoreCase))
             {
                 return shell.Id;

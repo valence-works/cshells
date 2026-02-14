@@ -21,15 +21,10 @@ public static class ShellSettingsFactory
         var featureNames = ConfigurationHelper.ExtractFeatureNames(config.Features);
         var settings = new ShellSettings(shellId, featureNames);
 
-        // Convert property values to JsonElement for consistent serialization
-        foreach (var property in config.Properties)
-        {
-            var converted = ConfigurationHelper.ConvertToJsonElement(property.Value);
-            if (converted != null)
-                settings.Properties[property.Key] = converted;
-        }
+        // Populate shell-level configuration into ConfigurationData
+        ConfigurationHelper.PopulateShellConfiguration(config.Configuration, settings.ConfigurationData);
 
-        // Populate configuration data from feature settings
+        // Populate feature-specific settings into ConfigurationData
         ConfigurationHelper.PopulateFeatureSettings(config.Features, settings.ConfigurationData);
 
         return settings;
@@ -69,7 +64,7 @@ public static class ShellSettingsFactory
 
     /// <summary>
     /// Creates a <see cref="ShellSettings"/> instance directly from an IConfigurationSection.
-    /// This method properly handles nested property sections like WebRoutingShellOptions.
+    /// This method properly handles nested configuration sections.
     /// </summary>
     /// <param name="section">The configuration section representing a shell.</param>
     /// <returns>A new <see cref="ShellSettings"/> instance.</returns>
@@ -87,11 +82,11 @@ public static class ShellSettingsFactory
         var shellId = new ShellId(name);
         var settings = new ShellSettings(shellId, featureNames);
 
-        // Load properties from configuration
-        var propertiesSection = section.GetSection("Properties");
-        ConfigurationHelper.LoadPropertiesFromConfiguration(propertiesSection, settings.Properties);
+        // Load shell-level configuration into ConfigurationData
+        var configurationSection = section.GetSection("Configuration");
+        ConfigurationHelper.LoadConfigurationFromSection(configurationSection, settings.ConfigurationData);
 
-        // Populate configuration data from feature settings
+        // Populate feature-specific settings into ConfigurationData
         ConfigurationHelper.PopulateFeatureSettings(features, settings.ConfigurationData);
 
         return settings;

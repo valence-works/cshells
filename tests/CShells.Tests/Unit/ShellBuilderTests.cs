@@ -17,7 +17,6 @@ public class ShellBuilderTests
         // Assert
         Assert.Equal("TestShell", settings.Id.Name);
         Assert.Empty(settings.EnabledFeatures);
-        Assert.Empty(settings.Properties);
         Assert.Empty(settings.ConfigurationData);
     }
 
@@ -50,50 +49,14 @@ public class ShellBuilderTests
         Assert.Equal(["Feature1", "Feature2"], settings.EnabledFeatures);
     }
 
-    [Fact(DisplayName = "WithProperty adds property")]
-    public void WithProperty_AddsProperty()
+    [Fact(DisplayName = "WithConfiguration adds configuration entry")]
+    public void WithConfiguration_AddsConfigurationEntry()
     {
         // Arrange
         var builder = new ShellBuilder("TestShell");
 
         // Act
-        builder.WithProperty("Key1", "Value1");
-        var settings = builder.Build();
-
-        // Assert
-        Assert.Single(settings.Properties);
-        Assert.Equal("Value1", settings.Properties["Key1"]);
-    }
-
-    [Fact(DisplayName = "WithProperties adds multiple properties")]
-    public void WithProperties_AddsMultipleProperties()
-    {
-        // Arrange
-        var builder = new ShellBuilder("TestShell");
-        var properties = new Dictionary<string, object>
-        {
-            ["Key1"] = "Value1",
-            ["Key2"] = "Value2"
-        };
-
-        // Act
-        builder.WithProperties(properties);
-        var settings = builder.Build();
-
-        // Assert
-        Assert.Equal(2, settings.Properties.Count);
-        Assert.Equal("Value1", settings.Properties["Key1"]);
-        Assert.Equal("Value2", settings.Properties["Key2"]);
-    }
-
-    [Fact(DisplayName = "WithConfigurationData adds configuration data")]
-    public void WithConfigurationData_AddsConfigurationData()
-    {
-        // Arrange
-        var builder = new ShellBuilder("TestShell");
-
-        // Act
-        builder.WithConfigurationData("Key1", "Value1");
+        builder.WithConfiguration("Key1", "Value1");
         var settings = builder.Build();
 
         // Assert
@@ -101,25 +64,40 @@ public class ShellBuilderTests
         Assert.Equal("Value1", settings.ConfigurationData["Key1"]);
     }
 
-    [Fact(DisplayName = "WithConfigurationData with dictionary adds multiple entries")]
-    public void WithConfigurationData_WithDictionary_AddsMultipleEntries()
+    [Fact(DisplayName = "WithConfiguration with dictionary adds multiple entries")]
+    public void WithConfiguration_Dictionary_AddsMultipleEntries()
     {
         // Arrange
         var builder = new ShellBuilder("TestShell");
-        var configData = new Dictionary<string, object>
+        var configuration = new Dictionary<string, object>
         {
             ["Key1"] = "Value1",
             ["Key2"] = "Value2"
         };
 
         // Act
-        builder.WithConfigurationData(configData);
+        builder.WithConfiguration(configuration);
         var settings = builder.Build();
 
         // Assert
         Assert.Equal(2, settings.ConfigurationData.Count);
         Assert.Equal("Value1", settings.ConfigurationData["Key1"]);
         Assert.Equal("Value2", settings.ConfigurationData["Key2"]);
+    }
+
+    [Fact(DisplayName = "WithConfiguration adds colon-separated keys")]
+    public void WithConfiguration_ColonSeparatedKeys_Works()
+    {
+        // Arrange
+        var builder = new ShellBuilder("TestShell");
+
+        // Act
+        builder.WithConfiguration("WebRouting:Path", "acme");
+        var settings = builder.Build();
+
+        // Assert
+        Assert.Single(settings.ConfigurationData);
+        Assert.Equal("acme", settings.ConfigurationData["WebRouting:Path"]);
     }
 
     [Fact(DisplayName = "FromConfiguration merges features without duplicates")]
@@ -149,14 +127,14 @@ public class ShellBuilderTests
         Assert.Equal(["Feature1", "Feature2", "Feature3"], settings.EnabledFeatures);
     }
 
-    [Fact(DisplayName = "FromConfiguration with IConfigurationSection merges properties with precedence")]
-    public void FromConfiguration_MergesProperties_WithPrecedence()
+    [Fact(DisplayName = "FromConfiguration with IConfigurationSection merges configuration with precedence")]
+    public void FromConfiguration_MergesConfiguration_WithPrecedence()
     {
         // Arrange
         var json = @"{
             ""Shell"": {
                 ""Name"": ""TestShell"",
-                ""Properties"": {
+                ""Configuration"": {
                     ""Key1"": ""NewValue1"",
                     ""Key2"": ""Value2""
                 }
@@ -169,18 +147,16 @@ public class ShellBuilderTests
             .Build();
 
         var builder = new ShellBuilder("TestShell")
-            .WithProperty("Key1", "OriginalValue1");
+            .WithConfiguration("Key1", "OriginalValue1");
 
         // Act
         builder.FromConfiguration(config.GetSection("Shell"));
         var settings = builder.Build();
 
-        // Assert - Configuration should take precedence
-        Assert.Equal(2, settings.Properties.Count);
-        var key1Value = Assert.IsType<JsonElement>(settings.Properties["Key1"]);
-        Assert.Equal("NewValue1", key1Value.GetString());
-        var key2Value = Assert.IsType<JsonElement>(settings.Properties["Key2"]);
-        Assert.Equal("Value2", key2Value.GetString());
+        // Assert - Configuration from section should take precedence
+        Assert.Equal(2, settings.ConfigurationData.Count);
+        Assert.Equal("NewValue1", settings.ConfigurationData["Key1"]);
+        Assert.Equal("Value2", settings.ConfigurationData["Key2"]);
     }
 
     [Fact(DisplayName = "FromConfiguration with IConfigurationSection loads feature settings into ConfigurationData")]
@@ -235,7 +211,7 @@ public class ShellBuilderTests
                     }
                 }
             ],
-            Properties = new Dictionary<string, object?>
+            Configuration = new Dictionary<string, object?>
             {
                 ["Key1"] = "NewValue1",
                 ["Key2"] = "Value2"
@@ -244,16 +220,17 @@ public class ShellBuilderTests
 
         var builder = new ShellBuilder("TestShell")
             .WithFeatures("Feature1", "Feature2")
-            .WithProperty("Key1", "OriginalValue1");
+            .WithConfiguration("Key1", "OriginalValue1");
 
         // Act
         builder.FromConfiguration(config);
         var settings = builder.Build();
 
-        // Assert - Features merged, properties and settings loaded
+        // Assert - Features merged, configuration and feature settings loaded
         Assert.Equal(["Feature1", "Feature2", "Feature3"], settings.EnabledFeatures);
-        Assert.Equal(2, settings.Properties.Count);
-        Assert.Equal(2, settings.ConfigurationData.Count);
+        Assert.Equal(4, settings.ConfigurationData.Count); // Key1, Key2, Feature3:Setting1, Feature3:Setting2
+        Assert.Equal("NewValue1", settings.ConfigurationData["Key1"]);
+        Assert.Equal("Value2", settings.ConfigurationData["Key2"]);
         Assert.Equal("SettingValue1", settings.ConfigurationData["Feature3:Setting1"]);
         Assert.Equal("SettingValue2", settings.ConfigurationData["Feature3:Setting2"]);
     }
@@ -320,19 +297,17 @@ public class ShellBuilderTests
         Assert.Equal(["Feature1", "Feature2", "Feature3"], settings.EnabledFeatures);
     }
 
-    [Fact(DisplayName = "FromConfiguration handles complex property objects")]
-    public void FromConfiguration_HandlesComplexPropertyObjects()
+    [Fact(DisplayName = "FromConfiguration handles nested configuration")]
+    public void FromConfiguration_HandlesNestedConfiguration()
     {
         // Arrange
         var json = @"{
             ""Shell"": {
                 ""Name"": ""TestShell"",
-                ""Properties"": {
-                    ""ComplexObject"": {
-                        ""Nested"": {
-                            ""Value"": ""NestedValue""
-                        },
-                        ""Array"": [ 1, 2, 3 ]
+                ""Configuration"": {
+                    ""WebRouting"": {
+                        ""Path"": ""acme"",
+                        ""HeaderName"": ""X-Tenant-Id""
                     }
                 }
             }
@@ -349,11 +324,10 @@ public class ShellBuilderTests
         builder.FromConfiguration(config.GetSection("Shell"));
         var settings = builder.Build();
 
-        // Assert
-        Assert.Single(settings.Properties);
-        var complexObject = Assert.IsType<JsonElement>(settings.Properties["ComplexObject"]);
-        Assert.Equal(JsonValueKind.Object, complexObject.ValueKind);
-        Assert.Equal("NestedValue", complexObject.GetProperty("Nested").GetProperty("Value").GetString());
+        // Assert - Nested configuration should be flattened
+        Assert.Equal(2, settings.ConfigurationData.Count);
+        Assert.Equal("acme", settings.ConfigurationData["WebRouting:Path"]);
+        Assert.Equal("X-Tenant-Id", settings.ConfigurationData["WebRouting:HeaderName"]);
     }
 
     [Fact(DisplayName = "Implicit conversion to ShellSettings works")]
@@ -439,12 +413,9 @@ public class ShellBuilderTests
         Assert.Throws<ArgumentNullException>(() => builder.WithFeature((string)null!));
         Assert.Throws<ArgumentNullException>(() => builder.WithFeature("Feature", (Action<FeatureSettingsBuilder>)null!));
         Assert.Throws<ArgumentNullException>(() => builder.WithFeature((FeatureEntry)null!));
-        Assert.Throws<ArgumentNullException>(() => builder.WithProperty(null!, "value"));
-        Assert.Throws<ArgumentNullException>(() => builder.WithProperty("key", null!));
-        Assert.Throws<ArgumentNullException>(() => builder.WithProperties(null!));
-        Assert.Throws<ArgumentNullException>(() => builder.WithConfigurationData(null!, "value"));
-        Assert.Throws<ArgumentNullException>(() => builder.WithConfigurationData("key", null!));
-        Assert.Throws<ArgumentNullException>(() => builder.WithConfigurationData((IDictionary<string, object>)null!));
+        Assert.Throws<ArgumentNullException>(() => builder.WithConfiguration(null!, "value"));
+        Assert.Throws<ArgumentNullException>(() => builder.WithConfiguration("key", null!));
+        Assert.Throws<ArgumentNullException>(() => builder.WithConfiguration((IDictionary<string, object>)null!));
         Assert.Throws<ArgumentNullException>(() => builder.FromConfiguration((IConfigurationSection)null!));
         Assert.Throws<ArgumentNullException>(() => builder.FromConfiguration((ShellConfig)null!));
     }

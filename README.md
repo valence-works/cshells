@@ -149,26 +149,23 @@ public class WeatherFeature : IShellFeature
 }
 ```
 
-Features can access `ShellSettings` via constructor injection:
+Features can access shell configuration via `IConfiguration` (resolved from the shell's service provider):
 
 ```csharp
 using CShells;
 using CShells.Features;
+using Microsoft.Extensions.Configuration;
 
 public class WeatherFeature : IShellFeature
 {
-    private readonly ShellSettings _shellSettings;
-
-    public WeatherFeature(ShellSettings shellSettings)
-    {
-        _shellSettings = shellSettings;
-    }
-
     public void ConfigureServices(IServiceCollection services)
     {
-        // Access shell configuration
-        var apiKey = _shellSettings.Properties.GetValue<string>("WeatherApiKey");
-        services.AddSingleton<IWeatherService>(new WeatherService(apiKey));
+        services.AddSingleton<IWeatherService>(sp =>
+        {
+            var config = sp.GetRequiredService<IConfiguration>();
+            var apiKey = config["Weather:ApiKey"];
+            return new WeatherService(apiKey);
+        });
     }
 }
 ```
@@ -184,7 +181,7 @@ public class WeatherFeature : IShellFeature
       {
         "Name": "Default",
         "Features": [ "Core", "Weather" ],
-        "Properties": {
+        "Configuration": {
           "WebRouting": {
             "Path": ""
           }
@@ -196,7 +193,7 @@ public class WeatherFeature : IShellFeature
           "Core",
           { "Name": "Admin", "MaxUsers": 100, "EnableAuditLog": true }
         ],
-        "Properties": {
+        "Configuration": {
           "WebRouting": {
             "Path": "admin"
           }
@@ -215,9 +212,9 @@ Create JSON files in a `Shells` folder (e.g., `Default.json`, `Admin.json`):
 
 ```json
 {
-  "Name": "Default",
-  "Features": [ "Core", "Weather" ],
-  "Properties": {
+  "name": "Default",
+  "features": [ "Core", "Weather" ],
+  "configuration": {
     "WebRouting": {
       "Path": ""
     }

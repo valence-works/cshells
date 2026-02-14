@@ -16,12 +16,12 @@ namespace CShells.Tests.Configuration
                   {
                     ""Name"": ""Default"",
                     ""Features"": [ ""Core"", ""Weather"" ],
-                    ""Properties"": { ""Title"": ""Default Shell"" }
+                    ""Configuration"": { ""Title"": ""Default Shell"" }
                   },
                   {
                     ""Name"": ""Admin"",
                     ""Features"": [ ""Core"", ""Admin"" ],
-                    ""Properties"": { ""Title"": ""Admin Shell"" }
+                    ""Configuration"": { ""Title"": ""Admin Shell"" }
                   }
                 ]
               }
@@ -45,10 +45,9 @@ namespace CShells.Tests.Configuration
             var def = settings.First(s => s.Id.Name == "Default");
             Assert.Equal(["Core", "Weather"], def.EnabledFeatures);
 
-            // Properties are now stored as JsonElement
-            Assert.True(def.Properties.ContainsKey("Title"));
-            var titleValue = Assert.IsType<JsonElement>(def.Properties["Title"]);
-            Assert.Equal("Default Shell", titleValue.GetString());
+            // Configuration is now flattened into ConfigurationData
+            Assert.True(def.ConfigurationData.ContainsKey("Title"));
+            Assert.Equal("Default Shell", def.ConfigurationData["Title"]);
         }
 
         // Note: Removed test "AddCShells_Registers_IShellHost_And_ShellSettings" because it tested

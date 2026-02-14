@@ -103,18 +103,8 @@ public class ShellEndpointRegistrationHandler :
 
         _logger.LogDebug("Registering endpoints for shell '{ShellId}'", settings.Id);
 
-        // Get path prefix from shell properties
-        _logger.LogInformation("Shell '{ShellId}' has {PropertyCount} properties", settings.Id, settings.Properties.Count);
-
-        if (settings.Properties.TryGetValue(ShellPropertyKeys.WebRouting, out var pathValue))
-        {
-            _logger.LogInformation("Shell '{ShellId}' WebRouting property type: {TypeName}, value: {Value}", settings.Id, pathValue.GetType().Name, pathValue);
-        }
-        else
-        {
-            _logger.LogInformation("Shell '{ShellId}' does not have property '{PropertyKey}'",
-                settings.Id, ShellPropertyKeys.WebRouting);
-        }
+        // Get path prefix from shell configuration
+        _logger.LogInformation("Shell '{ShellId}' has {ConfigCount} configuration entries", settings.Id, settings.ConfigurationData.Count);
 
         var shellPathPrefix = GetPathPrefix(settings);
         var globalRoutePrefix = GetGlobalRoutePrefix(settings);
@@ -206,12 +196,12 @@ public class ShellEndpointRegistrationHandler :
     }
 
     /// <summary>
-    /// Gets the path prefix for a shell from its properties.
+    /// Gets the path prefix for a shell from its configuration.
     /// </summary>
     private static string? GetPathPrefix(ShellSettings settings)
     {
-        var routingOptions = settings.GetProperty<WebRoutingShellOptions>(ShellPropertyKeys.WebRouting);
-        var path = routingOptions?.Path;
+        // Read WebRouting:Path from ConfigurationData
+        var path = settings.GetConfiguration("WebRouting:Path");
 
         // Null means no path routing configured for this shell
         if (path == null)

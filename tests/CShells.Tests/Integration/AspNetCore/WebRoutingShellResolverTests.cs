@@ -378,20 +378,24 @@ public class WebRoutingShellResolverTests
 
     private static ShellSettings CreateShell(string name, WebRoutingShellOptions routingOptions)
     {
-        var json = JsonSerializer.Serialize(routingOptions, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-
-        return new ShellSettings
+        var settings = new ShellSettings
         {
             Id = new(name),
             EnabledFeatures = [],
-            Properties = new Dictionary<string, object>
-            {
-                [ShellPropertyKeys.WebRouting] = JsonDocument.Parse(json).RootElement
-            }
+            ConfigurationData = new Dictionary<string, object>()
         };
+
+        // Flatten WebRouting options into ConfigurationData
+        if (routingOptions.Path != null)
+            settings.ConfigurationData["WebRouting:Path"] = routingOptions.Path;
+        if (routingOptions.Host != null)
+            settings.ConfigurationData["WebRouting:Host"] = routingOptions.Host;
+        if (routingOptions.HeaderName != null)
+            settings.ConfigurationData["WebRouting:HeaderName"] = routingOptions.HeaderName;
+        if (routingOptions.ClaimKey != null)
+            settings.ConfigurationData["WebRouting:ClaimKey"] = routingOptions.ClaimKey;
+
+        return settings;
     }
 
     private class TestShellSettingsCache(List<ShellSettings> shells) : IShellSettingsCache
