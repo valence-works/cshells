@@ -260,7 +260,7 @@ public class DefaultShellHost : IShellHost, IAsyncDisposable
         if (unknownFeatures.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Feature(s) '{string.Join(", ", unknownFeatures)}' configured for shell '{settings.Id}' were not found in discovered features.");
+                $"Feature(s) '{string.Join(", ", unknownFeatures)}' configured for shell '{settings.Id}' were not found in discovered features. Make sure to add the necessary package/project references that contain the feature implementations.");
         }
     }
 
@@ -376,11 +376,15 @@ public class DefaultShellHost : IShellHost, IAsyncDisposable
 
         // Register shell-scoped IConfiguration that merges shell-specific settings with root configuration
         // This allows features to use IConfiguration and IOptions<T> patterns with shell-specific values
-        services.AddSingleton<Microsoft.Extensions.Configuration.IConfiguration>(sp =>
+        services.AddSingleton<ShellConfiguration>(_ =>
         {
             var rootConfiguration = rootProvider.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
-            return new ShellConfiguration(settings, rootConfiguration);
+            return new(settings, rootConfiguration);
         });
+        
+        // Register shell-scoped IConfiguration that merges shell-specific settings with root configuration
+        // This allows features to use IConfiguration and IOptions<T> patterns with shell-specific values
+        services.AddSingleton<Microsoft.Extensions.Configuration.IConfiguration>(sp => sp.GetRequiredService<ShellConfiguration>());
 
         // Register all discovered feature descriptors so features can query them.
         // Registered as both IReadOnlyCollection<> and IEnumerable<> for maximum flexibility.
