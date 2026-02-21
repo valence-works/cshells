@@ -11,12 +11,13 @@ public static class FeatureDiscovery
     /// Discovers all features from the specified assemblies by scanning for types that implement <see cref="IShellFeature"/> or <see cref="IWebShellFeature"/>.
     /// </summary>
     /// <param name="assemblies">The assemblies to scan for features.</param>
+    /// <param name="onAssemblyLoadError">Optional callback invoked when an assembly fails to load its types.</param>
     /// <returns>A collection of feature descriptors for all valid features found.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="assemblies"/> is null.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when duplicate feature names are found.
     /// </exception>
-    public static IEnumerable<ShellFeatureDescriptor> DiscoverFeatures(IEnumerable<Assembly> assemblies)
+    public static IEnumerable<ShellFeatureDescriptor> DiscoverFeatures(IEnumerable<Assembly> assemblies, Action<Assembly, Exception>? onAssemblyLoadError = null)
     {
         var assembliesList = assemblies.ToList();
         Guard.Against.Null(assembliesList);
@@ -29,7 +30,7 @@ public static class FeatureDiscovery
             if (assembly == null!)
                 continue;
 
-            var featureTypes = GetExportedTypes(assembly)
+            var featureTypes = GetExportedTypes(assembly, onAssemblyLoadError)
                 .Where(type => type is { IsClass: true, IsAbstract: false } && typeof(IShellFeature).IsAssignableFrom(type));
 
             foreach (var type in featureTypes)
@@ -171,7 +172,7 @@ public static class FeatureDiscovery
         return metadata;
     }
 
-    private static IEnumerable<Type> GetExportedTypes(Assembly assembly)
+    private static IEnumerable<Type> GetExportedTypes(Assembly assembly, Action<Assembly, Exception>? onAssemblyLoadError = null)
     {
         try
         {
@@ -187,6 +188,24 @@ public static class FeatureDiscovery
         {
             // Return the types that were successfully loaded
             return ex.Types.OfType<Type>();
+        }
+        catch (FileNotFoundException ex)
+        {
+            // Assembly has missing dependencies - skip it
+            onAssemblyLoadError?.Invoke(assembly, ex);
+            return Enumerable.Empty<Type>();
+        }
+        catch (FileLoadException ex)
+        {
+            // Assembly cannot be loaded - skip it
+            onAssemblyLoadError?.Invoke(assembly, ex);
+            return Enumerable.Empty<Type>();
+        }
+        catch (BadImageFormatException ex)
+        {
+            // Assembly is not a valid .NET assembly - skip it
+            onAssemblyLoadError?.Invoke(assembly, ex);
+            return Enumerable.Empty<Type>();
         }
     }
 }

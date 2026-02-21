@@ -85,7 +85,10 @@ public class DefaultShellHost : IShellHost, IAsyncDisposable
         _logger = logger ?? NullLogger<DefaultShellHost>.Instance;
 
         // Discover all features from specified assemblies
-        var features = FeatureDiscovery.DiscoverFeatures(Guard.Against.Null(assemblies)).ToList();
+        var features = FeatureDiscovery.DiscoverFeatures(
+            Guard.Against.Null(assemblies), 
+            (assembly, ex) => _logger.LogWarning(ex, "Failed to load types from assembly {AssemblyName}. Features in this assembly will not be available.", assembly.GetName().Name))
+            .ToList();
 
         _logger.LogInformation("Discovered {FeatureCount} features: {FeatureNames}",
             features.Count,
