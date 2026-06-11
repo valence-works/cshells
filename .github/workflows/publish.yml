@@ -116,7 +116,7 @@ jobs:
     permissions:
       contents: read
     env:
-      FEEDZ_SOURCE: "https://f.feedz.io/sfmskywalker/cshells/nuget/index.json"
+      FEEDZ_SOURCE: "https://f.feedz.io/valence-works/cshells/nuget/index.json"
     steps:
       - name: Download packages
         uses: actions/download-artifact@v4
