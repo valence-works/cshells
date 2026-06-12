@@ -65,8 +65,9 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
 
         if (current == ShellLifecycleState.Deactivating || current == ShellLifecycleState.Disposed)
         {
-            _logger.LogInformation("Removing endpoints for shell '{Shell}' ({State})", shell.Descriptor, current);
-            _endpointDataSource.RemoveEndpoints(new ShellId(shell.Descriptor.Name));
+            _logger.LogInformation("Removing endpoints for shell '{Shell}' generation {Generation} ({State})",
+                shell.Descriptor, shell.Descriptor.Generation, current);
+            _endpointDataSource.RemoveEndpoints(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
         }
 
         return Task.CompletedTask;
@@ -95,6 +96,7 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
         var shellEndpointBuilder = new ShellEndpointRouteBuilder(
             endpointRouteBuilder,
             settings.Id,
+            shell.Descriptor.Generation,
             settings,
             shell.ServiceProvider,
             combinedPrefix);

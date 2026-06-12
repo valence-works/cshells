@@ -98,7 +98,7 @@ public class ShellMiddlewareLazyActivationTests
 
         var settings = new ShellSettings();
         var shellId = new ShellId("acme");
-        var shellMetadata = new ShellEndpointMetadata(shellId, settings);
+        var shellMetadata = new ShellEndpointMetadata(shellId, 1, settings);
 
         // Add the int-constrained endpoint FIRST, so structural-only matching would pick it.
         var intHandlerInvoked = false;
@@ -149,7 +149,7 @@ public class ShellMiddlewareLazyActivationTests
         var dataSource = new DynamicShellEndpointDataSource();
         var shellId = new ShellId("Default");
         var settings = new ShellSettings();
-        var shellMetadata = new ShellEndpointMetadata(shellId, settings);
+        var shellMetadata = new ShellEndpointMetadata(shellId, 1, settings);
 
         var shellEndpointInvoked = false;
         var shellEndpoint = new RouteEndpoint(
@@ -197,7 +197,7 @@ public class ShellMiddlewareLazyActivationTests
         var dataSource = new DynamicShellEndpointDataSource();
         var shellId = new ShellId("Default");
         var settings = new ShellSettings();
-        var shellMetadata = new ShellEndpointMetadata(shellId, settings);
+        var shellMetadata = new ShellEndpointMetadata(shellId, 1, settings);
 
         var shellEndpointInvoked = false;
         var shellEndpoint = new RouteEndpoint(
@@ -245,7 +245,7 @@ public class ShellMiddlewareLazyActivationTests
         var dataSource = new DynamicShellEndpointDataSource();
         var shellId = new ShellId("Default");
         var settings = new ShellSettings();
-        var shellMetadata = new ShellEndpointMetadata(shellId, settings);
+        var shellMetadata = new ShellEndpointMetadata(shellId, 1, settings);
 
         var shellEndpointInvoked = false;
         var shellEndpoint = new RouteEndpoint(
