@@ -1,4 +1,7 @@
 using CShells.AspNetCore.Routing;
+using CShells.AspNetCore.Notifications;
+using CShells.Features;
+using CShells.Lifecycle;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
@@ -71,6 +74,44 @@ public class DynamicShellEndpointDataSourceTests
         Assert.Equal(2, survivor.Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation);
     }
 
+    [Fact(DisplayName = "No-op endpoint removal does not notify routing")]
+    public void RemoveEndpoints_WhenNoEndpointsRemoved_DoesNotNotify()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellId = new ShellId("default");
+        var settings = new ShellSettings();
+        var changes = 0;
+
+        dataSource.AddEndpoints([CreateEndpoint("default/api/items", shellId, 1, settings)]);
+
+        using var registration = dataSource.GetChangeToken().RegisterChangeCallback(_ => changes++, null);
+
+        dataSource.RemoveEndpoints(shellId, generation: 2);
+
+        Assert.Equal(0, changes);
+        Assert.Single(dataSource.Endpoints);
+    }
+
+    [Fact(DisplayName = "Endpoint registration handler removes endpoints when drain begins")]
+    public async Task Handler_OnDraining_RemovesGenerationEndpoints()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellId = new ShellId("default");
+        var settings = new ShellSettings();
+        var shell = new FakeShell(ShellDescriptor.Create("default", 1));
+        var handler = new ShellEndpointRegistrationHandler(
+            dataSource,
+            new NoopFeatureFactory(),
+            new EndpointRouteBuilderAccessor(),
+            new ApplicationBuilderAccessor());
+
+        dataSource.AddEndpoints([CreateEndpoint("default/api/items", shellId, 1, settings)]);
+
+        await handler.OnStateChangedAsync(shell, ShellLifecycleState.Active, ShellLifecycleState.Draining);
+
+        Assert.Empty(dataSource.Endpoints);
+    }
+
     private static RouteEndpoint CreateEndpoint(string pattern, ShellId shellId, int generation, ShellSettings settings)
     {
         return new RouteEndpoint(
@@ -81,5 +122,25 @@ public class DynamicShellEndpointDataSourceTests
                 new ShellEndpointMetadata(shellId, generation, settings),
                 new HttpMethodMetadata(["GET"])),
             displayName: $"{pattern} (gen {generation})");
+    }
+
+    private sealed class FakeShell(ShellDescriptor descriptor) : IShell
+    {
+        public ShellDescriptor Descriptor { get; } = descriptor;
+
+        public ShellLifecycleState State => ShellLifecycleState.Active;
+
+        public IServiceProvider ServiceProvider => throw new NotSupportedException();
+
+        public IDrainOperation? Drain => null;
+
+        public IShellScope BeginScope() => throw new NotSupportedException();
+    }
+
+    private sealed class NoopFeatureFactory : IShellFeatureFactory
+    {
+        public T CreateFeature<T>(Type featureType, ShellSettings? shellSettings = null, ShellFeatureContext? featureContext = null)
+            where T : class =>
+            throw new NotSupportedException();
     }
 }

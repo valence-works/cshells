@@ -44,7 +44,7 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
     /// <inheritdoc />
     public Task OnStateChangedAsync(IShell shell, ShellLifecycleState previous, ShellLifecycleState current, CancellationToken cancellationToken = default)
     {
-        // Register when a shell becomes Active, tear down when it starts deactivating.
+        // Register when a shell becomes Active, tear down when it starts deactivating or draining.
         if (previous == ShellLifecycleState.Initializing && current == ShellLifecycleState.Active)
         {
             if (_endpointRouteBuilderAccessor.EndpointRouteBuilder is null)
@@ -63,7 +63,9 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
             return Task.CompletedTask;
         }
 
-        if (current == ShellLifecycleState.Deactivating || current == ShellLifecycleState.Disposed)
+        if (current == ShellLifecycleState.Deactivating ||
+            current == ShellLifecycleState.Draining ||
+            current == ShellLifecycleState.Disposed)
         {
             _logger.LogInformation("Removing endpoints for shell '{Shell}' generation {Generation} ({State})",
                 shell.Descriptor, shell.Descriptor.Generation, current);

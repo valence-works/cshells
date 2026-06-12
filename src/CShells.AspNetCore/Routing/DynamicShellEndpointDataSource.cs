@@ -38,6 +38,9 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
         lock (_lock)
         {
             var newEndpoints = endpoints.ToList();
+            if (newEndpoints.Count == 0)
+                return;
+
             DetectPathConflicts(newEndpoints);
             _endpoints.AddRange(newEndpoints);
             NotifyChanged();
@@ -51,8 +54,9 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_lock)
         {
-            _endpoints.RemoveAll(e => e.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(shellId) ?? false);
-            NotifyChanged();
+            var removed = _endpoints.RemoveAll(e => e.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(shellId) ?? false);
+            if (removed > 0)
+                NotifyChanged();
         }
     }
 
@@ -63,12 +67,13 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_lock)
         {
-            _endpoints.RemoveAll(e =>
+            var removed = _endpoints.RemoveAll(e =>
             {
                 var meta = e.Metadata.GetMetadata<ShellEndpointMetadata>();
                 return meta is not null && meta.ShellId.Equals(shellId) && meta.Generation == generation;
             });
-            NotifyChanged();
+            if (removed > 0)
+                NotifyChanged();
         }
     }
 
@@ -79,6 +84,9 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_lock)
         {
+            if (_endpoints.Count == 0)
+                return;
+
             _endpoints.Clear();
             NotifyChanged();
         }
