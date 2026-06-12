@@ -57,6 +57,22 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     }
 
     /// <summary>
+    /// Removes endpoints for a specific shell generation only, leaving newer generations intact.
+    /// </summary>
+    public void RemoveEndpoints(ShellId shellId, int generation)
+    {
+        lock (_lock)
+        {
+            _endpoints.RemoveAll(e =>
+            {
+                var meta = e.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return meta is not null && meta.ShellId.Equals(shellId) && meta.Generation == generation;
+            });
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
     /// Clears all endpoints.
     /// </summary>
     public void Clear()

@@ -12,6 +12,7 @@ namespace CShells.AspNetCore.Routing;
 public class ShellEndpointRouteBuilder(
     IEndpointRouteBuilder inner,
     ShellId shellId,
+    int generation,
     ShellSettings shellSettings,
     IServiceProvider shellContextServiceProvider,
     string? pathPrefix)
@@ -65,7 +66,7 @@ public class ShellEndpointRouteBuilder(
 
         // Add shell metadata
         var metadata = new EndpointMetadataCollection(
-            routeEndpoint.Metadata.Concat([new ShellEndpointMetadata(shellId, shellSettings)]));
+            routeEndpoint.Metadata.Concat([new ShellEndpointMetadata(shellId, generation, shellSettings)]));
 
         return new RouteEndpoint(
             routeEndpoint.RequestDelegate!,
