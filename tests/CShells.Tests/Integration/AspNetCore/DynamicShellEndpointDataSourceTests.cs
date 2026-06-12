@@ -98,7 +98,7 @@ public class DynamicShellEndpointDataSourceTests
         var dataSource = new DynamicShellEndpointDataSource();
         var shellId = new ShellId("default");
         var settings = new ShellSettings();
-        var shell = new FakeShell(ShellDescriptor.Create("default", 1));
+        var shell = new FakeShell(ShellDescriptor.Create("default", 1), ShellLifecycleState.Draining);
         var handler = new ShellEndpointRegistrationHandler(
             dataSource,
             new NoopFeatureFactory(),
@@ -124,11 +124,11 @@ public class DynamicShellEndpointDataSourceTests
             displayName: $"{pattern} (gen {generation})");
     }
 
-    private sealed class FakeShell(ShellDescriptor descriptor) : IShell
+    private sealed class FakeShell(ShellDescriptor descriptor, ShellLifecycleState state) : IShell
     {
         public ShellDescriptor Descriptor { get; } = descriptor;
 
-        public ShellLifecycleState State => ShellLifecycleState.Active;
+        public ShellLifecycleState State { get; } = state;
 
         public IServiceProvider ServiceProvider => throw new NotSupportedException();
 
