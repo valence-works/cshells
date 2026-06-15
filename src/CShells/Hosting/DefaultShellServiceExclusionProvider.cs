@@ -41,6 +41,7 @@ public class DefaultShellServiceExclusionProvider : IShellServiceExclusionProvid
         yield return typeof(IShellLifecycleSubscriber);
         yield return typeof(IShellBlueprint);
         yield return typeof(RuntimeFeatureCatalog);
+        yield return typeof(IRuntimeFeatureCatalog);
         yield return typeof(IShellFeatureFactory);
         yield return typeof(IShellServiceExclusionRegistry);
         yield return typeof(IShellServiceExclusionProvider);

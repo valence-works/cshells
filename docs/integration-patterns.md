@@ -201,9 +201,55 @@ public sealed class QuartzPostgreSqlFeature : IShellFeature
 
 In this pattern, `QuartzFeature.ConfigureServices` still runs before `QuartzPostgreSqlFeature.ConfigureServices`, so base services are available for provider configuration. During activation, PostgreSQL migrations run in `Prepare` before the Quartz scheduler starts in `Start`.
 
+## Reading the Runtime Feature Catalog
+
+External integrations (for example, `Elsa.Modularity.Nuplane`) sometimes need to refresh and read the set of discovered features at runtime. The **supported** way to do this is the public `IRuntimeFeatureCatalog` contract — resolve it from the application's root service provider. Do **not** reflect over the internal `CShells.Features.RuntimeFeatureCatalog` type; that type is an implementation detail and is not a stable surface.
+
+`AddCShells()` registers `IRuntimeFeatureCatalog` as a singleton automatically.
+
+```csharp
+using CShells.Features;
+
+public sealed class FeatureCatalogReader(IRuntimeFeatureCatalog catalog)
+{
+    public async Task<int> CountFeaturesAsync(CancellationToken cancellationToken)
+    {
+        // Re-evaluate feature sources and commit a fresh snapshot.
+        var snapshot = await catalog.RefreshAsync(cancellationToken);
+
+        foreach (var feature in snapshot.FeatureDescriptors)
+        {
+            // Stable, typed fields — no reflection required.
+            Console.WriteLine($"{feature.Id} ({feature.DisplayName}): {feature.Description}");
+        }
+
+        return snapshot.FeatureDescriptors.Count;
+    }
+}
+```
+
+The contract exposes only what external consumers need:
+
+| Member | Purpose |
+|--------|---------|
+| `IRuntimeFeatureCatalog.RefreshAsync(ct)` | Re-evaluates feature sources and returns a new snapshot. |
+| `IRuntimeFeatureCatalog.EnsureInitializedAsync(ct)` | Performs an initial refresh only if the catalog has never been built. |
+| `IRuntimeFeatureCatalog.CurrentSnapshot` | The most recently committed snapshot. |
+| `IRuntimeFeatureCatalogSnapshot.FeatureDescriptors` | The discovered features (use `.Count` for the descriptor count). |
+| `IRuntimeFeatureCatalogSnapshot.Generation` / `RefreshedAt` | Monotonic generation number and UTC timestamp of the snapshot. |
+| `RuntimeFeatureDescriptor.Id` / `Name` | The feature identifier (`Name` is an alias for `Id`). |
+| `RuntimeFeatureDescriptor.DisplayName` | Human-readable name; falls back to `Id` when none is declared. |
+| `RuntimeFeatureDescriptor.Description` | Optional description, or `null`. |
+| `RuntimeFeatureDescriptor.Dependencies` | Names of the features this feature depends on. |
+
+### Migration from reflection
+
+Consumers that previously reflected over `RuntimeFeatureCatalog.RefreshAsync(...)` and read `FeatureDescriptors`/`FeatureName`/`DisplayName`/`Description` should switch to resolving `IRuntimeFeatureCatalog` and using `RuntimeFeatureDescriptor`'s typed members. The internal `RuntimeFeatureCatalog` type still exists for backward compatibility, but the public contract is the only supported integration surface going forward.
+
 ## Best Practices
 
 - Use dedicated path prefixes (`/tenants/*`, `/apps/*`) for shells
 - Register host routes **before** `MapShells()`
 - Use `ExcludePaths` to protect health checks, Swagger, and admin routes
 - Monitor logs for path-conflict warnings
+- Read features through the public `IRuntimeFeatureCatalog` contract instead of reflecting over internals

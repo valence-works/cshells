@@ -53,6 +53,10 @@ public static class ServiceCollectionExtensions
             return new RuntimeFeatureCatalog(ct => builder.BuildFeatureAssembliesAsync(sp, ct), logger);
         });
 
+        // Public, reflection-free contract over the runtime feature catalog for external consumers.
+        services.TryAddSingleton<IRuntimeFeatureCatalog>(sp =>
+            new RuntimeFeatureCatalogAccessor(sp.GetRequiredService<RuntimeFeatureCatalog>()));
+
         // Lifecycle surface: provider builder + registry + auto-logger + drain defaults + startup service.
         services.TryAddSingleton<ShellProviderBuilder>(sp => new ShellProviderBuilder(
             sp.GetRequiredService<IRootServiceCollectionAccessor>(),
