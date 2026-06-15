@@ -1,28 +1,30 @@
 # Runtime Shell Management
 
-CShells supports adding, updating, removing, and reloading shells at runtime without restarting the application. Under the deferred-activation model, runtime management now records **desired** shell definitions immediately and reconciles them into **applied** runtimes only when a candidate runtime is fully ready.
+CShells supports activating, reloading, draining, unregistering, and inspecting shells at runtime without restarting the application. The runtime is centered on shell blueprints and active shell generations: blueprints describe how to compose `ShellSettings`, while `IShellRegistry` owns the currently active generations.
 
 ---
 
-## `IShellManager`
+## `IShellRegistry`
 
-`IShellManager` is registered automatically by `AddShells()`. Inject it into any service that needs to manage shells at runtime.
+`IShellRegistry` is registered automatically by `AddCShells()`. Inject it into services that need to activate, reload, drain, unregister, or inspect shells at runtime.
 
 ```csharp
-public class TenantProvisioningService
-{
-    private readonly IShellManager shellManager;
+using CShells.Lifecycle;
 
-    public TenantProvisioningService(IShellManager shellManager)
+public class TenantRuntimeService
+{
+    private readonly IShellRegistry registry;
+
+    public TenantRuntimeService(IShellRegistry registry)
     {
-        this.shellManager = shellManager;
+        this.registry = registry;
     }
 }
 ```
 
 ---
 
-## Adding a Shell
+## Creating or Updating a Blueprint
 
 ```csharp
 public async Task CreateTenantAsync(string tenantId, string tier)
@@ -37,15 +39,15 @@ public async Task CreateTenantAsync(string tenantId, string tier)
     var settings = new ShellSettings(new ShellId(tenantId), features);
     settings.ConfigurationData["WebRouting:Path"] = tenantId;
 
-    await shellManager.AddShellAsync(settings);
+    var manager = await registry.GetManagerAsync(tenantId)
+        ?? throw new InvalidOperationException("The shell source is read-only or unknown.");
+
+    await manager.CreateAsync(settings);
+    await registry.GetOrActivateAsync(tenantId);
 }
 ```
 
-When a shell is added:
-1. Its settings are recorded as the new **desired** definition.
-2. CShells refreshes the runtime feature catalog.
-3. If the candidate runtime builds successfully, it is committed and becomes active.
-4. If the shell cannot be applied yet, the desired state remains recorded and visible through runtime status until a later reconciliation succeeds.
+Mutable blueprint sources expose an `IShellBlueprintManager` for persisted create/update/delete operations. Read-only sources such as code-defined shells do not.
 
 ---
 
@@ -54,11 +56,11 @@ When a shell is added:
 ```csharp
 public async Task DeleteTenantAsync(string tenantId)
 {
-    await shellManager.RemoveShellAsync(new ShellId(tenantId));
+    await registry.UnregisterBlueprintAsync(tenantId);
 }
 ```
 
-Removal is the explicit operation that deletes a shell from desired state and tears down its applied runtime.
+Unregistering deletes the persisted blueprint through its owning manager, then drains and disposes any active generation.
 
 ---
 
@@ -74,11 +76,15 @@ public async Task UpgradeTenantAsync(string tenantId, string newTier)
     var settings = new ShellSettings(new ShellId(tenantId), features);
     settings.ConfigurationData["WebRouting:Path"] = tenantId;
 
-    await shellManager.UpdateShellAsync(settings);
+    var manager = await registry.GetManagerAsync(tenantId)
+        ?? throw new InvalidOperationException("The shell source is read-only or unknown.");
+
+    await manager.UpdateAsync(settings);
+    await registry.ReloadAsync(tenantId);
 }
 ```
 
-`UpdateShellAsync` no longer tears down the current runtime first. It records a newer desired generation and attempts to reconcile it into a successor runtime. If the new desired generation is deferred or fails, the last-known-good applied runtime stays routable.
+`UpdateAsync` only persists the blueprint. Call `ReloadAsync` when you want the running shell generation replaced.
 
 ---
 
@@ -87,15 +93,11 @@ public async Task UpgradeTenantAsync(string tenantId, string newTier)
 ```csharp
 public async Task RefreshAllTenantsAsync()
 {
-    await shellManager.ReloadAllShellsAsync();
+    await registry.ReloadActiveAsync();
 }
 ```
 
-Every full reload:
-- refreshes the runtime feature catalog first
-- reloads the latest desired shell set from providers
-- commits only shells whose successor runtimes are fully ready
-- preserves already applied shells when newer desired generations defer or fail
+Full reloads only reload currently active shells. Inactive blueprints remain inactive until they are explicitly activated or requested.
 
 ---
 
@@ -104,36 +106,33 @@ Every full reload:
 ```csharp
 public async Task RefreshTenantAsync(string tenantId)
 {
-    await shellManager.ReloadShellAsync(new ShellId(tenantId));
+    await registry.ReloadAsync(tenantId);
 }
 ```
 
-- The shell records the latest desired definition from the provider before reconciliation.
-- The previous applied runtime remains available until a successor commits.
-- Unrelated applied shells are not affected.
+- The registry composes fresh settings from the shell's blueprint.
+- A successor generation is activated and promoted.
+- The previous generation is cooperatively drained.
+- Unrelated active shells are not affected.
 - If the shell is unknown to the provider, the call throws without mutating runtime state.
 
 ---
 
-## Inspecting Desired vs. Applied State
+## Inspecting Blueprints and Active Generations
 
-Inject `IShellRuntimeStateAccessor` when you need to distinguish configured intent from currently serving runtimes.
+Use the registry to inspect the blueprint catalogue and active generations.
 
 ```csharp
-public class ShellStatusService(IShellRuntimeStateAccessor runtimeState)
+public class ShellStatusService(IShellRegistry registry)
 {
-    public IReadOnlyCollection<ShellRuntimeStatus> GetShells() => runtimeState.GetAllShells();
+    public IReadOnlyCollection<IShell> GetActiveShells() => registry.GetActiveShells();
+
+    public Task<ShellPage> ListAsync(ShellListQuery query, CancellationToken ct) =>
+        registry.ListAsync(query, ct);
 }
 ```
 
-Each `ShellRuntimeStatus` reports:
-- the latest `DesiredGeneration`
-- the committed `AppliedGeneration` (if any)
-- whether the shell is currently `IsInSync`
-- whether it is currently `IsRoutable`
-- any `BlockingReason` / `MissingFeatures`
-
-This means operators can see configured-but-unapplied shells without those shells becoming routable or endpoint-visible.
+`GetActive(name)` and `GetActiveShells()` read the in-memory active-generation index. `ListAsync()` returns a paginated catalogue view joined with current lifecycle state.
 
 ---
 
@@ -145,58 +144,44 @@ CShells publishes notifications during shell lifecycle events.
 
 | Notification | When |
 |---|---|
-| `ShellActivated` | A candidate runtime has been committed and is now applied |
-| `ShellDeactivating` | An applied runtime is about to be replaced or removed |
-| `ShellAdded` | A shell was added via `IShellManager.AddShellAsync` |
-| `ShellRemoved` | A shell was removed via `IShellManager.RemoveShellAsync` |
-| `ShellUpdated` | A shell was updated via `IShellManager.UpdateShellAsync` |
-| `ShellReloading` | A reload operation is starting |
-| `ShellReloaded` | A reload operation completed successfully |
-| `ShellsReloaded` | A reconciliation pass produced a fresh runtime status snapshot |
+| Lifecycle transition | Observe via `IShellLifecycleSubscriber` |
+| Activation | New generation becomes active |
+| Deactivation / drain | Old generation is being replaced, removed, or force-drained |
+| Reload | `ReloadAsync` or `ReloadActiveAsync` builds successor generations |
+| Unregister | Blueprint is deleted, then active runtime is drained and disposed |
 
 ### Reload Notification Ordering
 
-During a **single-shell reload** (`ReloadShellAsync`):
-1. `ShellReloading(shellId)`
-2. Desired state is refreshed from the provider
-3. The runtime feature catalog is refreshed
-4. If a successor commits, `ShellDeactivating` / `ShellActivated` are emitted around the applied runtime swap
-5. `ShellReloaded(shellId, [shellId], statuses)`
+During a **single-shell reload** (`ReloadAsync`):
+1. The registry composes fresh settings from the shell's blueprint.
+2. A new generation is built and initialized.
+3. The new generation is promoted to active.
+4. The previous generation enters cooperative drain.
 
-During a **full reload** (`ReloadAllShellsAsync`):
-1. `ShellReloading(null)`
-2. Desired state is refreshed from providers
-3. The runtime feature catalog is refreshed
-4. Ready candidates commit individually; deferred/failed generations remain unapplied
-5. `ShellsReloaded(statuses)`
-6. `ShellReloaded(null, changedShells, statuses)`
+During a **full active reload** (`ReloadActiveAsync`), the same sequence runs for each active shell. Inactive blueprints are not activated by this operation.
 
 ---
 
-## `IShellHost` — Accessing Applied Shells
+## `IShellRegistry` — Accessing Active Shells
 
-Inject `IShellHost` to enumerate or look up applied shell contexts.
+Inject `IShellRegistry` to enumerate or look up active shell generations.
 
 ```csharp
-public class ShellDashboardService
+using CShells.Lifecycle;
+
+public class ShellDashboardService(IShellRegistry registry)
 {
-    private readonly IShellHost shellHost;
-
-    public ShellDashboardService(IShellHost shellHost)
-    {
-        this.shellHost = shellHost;
-    }
-
     public IEnumerable<string> GetActiveShellNames() =>
-        shellHost.AllShells.Select(shell => shell.Settings.Id.Value);
+        registry.GetActiveShells().Select(shell => shell.Descriptor.Name);
 
-    public ShellContext GetShell(string name) =>
-        shellHost.GetShell(new ShellId(name));
+    public IShell? GetShell(string name) =>
+        registry.GetActive(name);
 }
 ```
 
 | Member | Description |
 |---|---|
-| `IShellHost.AllShells` | All currently applied shell contexts |
-| `IShellHost.DefaultShell` | The explicit `"Default"` shell only when it is applied; otherwise the first applied shell is used only when no explicit default exists |
-| `IShellHost.GetShell(ShellId)` | Looks up an applied shell by ID; throws `KeyNotFoundException` if no committed runtime exists |
+| `IShellRegistry.GetActiveShells()` | All currently active shell generations |
+| `IShellRegistry.GetActive(name)` | The active generation for a shell name, or `null` |
+| `IShellRegistry.GetOrActivateAsync(name)` | Returns the active generation or lazily activates it from its blueprint |
+| `IShell.BeginScope()` | Opens a tracked DI scope for work inside that shell |

@@ -1,21 +1,21 @@
 # Background Workers
 
-CShells provides `IShellContextScopeFactory` to execute work within the context of a specific shell. Use it in background services, scheduled jobs, or any non-HTTP workload that needs access to shell-scoped services.
+CShells exposes active shell generations through `IShellRegistry`. Use `IShell.BeginScope()` in background services, scheduled jobs, or any non-HTTP workload that needs access to shell-scoped services.
 
 ---
 
-## `IShellContextScopeFactory`
+## `IShell.BeginScope()`
 
-`IShellContextScopeFactory` creates a `IShellContextScope` — a lightweight scope wrapping a shell's `IServiceProvider`.
+`IShell.BeginScope()` creates a tracked `IShellScope` wrapping a shell's `IServiceProvider`.
 
 ```csharp
-public interface IShellContextScopeFactory
+public interface IShell
 {
-    IShellContextScope CreateScope(ShellContext shell);
+    IShellScope BeginScope();
 }
 ```
 
-The scope is `IDisposable`. Always dispose it when you're done to release scoped resources.
+The scope is `IAsyncDisposable`. Always dispose it when you're done to release scoped resources and decrement the shell's active-scope counter.
 
 ---
 
@@ -25,38 +25,26 @@ The most common pattern is iterating over all shells and performing work for eac
 
 ```csharp
 using CShells;
-using CShells.Hosting;
+using CShells.Lifecycle;
 using Microsoft.Extensions.Hosting;
 
-public class DataSyncWorker : BackgroundService
+public class DataSyncWorker(
+    IShellRegistry registry,
+    ILogger<DataSyncWorker> logger) : BackgroundService
 {
-    private readonly IShellHost _shellHost;
-    private readonly IShellContextScopeFactory _scopeFactory;
-    private readonly ILogger<DataSyncWorker> _logger;
-
-    public DataSyncWorker(
-        IShellHost shellHost,
-        IShellContextScopeFactory scopeFactory,
-        ILogger<DataSyncWorker> logger)
-    {
-        _shellHost = shellHost;
-        _scopeFactory = scopeFactory;
-        _logger = logger;
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            foreach (var shell in _shellHost.AllShells)
+            foreach (var shell in registry.GetActiveShells())
             {
-                using var scope = _scopeFactory.CreateScope(shell);
+                await using var scope = shell.BeginScope();
 
                 var syncService = scope.ServiceProvider.GetService<IDataSyncService>();
                 if (syncService is not null)
                     await syncService.SyncAsync(stoppingToken);
                 else
-                    _logger.LogDebug("Shell '{Shell}' does not have IDataSyncService", shell.Settings.Id.Value);
+                    logger.LogDebug("Shell '{Shell}' does not have IDataSyncService", shell.Descriptor);
             }
 
             await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
@@ -78,22 +66,15 @@ builder.Services.AddHostedService<DataSyncWorker>();
 If you need to target one specific shell:
 
 ```csharp
-public class TenantReportGenerator
+using CShells.Lifecycle;
+
+public class TenantReportGenerator(IShellRegistry registry)
 {
-    private readonly IShellHost _shellHost;
-    private readonly IShellContextScopeFactory _scopeFactory;
-
-    public TenantReportGenerator(IShellHost shellHost, IShellContextScopeFactory scopeFactory)
-    {
-        _shellHost = shellHost;
-        _scopeFactory = scopeFactory;
-    }
-
     public async Task GenerateReportAsync(string tenantId, CancellationToken ct)
     {
-        var shell = _shellHost.GetShell(new ShellId(tenantId));
+        var shell = await registry.GetOrActivateAsync(tenantId, ct);
 
-        using var scope = _scopeFactory.CreateScope(shell);
+        await using var scope = shell.BeginScope();
 
         var reportService = scope.ServiceProvider.GetRequiredService<IReportService>();
         await reportService.GenerateAsync(ct);
@@ -108,9 +89,9 @@ public class TenantReportGenerator
 A shell may or may not have a particular feature enabled. Use `GetService<T>()` (nullable) instead of `GetRequiredService<T>()` when a service is optional:
 
 ```csharp
-foreach (var shell in _shellHost.AllShells)
+foreach (var shell in registry.GetActiveShells())
 {
-    using var scope = _scopeFactory.CreateScope(shell);
+    await using var scope = shell.BeginScope();
 
     var processor = scope.ServiceProvider.GetService<IQueueProcessor>();
     if (processor is null)
@@ -134,7 +115,7 @@ public class NotificationsFeature : IShellFeature
     {
         services.AddSingleton<INotificationSender, EmailNotificationSender>();
         // The worker is registered in the root DI container (not shell-scoped)
-        // and uses IShellContextScopeFactory to access shell services
+        // and uses IShellRegistry + IShell.BeginScope() to access shell services
     }
 }
 ```
@@ -149,7 +130,7 @@ builder.Services.AddHostedService<NotificationDispatchWorker>();
 
 ## Tips
 
-- **Always dispose scopes** — `IShellContextScope` is `IDisposable`. Use `using` or `await using` as appropriate.
+- **Always dispose scopes** — `IShellScope` is `IAsyncDisposable`. Use `await using`.
 - **Use `GetService<T>()` for optional services** — not all shells will have all features enabled.
-- **Re-query `IShellHost.AllShells` on each iteration** — the shell list can change at runtime when shells are added or removed.
-- **Access `IShellHost` via injection, not closure** — always use the injected `IShellHost` reference; do not capture it in a static variable.
+- **Re-query `IShellRegistry.GetActiveShells()` on each iteration** — the shell list can change at runtime when shells are added, removed, or reloaded.
+- **Access `IShellRegistry` via injection, not closure** — always use the injected `IShellRegistry` reference; do not capture it in a static variable.
