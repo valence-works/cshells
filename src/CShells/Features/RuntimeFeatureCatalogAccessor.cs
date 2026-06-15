@@ -27,8 +27,8 @@ internal sealed class RuntimeFeatureCatalogAccessor(RuntimeFeatureCatalog catalo
 
     private static RuntimeFeatureDescriptor MapDescriptor(ShellFeatureDescriptor descriptor)
     {
-        var displayName = GetMetadataString(descriptor, "DisplayName") ?? descriptor.Id;
-        var description = GetMetadataString(descriptor, "Description");
+        var displayName = GetMetadataString(descriptor, ShellFeatureMetadataKeys.DisplayName) ?? descriptor.Id;
+        var description = GetMetadataString(descriptor, ShellFeatureMetadataKeys.Description);
 
         return new RuntimeFeatureDescriptor
         {
