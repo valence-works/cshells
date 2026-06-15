@@ -10,18 +10,15 @@ This page describes the internal design of CShells: how shells are hosted, how f
 ┌─────────────────────────────────────────────────────────────────┐
 │  Application (ASP.NET Core / Generic Host)                      │
 │                                                                 │
-│  AddShells() ──► IShellSettingsProvider(s)                      │
+│  AddCShells() ──► IShellBlueprintProvider                       │
 │                        │                                        │
 │                        ▼                                        │
-│                  ShellSettingsCache                             │
-│                        │                                        │
-│                        ▼                                        │
-│                    IShellHost                                   │
-│                  (DefaultShellHost)                             │
+│                   IShellRegistry                                │
+│                 (lazy activation)                               │
 │            ┌──────────┴──────────┐                             │
 │            ▼                     ▼                             │
-│       ShellContext           ShellContext                       │
-│   (Shell A: IServiceProvider) (Shell B: IServiceProvider)      │
+│        IShell A              IShell B                           │
+│   (Shell A: IServiceProvider) (Shell B: IServiceProvider)       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -34,9 +31,10 @@ This page describes the internal design of CShells: how shells are hosted, how f
 A **Shell** is an isolated execution context. It owns:
 
 - A `ShellId` (unique string identifier)
+- A generation descriptor (`ShellDescriptor`)
 - A list of enabled feature names
 - A `ShellSettings` object with configuration data
-- A `ShellContext` containing the shell's built `IServiceProvider`
+- An `IShell` containing the shell's built `IServiceProvider`
 
 Shells do **not** share service instances. Each shell's container starts from a copy of the root application services and then applies its own feature registrations on top.
 
@@ -49,19 +47,19 @@ A **Feature** is a class that implements `IShellFeature` (or a sub-interface). I
 - Can declare dependencies on other features
 - Can optionally register HTTP endpoints (`IWebShellFeature`), middleware (`IMiddlewareShellFeature`), or post-configuration hooks (`IPostConfigureShellServices`)
 
-### Shell Host
+### Shell Registry
 
-`IShellHost` (implemented by `DefaultShellHost`) manages the lifecycle of all shells:
+`IShellRegistry` manages active shell generations:
 
-1. Reads `ShellSettings` from the `ShellSettingsCache`.
-2. Discovers features by scanning assemblies for `IShellFeature` implementations.
+1. Looks up shell blueprints from the configured `IShellBlueprintProvider`.
+2. Composes fresh `ShellSettings` when a shell is activated or reloaded.
 3. Resolves feature dependencies (topological sort).
-4. Builds an `IServiceProvider` per shell.
-5. Caches the resulting `ShellContext` instances.
+4. Builds an `IServiceProvider` per shell generation.
+5. Tracks active generations and coordinates drain/disposal for replaced generations.
 
-### Shell Settings Cache
+### Shell Blueprint Provider
 
-`ShellSettingsCache` is the central store for all shell configurations. It is populated at startup by the registered `IShellSettingsProvider` implementations. `IShellManager` writes to it at runtime to add, remove, or update shells.
+`IShellBlueprintProvider` is the source of shell blueprints. Code-defined shells use the built-in in-memory provider populated by `AddShell(...)`; external sources register a single provider with `AddBlueprintProvider(...)` or a provider-specific extension. Mutable sources can attach an `IShellBlueprintManager` for persisted create/update/delete operations.
 
 ---
 
@@ -70,10 +68,13 @@ A **Feature** is a class that implements `IShellFeature` (or a sub-interface). I
 ### `ShellId`
 
 ```csharp
-public readonly record struct ShellId(string Value);
+public readonly record struct ShellId
+{
+    public string Name { get; }
+}
 ```
 
-Unique identifier for a shell. Equality is case-sensitive.
+Unique identifier for a shell. Equality is case-insensitive.
 
 ### `ShellSettings`
 
@@ -89,17 +90,19 @@ public class ShellSettings
 
 `ConfigurationData` holds configuration key/value pairs for the shell (e.g., `"WebRouting:Path"` → `""`) which are used to build the shell's `IConfiguration`. `FeatureConfigurators` stores code-first delegates applied to feature instances at build time.
 
-### `ShellContext`
+### `IShell`
 
 ```csharp
-public class ShellContext
+public interface IShell
 {
-    public ShellSettings Settings { get; }
-    public IServiceProvider Services { get; }
+    ShellDescriptor Descriptor { get; }
+    ShellLifecycleState State { get; }
+    IServiceProvider ServiceProvider { get; }
+    IShellScope BeginScope();
 }
 ```
 
-The runtime representation of a shell. Access it via `IShellHost`.
+The runtime representation of a shell generation. Access active generations through `IShellRegistry` or inject `IShell` from a shell-scoped service provider.
 
 ### `ShellFeatureAttribute`
 
@@ -134,7 +137,7 @@ public class ShellFeatureContext
 
 ## Feature Discovery
 
-At startup, `DefaultShellHost` scans the provided assemblies (all loaded assemblies by default) for:
+At activation time, the runtime feature catalog scans the configured feature assemblies for:
 
 - Any non-abstract class implementing `IShellFeature` or a sub-interface
 
@@ -166,7 +169,7 @@ Features are instantiated with the **root** `IServiceProvider` (not the shell's)
 Each shell's `IServiceProvider` is built by:
 
 1. Copying all registrations from the root `IServiceCollection`.
-2. Adding `ShellSettings` and `ShellFeatureContext` as singleton registrations.
+2. Adding `ShellSettings`, `ShellId`, `IShell`, and shell feature descriptors as singleton registrations.
 3. Building a shell-specific `IConfiguration` from `ShellSettings.ConfigurationData`.
 4. Calling `ConfigureServices(services)` on each feature in topological order.
 5. Calling `PostConfigureServices(services)` on features implementing `IPostConfigureShellServices`.
@@ -183,8 +186,8 @@ Services registered in the root application (e.g., `ILogger<T>`, `IHttpClientFac
 `MapShells()` inserts `ShellMiddleware` into the pipeline. For each request, the middleware:
 
 1. Runs the registered `IShellResolver` strategies in priority order.
-2. Finds the matching `ShellContext`.
-3. Creates a scoped `IServiceProvider` from the shell's container.
+2. Gets or activates the matching `IShell` from `IShellRegistry`.
+3. Creates a tracked scope from the shell with `IShell.BeginScope()`.
 4. Sets `HttpContext.RequestServices` to the shell-scoped provider.
 5. Passes control to the next middleware (endpoint routing).
 
@@ -205,18 +208,7 @@ Services registered in the root application (e.g., `ILogger<T>`, `IHttpClientFac
 
 ## Notification System
 
-CShells publishes `INotification` records during shell lifecycle events:
-
-| Notification | Trigger |
-|---|---|
-| `ShellActivated` | Shell DI container built |
-| `ShellDeactivating` | Shell about to be shut down |
-| `ShellAdded` | Shell added via `IShellManager` |
-| `ShellRemoved` | Shell removed via `IShellManager` |
-| `ShellUpdated` | Shell updated via `IShellManager` |
-| `ShellsReloaded` | All shells reloaded |
-
-Register `INotificationHandler<TNotification>` implementations to react to these events.
+CShells publishes lifecycle transitions to registered `IShellLifecycleSubscriber` implementations. Use subscribers for cross-cutting runtime reactions such as logging, telemetry, endpoint registration, and cleanup coordination.
 
 ---
 
@@ -224,9 +216,9 @@ Register `INotificationHandler<TNotification>` implementations to react to these
 
 | Extension Point | Interface | Purpose |
 |---|---|---|
-| Shell settings source | `IShellSettingsProvider` | Load shell configs from any backend |
+| Shell blueprint source | `IShellBlueprintProvider` | Load shell blueprints from any backend |
 | Shell resolution | `IShellResolverStrategy` | Custom per-request shell matching |
 | Service exclusions | `IShellServiceExclusionProvider` | Prevent root services from being copied into shells |
-| Lifecycle events | `INotificationHandler<T>` | React to shell lifecycle transitions |
+| Lifecycle events | `IShellLifecycleSubscriber` | React to shell lifecycle transitions |
 | Post-build config | `IPostConfigureShellServices` | Finalize DI registrations after all features run |
 | Dependency inference | `IInfersDependenciesFrom<T>` | Automatically inherit another feature's dependencies |

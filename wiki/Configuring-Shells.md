@@ -148,31 +148,36 @@ The FluentStorage provider supports Azure Blob Storage, AWS S3, and other backen
 
 ---
 
-## Option D: Custom Provider
+## Option D: Custom Blueprint Provider
 
-Implement `IShellSettingsProvider` to load shells from any source (database, API, etc.):
+Implement `IShellBlueprintProvider` to load shell blueprints from any source (database, API, etc.):
 
 ```csharp
-public class DatabaseShellSettingsProvider : IShellSettingsProvider
+using CShells.Lifecycle;
+
+public class DatabaseShellBlueprintProvider : IShellBlueprintProvider
 {
     private readonly AppDbContext _dbContext;
 
-    public DatabaseShellSettingsProvider(AppDbContext dbContext)
+    public DatabaseShellBlueprintProvider(AppDbContext dbContext)
     {
         _dbContext = dbContext;
     }
 
-    public async Task<IEnumerable<ShellSettings>> GetShellSettingsAsync(
-        CancellationToken cancellationToken = default)
+    public async Task<ProvidedBlueprint?> GetAsync(string name, CancellationToken cancellationToken = default)
     {
-        var tenants = await _dbContext.Tenants
-            .Where(t => t.IsActive)
-            .ToListAsync(cancellationToken);
+        var tenant = await _dbContext.Tenants
+            .SingleOrDefaultAsync(t => t.Id == name && t.IsActive, cancellationToken);
 
-        return tenants.Select(t => new ShellSettings(
-            new ShellId(t.Id.ToString()),
-            t.EnabledFeatures));
+        if (tenant is null)
+            return null;
+
+        return new ProvidedBlueprint(new DatabaseShellBlueprint(tenant));
     }
+
+    public Task<BlueprintPage> ListAsync(BlueprintListQuery query, CancellationToken cancellationToken = default) =>
+        // Return paged BlueprintSummary rows for your source.
+        throw new NotImplementedException();
 }
 ```
 
@@ -181,37 +186,41 @@ Register it:
 ```csharp
 builder.AddShells(cshells =>
 {
-    cshells.WithProvider<DatabaseShellSettingsProvider>();
+    cshells.AddBlueprintProvider(sp => sp.GetRequiredService<DatabaseShellBlueprintProvider>());
 });
 ```
 
+`DatabaseShellBlueprint` is your `IShellBlueprint` implementation that composes fresh `ShellSettings` for a tenant.
+
 ---
 
-## Multiple Providers
+## Provider Selection
 
-You can register multiple providers. They are queried in registration order; if two providers return a shell with the same name, **the last one wins**.
+CShells uses exactly one blueprint provider per host. Code-first `AddShell(...)` registrations use the built-in in-memory provider; external sources register a single provider through `AddBlueprintProvider(...)` or a provider-specific extension.
 
 ```csharp
 builder.AddShells(cshells =>
 {
-    // 1. Code-first defaults
+    // Code-first provider:
     cshells.AddShell("Default", shell => shell.WithFeatures("Core"));
+});
 
-    // 2. Configuration from appsettings.json (may override code-first)
+builder.AddShells(cshells =>
+{
+    // External configuration provider:
     cshells.WithConfigurationProvider(builder.Configuration);
+});
 
-    // 3. Database overrides (overrides anything above for matching shell names)
-    cshells.WithProvider<DatabaseShellSettingsProvider>();
+builder.AddShells(cshells =>
+{
+    // Custom external provider:
+    cshells.AddBlueprintProvider(sp => sp.GetRequiredService<DatabaseShellBlueprintProvider>());
 });
 ```
 
-This pattern is useful for:
+Do not mix `AddShell(...)` and `AddBlueprintProvider(...)` on the same host. If you need several backing stores, implement one custom `IShellBlueprintProvider` that combines them internally.
 
-- **Multi-environment**: Base config in `appsettings.json`, environment overrides from a database or environment variables.
-- **Progressive migration**: Legacy shells from one provider, migrated shells from another.
-- **Development overrides**: Production config with debug shells layered on top in development.
-
-See [Multiple Providers](Multiple-Shell-Providers) for detailed patterns and examples.
+See [Shell Blueprint Providers](Multiple-Shell-Providers) for provider patterns and examples.
 
 ---
 
@@ -233,8 +242,6 @@ Example: with `Path = "acme"` and `RoutePrefix = "api/v1"`, an endpoint mapped a
 
 | Provider | Class | Use Case |
 |---|---|---|
-| Configuration | `ConfigurationShellSettingsProvider` | `appsettings.json` and any `IConfiguration` source |
-| In-memory (immutable) | `InMemoryShellSettingsProvider` | Code-first, testing |
-| In-memory (mutable) | `MutableInMemoryShellSettingsProvider` | Dynamic runtime scenarios |
-| Composite | `CompositeShellSettingsProvider` | Aggregates multiple providers (used automatically) |
-| FluentStorage | `FluentStorageShellSettingsProvider` | Files on disk or cloud storage |
+| Configuration | `ConfigurationShellBlueprintProvider` | `appsettings.json` and any `IConfiguration` source |
+| In-memory | `InMemoryShellBlueprintProvider` | Code-first, testing |
+| FluentStorage | `FluentStorageShellBlueprintProvider` | Files on disk or cloud storage |

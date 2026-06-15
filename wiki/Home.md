@@ -10,7 +10,7 @@ CShells gives your application a structured way to define isolated **shells**, e
 
 - Each shell has its **own `IServiceProvider`** — services are fully isolated between shells.
 - Features are **discovered automatically** by scanning assemblies for types that implement `IShellFeature`.
-- Shell configuration comes from **`appsettings.json`**, external JSON files, code, a database, or any custom `IShellSettingsProvider`.
+- Shell configuration comes from **`appsettings.json`**, external JSON files, code, a database, or any custom `IShellBlueprintProvider`.
 
 ---
 
@@ -51,7 +51,7 @@ CShells gives your application a structured way to define isolated **shells**, e
 | [Configuring Shells](Configuring-Shells) | `appsettings.json`, code-first, FluentStorage, custom providers, multiple providers |
 | [Shell Resolution](Shell-Resolution) | Path, host, header, claim-based, and custom resolvers |
 | [Runtime Shell Management](Runtime-Shell-Management) | Add, remove, and update shells at runtime |
-| [Background Workers](Background-Workers) | Using `IShellContextScopeFactory` in background services |
+| [Background Workers](Background-Workers) | Using `IShellRegistry` and `IShell.BeginScope()` in background services |
 | [Integration Patterns](Integration-Patterns) | Safely integrating CShells into existing ASP.NET Core apps |
 | [FastEndpoints Integration](FastEndpoints-Integration) | Per-shell FastEndpoints support |
 | [Architecture](Architecture) | Internal design: shell host, feature discovery, DI, middleware |

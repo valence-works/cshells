@@ -1,48 +1,14 @@
-# Multiple Shell Providers
+# Shell Blueprint Providers
 
-CShells supports registering multiple shell settings providers that are combined automatically. This allows you to load shells from different sources and compose them flexibly.
+CShells uses exactly one `IShellBlueprintProvider` per host. Code-first `AddShell(...)` registrations use the built-in in-memory provider. External sources register their provider through `AddBlueprintProvider(...)` or a provider-specific extension such as `WithConfigurationProvider(...)` or `WithFluentStorageBlueprints(...)`.
 
----
-
-## How It Works
-
-Providers are queried in the order they are registered. Each provider returns a list of `ShellSettings`. The results are merged by shell name: **the last provider to return a shell with a given name wins**.
-
-```
-Provider 1 (code-first)     Provider 2 (appsettings.json)     Provider 3 (database)
-      │                              │                               │
-      └──────────────────────────────┴───────────────────────────────┘
-                                     │
-                              Composite merge
-                          (last provider wins by ID)
-                                     │
-                              ShellSettingsCache
-```
-
----
-
-## Registering Multiple Providers
-
-```csharp
-builder.AddShells(cshells =>
-{
-    // 1. Code-first defaults
-    cshells.AddShell("Default", shell => shell
-        .WithFeatures("Core", "Starter"));
-
-    // 2. appsettings.json (overrides code-first for matching names)
-    cshells.WithConfigurationProvider(builder.Configuration);
-
-    // 3. Database (overrides anything above for matching names)
-    cshells.WithProvider<DatabaseShellSettingsProvider>();
-});
-```
+If you need to combine several sources, implement one custom provider that performs the fan-out internally and register only that provider. The runtime intentionally avoids implicit multi-provider merging so lookup, paging, and ownership are deterministic.
 
 ---
 
 ## Provider Registration Methods
 
-### `AddShell` — Code-First
+### `AddShell` - Code-First
 
 ```csharp
 cshells.AddShell("Tenant1", shell => shell
@@ -50,9 +16,9 @@ cshells.AddShell("Tenant1", shell => shell
     .WithConfiguration("WebRouting:Path", "tenant1"));
 ```
 
-Code-first shells are collected first and form the base layer.
+Code-first shells are read-only blueprints backed by the built-in in-memory provider.
 
-### `WithConfigurationProvider` — `appsettings.json`
+### `WithConfigurationProvider` - `appsettings.json`
 
 ```csharp
 cshells.WithConfigurationProvider(builder.Configuration);
@@ -60,73 +26,19 @@ cshells.WithConfigurationProvider(builder.Configuration);
 cshells.WithConfigurationProvider(builder.Configuration, "TenantConfig");
 ```
 
-### `WithProvider<T>` — Type-Registered Provider
+Configuration-backed blueprints re-read their configuration when composed for activation or reload.
 
-The provider type is resolved from DI at startup, so it can receive constructor dependencies:
-
-```csharp
-cshells.WithProvider<DatabaseShellSettingsProvider>();
-```
-
-### `WithProvider(instance)` — Instance
-
-```csharp
-var provider = new InMemoryShellSettingsProvider(myShells);
-cshells.WithProvider(provider);
-```
-
-### `WithProvider(factory)` — Factory Function
-
-```csharp
-cshells.WithProvider(sp =>
-    new DatabaseShellSettingsProvider(sp.GetRequiredService<AppDbContext>()));
-```
-
----
-
-## Common Patterns
-
-### Multi-Tenant SaaS
+### `AddBlueprintProvider` - Custom Provider
 
 ```csharp
 builder.AddShells(cshells =>
 {
-    // Fallback defaults for new/unknown tenants
-    cshells.AddShell("Default", shell => shell.WithFeatures("Core", "Starter"));
-
-    // Active tenants from database
-    cshells.WithProvider<ActiveTenantsProvider>();
+    cshells.AddBlueprintProvider(sp =>
+        sp.GetRequiredService<DatabaseShellBlueprintProvider>());
 });
 ```
 
-### Environment-Based Overrides
-
-```csharp
-builder.AddShells(cshells =>
-{
-    // Base config from appsettings.json
-    cshells.WithConfigurationProvider(builder.Configuration);
-
-    if (builder.Environment.IsDevelopment())
-    {
-        // Add debug shells on top, or override existing ones
-        cshells.AddShell("Debug", shell => shell.WithFeatures("Core", "Debug", "Swagger"));
-    }
-});
-```
-
-### Progressive Migration
-
-```csharp
-builder.AddShells(cshells =>
-{
-    // Legacy shells from old system
-    cshells.WithProvider<LegacyShellProvider>();
-
-    // Migrated shells from new system (override legacy ones by same ID)
-    cshells.WithProvider<NewDatabaseShellProvider>();
-});
-```
+The provider type is resolved from DI, so it can receive constructor dependencies.
 
 ---
 
@@ -134,47 +46,33 @@ builder.AddShells(cshells =>
 
 | Type | Description |
 |---|---|
-| `InMemoryShellSettingsProvider` | Immutable in-memory list (used internally for code-first shells) |
-| `MutableInMemoryShellSettingsProvider` | Thread-safe, mutable in-memory list for dynamic scenarios |
-| `ConfigurationShellSettingsProvider` | Reads from `IConfiguration` (typically `appsettings.json`) |
-| `CompositeShellSettingsProvider` | Aggregates multiple providers (created automatically when >1 provider is registered) |
-| `FluentStorageShellSettingsProvider` | Reads JSON files from disk or cloud storage |
+| `InMemoryShellBlueprintProvider` | Read-only in-memory blueprints used by code-first `AddShell(...)` registrations |
+| `ConfigurationShellBlueprintProvider` | Reads blueprints from `IConfiguration` |
+| `FluentStorageShellBlueprintProvider` | Reads JSON blueprints from disk or cloud storage and supports mutation |
 
-### `MutableInMemoryShellSettingsProvider`
+---
 
-Use this when you need to programmatically add/remove shells outside of `IShellManager`:
+## Mutable Sources
+
+Providers wrapping mutable stores can attach an `IShellBlueprintManager` to each returned `ProvidedBlueprint`. The manager persists create/update/delete operations. Runtime activation and reload remain explicit registry operations:
 
 ```csharp
-var mutableProvider = new MutableInMemoryShellSettingsProvider();
+var manager = await registry.GetManagerAsync("Tenant1");
+if (manager is null)
+    throw new InvalidOperationException("The shell source is read-only or unknown.");
 
-// Add or replace a shell
-mutableProvider.AddOrUpdate(myShellSettings);
-
-// Remove a shell
-mutableProvider.Remove(new ShellId("Tenant1"));
-
-// Register it as a provider
-cshells.WithProvider(mutableProvider);
+await manager.UpdateAsync(updatedSettings);
+await registry.ReloadAsync("Tenant1");
 ```
+
+Use `IShellRegistry.UnregisterBlueprintAsync(name)` for removal so CShells can delete the blueprint through its manager and then drain the active shell generation.
 
 ---
 
 ## Best Practices
 
-- Register providers from **most general** (defaults) to **most specific** (overrides).
-- Use `IShellManager.ReloadAllShellsAsync()` to refresh shells after external changes.
-- Use `IShellManager.ReloadShellAsync(shellId)` to reload a single shell efficiently.
-- Ensure custom providers are **thread-safe** — they may be called concurrently.
-- Code-first shells and provider-based shells coexist naturally; no special opt-in is required.
-
----
-
-## Targeted Provider Lookup
-
-Providers implement `GetShellSettingsAsync(ShellId)` for efficient single-shell lookup during `ReloadShellAsync`. Built-in providers optimize this (e.g., `MutableInMemoryShellSettingsProvider` uses O(1) dictionary lookup). Custom providers must implement both overloads of `GetShellSettingsAsync`; a simple approach is to enumerate all shells and filter by ID.
-
-With a `CompositeShellSettingsProvider`, all providers are queried for the targeted shell ID, and the last non-null result wins — matching the same last-wins semantics used during full enumeration.
-
-### Reload Notifications
-
-During reload operations, `ShellReloading` and `ShellReloaded` notifications are emitted. Providers do not need to handle these notifications, but downstream consumers can observe them to react to configuration changes. See [Runtime Shell Management](Runtime-Shell-Management.md#reload-notification-ordering) for ordering details.
+- Register exactly one blueprint source per host.
+- Use a custom `IShellBlueprintProvider` when several backing stores need to appear as one catalogue.
+- Use `IShellRegistry.GetOrActivateAsync(name)` to activate a shell on demand.
+- Use `IShellRegistry.ReloadAsync(name)` or `ReloadActiveAsync()` after external source changes.
+- Ensure custom providers are thread-safe; they may be called concurrently.

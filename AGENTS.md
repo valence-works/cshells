@@ -10,9 +10,9 @@ CShells is a multi-package library. Package separation is intentional and enforc
 | Main ASP.NET Core app | `CShells` + `CShells.AspNetCore` |
 
 **Data flow at startup:**
-`AddShells()`/`AddCShellsAspNetCore()` → `IShellSettingsProvider` loads `ShellSettings` into `ShellSettingsCache` → `DefaultShellHost` (lazy) builds a per-shell `IServiceProvider` from root services + feature `ConfigureServices` calls → `ShellMiddleware` resolves the shell per request via `IShellResolverStrategy` and swaps `HttpContext.RequestServices` to the shell's scoped provider.
+`AddCShells()`/`AddCShellsAspNetCore()` → a single `IShellBlueprintProvider` owns shell blueprints → `IShellRegistry` lazily activates shell generations → `ShellProviderBuilder` builds a per-shell `IServiceProvider` from root services + feature `ConfigureServices` calls → `ShellMiddleware` resolves the shell per request via `IShellResolverStrategy` and swaps `HttpContext.RequestServices` to the shell's scoped provider.
 
-Root service descriptors are **bulk-copied** into each shell's `IServiceCollection`. CShells infrastructure types (`IShellHost`, `IShellContextScopeFactory`, `IRootServiceCollectionAccessor`, `IShellManager`) are excluded from this copy — see `DefaultShellServiceExclusionProvider`.
+Root service descriptors are **bulk-copied** into each shell's `IServiceCollection`. CShells infrastructure types such as `IRootServiceCollectionAccessor`, `IShellRegistry`, lifecycle services, and feature discovery/build services are excluded from this copy — see `DefaultShellServiceExclusionProvider`. `IShellRegistry` is re-registered inside shell providers as a root delegation.
 
 ## Feature System
 
@@ -83,15 +83,15 @@ Register custom strategies with `.ConfigureResolverPipeline(pipeline => pipeline
 
 ## Runtime Shell Management
 
-`IShellManager` supports hot add/remove/update/reload without app restart. `DynamicShellEndpointDataSource` signals ASP.NET Core routing to re-enumerate endpoints via `IChangeToken`. Lifecycle events are published as notifications (`ShellActivated`, `ShellDeactivating`, `ShellAdded`, `ShellRemoved`, `ShellReloaded`, etc.) — subscribe by implementing `INotificationHandler<T>`.
+`IShellRegistry` supports lazy activation, reload, unregister, drain, and active-shell enumeration without app restart. Mutable blueprint sources expose `IShellBlueprintManager` for persisted create/update/delete operations. `DynamicShellEndpointDataSource` signals ASP.NET Core routing to re-enumerate endpoints via `IChangeToken`. Lifecycle changes are published through `IShellLifecycleSubscriber`.
 
 ## Background Workers
 
-Use `IShellContextScopeFactory` to work within a shell's DI scope outside an HTTP request:
+Use `IShellRegistry` to select shells and `IShell.BeginScope()` to work within a shell's DI scope outside an HTTP request:
 ```csharp
-foreach (var shell in shellHost.AllShells)
+foreach (var shell in registry.GetActiveShells())
 {
-    using var scope = scopeFactory.CreateScope(shell);
+    await using var scope = shell.BeginScope();
     var svc = scope.ServiceProvider.GetRequiredService<IMyService>();
 }
 ```
@@ -120,7 +120,7 @@ When asked to review or address PR review comments, think critically about each 
 ## Testing Patterns
 
 - Unit tests → `tests/CShells.Tests/Unit/`
-- Integration tests → `tests/CShells.Tests/Integration/`; use `DefaultShellHostFixture` (in `TestHelpers/`) to construct `DefaultShellHost` instances
+- Integration tests → `tests/CShells.Tests/Integration/`; use focused fixtures in `TestHelpers/` and `ManagementApiFixture` for management endpoint coverage
 - E2E tests → `tests/CShells.Tests.EndToEnd/` via `WebApplicationFactory<Program>`
 - `TestFixtures.CreateRootServices()` produces a minimal root `IServiceCollection`/`IServiceProvider` for test isolation
 - Test file names mirror the class under test with a `Tests` suffix
@@ -138,11 +138,11 @@ When asked to review or address PR review comments, think critically about each 
 | Purpose | Path |
 |---|---|
 | Feature interfaces | `src/CShells.Abstractions/Features/` |
-| Shell host (core orchestrator) | `src/CShells/Hosting/DefaultShellHost.cs` |
+| Shell registry (core orchestrator) | `src/CShells/Lifecycle/ShellRegistry.cs` |
 | Feature discovery (reflection) | `src/CShells/Features/FeatureDiscovery.cs` |
 | ASP.NET Core wiring | `src/CShells.AspNetCore/Extensions/ApplicationBuilderExtensions.cs` |
 | Reference feature implementations | `samples/CShells.Workbench.Features/` |
-| Integration test helper | `tests/CShells.Tests/TestHelpers/DefaultShellHostFixture.cs` |
+| Integration test helpers | `tests/CShells.Tests/TestHelpers/` |
 
 
 ## Active Technologies

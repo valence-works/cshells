@@ -481,55 +481,55 @@ builder.AddShells(cshells =>
 });
 ```
 
-#### 4. Custom Provider
+#### 4. Custom Blueprint Provider
 
 ```csharp
-public class DatabaseShellSettingsProvider : IShellSettingsProvider
+public class DatabaseShellBlueprintProvider : IShellBlueprintProvider
 {
-    public async Task<IEnumerable<ShellSettings>> GetAllAsync()
+    public async Task<ProvidedBlueprint?> GetAsync(string name, CancellationToken cancellationToken = default)
     {
         // Load from database, API, etc.
-        return Enumerable.Empty<ShellSettings>();
+        var settings = await LoadSettingsAsync(name, cancellationToken);
+        return settings is null ? null : new ProvidedBlueprint(new DatabaseShellBlueprint(settings));
     }
+
+    public Task<BlueprintPage> ListAsync(BlueprintListQuery query, CancellationToken cancellationToken = default) =>
+        // Return paged BlueprintSummary rows for your source.
+        throw new NotImplementedException();
 }
 
 builder.AddShells(cshells =>
 {
-    cshells.WithProvider<DatabaseShellSettingsProvider>();
+    cshells.AddBlueprintProvider(sp => sp.GetRequiredService<DatabaseShellBlueprintProvider>());
 });
 ```
 
-## Shell Context Scopes & Background Work
+`DatabaseShellBlueprint` is your `IShellBlueprint` implementation that composes fresh `ShellSettings` for a tenant.
 
-Shell context scopes provide a way to create scoped services within a shell's service provider. This is particularly useful for background workers or other services that need to execute work in the context of each shell.
+## Shell Scopes & Background Work
 
-### Creating Shell Context Scopes
+Shell scopes provide a way to create scoped services within a shell's service provider. This is particularly useful for background workers or other services that need to execute work in the context of each shell.
 
-Use `IShellContextScopeFactory` to create scopes for shell contexts:
+### Creating Shell Scopes
+
+Use `IShellRegistry` to select active shells, then call `IShell.BeginScope()` to create a tracked scope for a shell:
 
 ```csharp
 using CShells;
+using CShells.Lifecycle;
+using Microsoft.Extensions.DependencyInjection;
 
-public class MyService
+public class MyService(IShellRegistry registry)
 {
-    private readonly IShellHost _shellHost;
-    private readonly IShellContextScopeFactory _scopeFactory;
-
-    public MyService(IShellHost shellHost, IShellContextScopeFactory scopeFactory)
+    public async Task DoWorkAsync()
     {
-        _shellHost = shellHost;
-        _scopeFactory = scopeFactory;
-    }
-
-    public void DoWork()
-    {
-        foreach (var shell in _shellHost.AllShells)
+        foreach (var shell in registry.GetActiveShells())
         {
-            using var scope = _scopeFactory.CreateScope(shell);
+            await using var scope = shell.BeginScope();
 
             // Resolve scoped services from the shell's service provider
             var myService = scope.ServiceProvider.GetRequiredService<IMyService>();
-            myService.Execute();
+            await myService.ExecuteAsync();
         }
     }
 }
@@ -541,40 +541,30 @@ Here's an example of a background service that executes work for each shell:
 
 ```csharp
 using CShells;
+using CShells.Lifecycle;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-public class ShellBackgroundWorker : BackgroundService
+public class ShellBackgroundWorker(
+    IShellRegistry registry,
+    ILogger<ShellBackgroundWorker> logger) : BackgroundService
 {
-    private readonly IShellHost _shellHost;
-    private readonly IShellContextScopeFactory _scopeFactory;
-    private readonly ILogger<ShellBackgroundWorker> _logger;
-
-    public ShellBackgroundWorker(
-        IShellHost shellHost,
-        IShellContextScopeFactory scopeFactory,
-        ILogger<ShellBackgroundWorker> logger)
-    {
-        _shellHost = shellHost;
-        _scopeFactory = scopeFactory;
-        _logger = logger;
-    }
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            foreach (var shell in _shellHost.AllShells)
+            foreach (var shell in registry.GetActiveShells())
             {
-                using var scope = _scopeFactory.CreateScope(shell);
+                await using var scope = shell.BeginScope();
 
                 // Execute work in the shell's context
-                _logger.LogInformation("Background work executed for shell '{ShellId}'", shell.Id.Name);
+                logger.LogInformation("Background work executed for shell '{Shell}'", shell.Descriptor);
 
                 // Resolve and use scoped services
                 var service = scope.ServiceProvider.GetService<IMyService>();
-                service?.Execute();
+                if (service is not null)
+                    await service.ExecuteAsync(stoppingToken);
             }
 
             await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
