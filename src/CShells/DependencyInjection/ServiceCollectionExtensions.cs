@@ -53,6 +53,11 @@ public static class ServiceCollectionExtensions
             return new RuntimeFeatureCatalog(ct => builder.BuildFeatureAssembliesAsync(sp, ct), logger);
         });
 
+        // Public, read-only view over the discovered feature catalog so hosts can present "available"
+        // features (enabled or not) without re-implementing feature discovery. Excluded from per-shell
+        // containers and root-delegated by ShellProviderBuilder so shell-scoped resolves alias the root.
+        services.TryAddSingleton<IRuntimeFeatureCatalog>(sp => sp.GetRequiredService<RuntimeFeatureCatalog>());
+
         // Lifecycle surface: provider builder + registry + auto-logger + drain defaults + startup service.
         services.TryAddSingleton<ShellProviderBuilder>(sp => new ShellProviderBuilder(
             sp.GetRequiredService<IRootServiceCollectionAccessor>(),

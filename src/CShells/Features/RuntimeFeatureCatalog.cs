@@ -6,7 +6,7 @@ namespace CShells.Features;
 
 internal sealed class RuntimeFeatureCatalog(
     Func<CancellationToken, Task<IReadOnlyCollection<Assembly>>> assemblyResolver,
-    ILogger<RuntimeFeatureCatalog>? logger = null)
+    ILogger<RuntimeFeatureCatalog>? logger = null) : IRuntimeFeatureCatalog
 {
     private readonly Func<CancellationToken, Task<IReadOnlyCollection<Assembly>>> assemblyResolver = Guard.Against.Null(assemblyResolver);
     private readonly ILogger<RuntimeFeatureCatalog> logger = logger ?? NullLogger<RuntimeFeatureCatalog>.Instance;
@@ -24,6 +24,12 @@ internal sealed class RuntimeFeatureCatalog(
             return;
 
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<RuntimeFeatureCatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        return CurrentSnapshot;
     }
 
     public async Task<RuntimeFeatureCatalogSnapshot> RefreshAsync(CancellationToken cancellationToken = default)
@@ -64,11 +70,4 @@ internal sealed class RuntimeFeatureCatalog(
         }
     }
 }
-
-internal sealed record RuntimeFeatureCatalogSnapshot(
-    long Generation,
-    IReadOnlyCollection<Assembly> Assemblies,
-    IReadOnlyCollection<ShellFeatureDescriptor> FeatureDescriptors,
-    IReadOnlyDictionary<string, ShellFeatureDescriptor> FeatureMap,
-    DateTimeOffset RefreshedAt);
 
