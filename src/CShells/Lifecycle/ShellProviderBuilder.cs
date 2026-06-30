@@ -134,6 +134,11 @@ internal sealed class ShellProviderBuilder(
         // singleton so shell-scoped resolves alias cleanly.
         var rootProvider = _rootProvider;
         services.AddSingleton<IShellRegistry>(_ => rootProvider.GetRequiredService<IShellRegistry>());
+
+        // Root-delegation for IRuntimeFeatureCatalog: shell-scoped consumers (e.g. a feature-management UI
+        // feature) may read the discovered catalog, but the catalog is root-only infrastructure. Alias to the
+        // root singleton rather than copying the excluded root factory.
+        services.AddSingleton<IRuntimeFeatureCatalog>(_ => rootProvider.GetRequiredService<IRuntimeFeatureCatalog>());
     }
 
     private void ConfigureFeatures(
