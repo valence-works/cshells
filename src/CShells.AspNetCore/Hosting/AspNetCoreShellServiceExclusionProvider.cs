@@ -37,5 +37,11 @@ public class AspNetCoreShellServiceExclusionProvider : IShellServiceExclusionPro
         // IAuthenticationSchemeProvider must not be copied so each shell can have its own
         // with its own set of schemes (e.g., JWT, API Key)
         yield return typeof(IAuthenticationSchemeProvider);
+
+        // Root-only dispatch infrastructure: ShellMiddleware reads pipelines from the ROOT
+        // registry. Copying the descriptor would hand each shell a fresh, permanently-empty
+        // instance — resolving it from a shell scope should fail loudly instead of silently
+        // diverging from the registry that actually dispatches requests.
+        yield return typeof(Middleware.ShellMiddlewarePipelineRegistry);
     }
 }

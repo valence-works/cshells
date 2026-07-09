@@ -22,13 +22,10 @@ public class ShellMiddlewareLazyActivationTests
     public async Task Request_UnknownShell_Returns404()
     {
         var nextCalled = false;
-        var middleware = new ShellMiddleware(
+        var middleware = CreateMiddleware(
             ctx => { nextCalled = true; return Task.CompletedTask; },
             new FixedShellResolver("unknown"),
-            new ThrowingRegistry(new ShellBlueprintNotFoundException("unknown")),
-            new DynamicShellEndpointDataSource(),
-            new MemoryCache(new MemoryCacheOptions()),
-            Options.Create(new ShellMiddlewareOptions()));
+            new ThrowingRegistry(new ShellBlueprintNotFoundException("unknown")));
 
         var ctx = new DefaultHttpContext();
         ctx.Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
@@ -44,13 +41,10 @@ public class ShellMiddlewareLazyActivationTests
     {
         var nextCalled = false;
         var inner = new InvalidOperationException("db down");
-        var middleware = new ShellMiddleware(
+        var middleware = CreateMiddleware(
             ctx => { nextCalled = true; return Task.CompletedTask; },
             new FixedShellResolver("flaky"),
-            new ThrowingRegistry(new ShellBlueprintUnavailableException("flaky", inner)),
-            new DynamicShellEndpointDataSource(),
-            new MemoryCache(new MemoryCacheOptions()),
-            Options.Create(new ShellMiddlewareOptions()));
+            new ThrowingRegistry(new ShellBlueprintUnavailableException("flaky", inner)));
 
         var ctx = new DefaultHttpContext();
         ctx.Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
@@ -68,13 +62,10 @@ public class ShellMiddlewareLazyActivationTests
         var shell = ShellMiddlewareTests.FakeShell.WithServices(_ => { }, name: "acme");
         var registry = new ShellMiddlewareTests.FakeRegistry(shell);
 
-        var middleware = new ShellMiddleware(
+        var middleware = CreateMiddleware(
             ctx => { nextCalled = true; return Task.CompletedTask; },
             new FixedShellResolver("acme"),
-            registry,
-            new DynamicShellEndpointDataSource(),
-            new MemoryCache(new MemoryCacheOptions()),
-            Options.Create(new ShellMiddlewareOptions()));
+            registry);
 
         var ctx = new DefaultHttpContext();
         ctx.Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
@@ -121,13 +112,11 @@ public class ShellMiddlewareLazyActivationTests
 
         var shell = ShellMiddlewareTests.FakeShell.WithServices(_ => { }, name: "acme");
 
-        var middleware = new ShellMiddleware(
+        var middleware = CreateMiddleware(
             ctx => ctx.GetEndpoint() is { } ep ? ((RouteEndpoint)ep).RequestDelegate!(ctx) : Task.CompletedTask,
             new FixedShellResolver("acme"),
             new ColdActivatingRegistry(shell),
-            dataSource,
-            new MemoryCache(new MemoryCacheOptions()),
-            Options.Create(new ShellMiddlewareOptions()));
+            dataSource);
 
         var ctx = new DefaultHttpContext();
         ctx.Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
@@ -169,13 +158,11 @@ public class ShellMiddlewareLazyActivationTests
             displayName: "spa-fallback");
 
         var shell = ShellMiddlewareTests.FakeShell.WithServices(_ => { }, name: "Default");
-        var middleware = new ShellMiddleware(
+        var middleware = CreateMiddleware(
             ctx => ctx.GetEndpoint() is { } endpoint ? ((RouteEndpoint)endpoint).RequestDelegate!(ctx) : Task.CompletedTask,
             new FixedShellResolver("Default"),
             new ColdActivatingRegistry(shell),
-            dataSource,
-            new MemoryCache(new MemoryCacheOptions()),
-            Options.Create(new ShellMiddlewareOptions()));
+            dataSource);
 
         var ctx = new DefaultHttpContext();
         ctx.Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
@@ -217,13 +204,11 @@ public class ShellMiddlewareLazyActivationTests
             displayName: "spa-fallback");
 
         var shell = ShellMiddlewareTests.FakeShell.WithServices(_ => { }, name: "Default");
-        var middleware = new ShellMiddleware(
+        var middleware = CreateMiddleware(
             ctx => ctx.GetEndpoint() is { } endpoint ? ((RouteEndpoint)endpoint).RequestDelegate!(ctx) : Task.CompletedTask,
             new FixedShellResolver("Default"),
             new ColdActivatingRegistry(shell),
-            dataSource,
-            new MemoryCache(new MemoryCacheOptions()),
-            Options.Create(new ShellMiddlewareOptions()));
+            dataSource);
 
         var ctx = new DefaultHttpContext();
         ctx.Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
@@ -265,13 +250,11 @@ public class ShellMiddlewareLazyActivationTests
             displayName: "host-status");
 
         var shell = ShellMiddlewareTests.FakeShell.WithServices(_ => { }, name: "Default");
-        var middleware = new ShellMiddleware(
+        var middleware = CreateMiddleware(
             ctx => ctx.GetEndpoint() is { } endpoint ? ((RouteEndpoint)endpoint).RequestDelegate!(ctx) : Task.CompletedTask,
             new FixedShellResolver("Default"),
             new ColdActivatingRegistry(shell),
-            dataSource,
-            new MemoryCache(new MemoryCacheOptions()),
-            Options.Create(new ShellMiddlewareOptions()));
+            dataSource);
 
         var ctx = new DefaultHttpContext();
         ctx.Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
@@ -291,6 +274,13 @@ public class ShellMiddlewareLazyActivationTests
     // Test doubles
     // =================================================================
 
+    private static ShellMiddleware CreateMiddleware(
+        RequestDelegate next,
+        IShellResolver resolver,
+        IShellRegistry registry,
+        DynamicShellEndpointDataSource? endpointDataSource = null) =>
+        ShellMiddlewareTests.CreateMiddleware(next, resolver, registry, endpointDataSource);
+
     private sealed class FixedShellResolver(string name) : IShellResolver
     {
         public Task<ShellId?> ResolveAsync(ShellResolutionContext context, CancellationToken cancellationToken = default) =>
@@ -300,11 +290,17 @@ public class ShellMiddlewareLazyActivationTests
     /// <summary>
     /// Registry whose <see cref="GetActive"/> always returns <c>null</c> so the middleware
     /// observes a cold activation, while <see cref="GetOrActivateAsync"/> returns a preset
-    /// shell. Used to exercise the cold-start re-match path.
+    /// shell. Used to exercise the cold-start re-match path. The optional
+    /// <paramref name="onActivate"/> callback simulates the inline lifecycle-subscriber work
+    /// (endpoint + middleware-pipeline registration) that happens during real activation.
     /// </summary>
-    private sealed class ColdActivatingRegistry(IShell shell) : IShellRegistry
+    internal sealed class ColdActivatingRegistry(IShell shell, Action? onActivate = null) : IShellRegistry
     {
-        public Task<IShell> GetOrActivateAsync(string name, CancellationToken ct = default) => Task.FromResult(shell);
+        public Task<IShell> GetOrActivateAsync(string name, CancellationToken ct = default)
+        {
+            onActivate?.Invoke();
+            return Task.FromResult(shell);
+        }
         public Task<IShell> ActivateAsync(string name, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ReloadResult> ReloadAsync(string name, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ReloadResult>> ReloadActiveAsync(ReloadOptions? options = null, CancellationToken ct = default) => throw new NotSupportedException();

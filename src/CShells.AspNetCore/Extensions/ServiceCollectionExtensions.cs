@@ -5,6 +5,7 @@ using CShells.DependencyInjection;
 using CShells.Hosting;
 using CShells.Lifecycle;
 using CShells.Resolution;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -31,6 +32,13 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<ShellResolverOptions>();
         services.TryAddSingleton<IShellResolver, DefaultShellResolver>();
+
+        // Guarantees IMiddleware-style middleware activation inside shell containers even when the
+        // root host never registered a factory (plain ServiceCollection / generic host). Scoped to
+        // match the framework's own registration in GenericWebHostBuilder; TryAdd defers to any host
+        // registration, and the descriptor flows into shell containers via
+        // ShellProviderBuilder.CopyRootServices.
+        services.TryAddScoped<IMiddlewareFactory, MiddlewareFactory>();
         services.AddMemoryCache();
         services.AddOptions<ShellMiddlewareOptions>();
 
