@@ -30,6 +30,7 @@ public class ShellMiddleware(
     IShellResolver resolver,
     IShellRegistry registry,
     DynamicShellEndpointDataSource endpointDataSource,
+    ShellMiddlewarePipelineRegistry pipelineRegistry,
     IMemoryCache cache,
     IOptions<ShellMiddlewareOptions> options,
     ILogger<ShellMiddleware>? logger = null)
@@ -38,6 +39,7 @@ public class ShellMiddleware(
     private readonly IShellResolver _resolver = Guard.Against.Null(resolver);
     private readonly IShellRegistry _registry = Guard.Against.Null(registry);
     private readonly DynamicShellEndpointDataSource _endpointDataSource = Guard.Against.Null(endpointDataSource);
+    private readonly ShellMiddlewarePipelineRegistry _pipelineRegistry = Guard.Against.Null(pipelineRegistry);
     private readonly IMemoryCache _cache = Guard.Against.Null(cache);
     private readonly ShellMiddlewareOptions _options = Guard.Against.Null(options).Value;
     private readonly ILogger<ShellMiddleware> _logger = logger ?? NullLogger<ShellMiddleware>.Instance;
@@ -96,6 +98,15 @@ public class ShellMiddleware(
         if (wasCold && ShouldTryMatchEndpointAfterColdActivation(context.GetEndpoint()))
             TryMatchEndpointAfterColdActivation(context, shellId.Value);
 
+        // Resolve the shell's composed middleware pipeline BEFORE taking the scope. Ordering
+        // matters: pipeline entries are removed when a generation reaches Disposed (bounded or
+        // forced drains can dispose a generation while requests are still arriving), and
+        // BeginScope rejects a Disposed generation — so resolving first means this request
+        // either holds the pipeline delegate (which stays usable even if the entry is removed
+        // mid-request) or fails loudly at BeginScope. It can never silently run without the
+        // shell's middleware.
+        var pipeline = _pipelineRegistry.Get(shellId.Value, shell.Descriptor.Generation, _next);
+
         // BeginScope increments the shell's active-scope counter (so in-flight drains' phase-1
         // waits for this request to complete). The scope is released via OnCompleted (not
         // `await using`) so upstream middleware can still read RequestServices during its
@@ -105,7 +116,7 @@ public class ShellMiddleware(
         context.RequestServices = scope.ServiceProvider;
         context.Response.OnCompleted(() => scope.DisposeAsync().AsTask());
 
-        await _next(context);
+        await (pipeline ?? _next)(context);
     }
 
     private async ValueTask<ShellId?> ResolveShellWithCacheAsync(

@@ -107,23 +107,31 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
 
     private async Task<DrainResult> ExecuteAsync()
     {
-        // Phase 1: scope wait.
-        var scopeWaitStart = Stopwatch.GetTimestamp();
-        var abandonedScopes = await AwaitScopeReleaseAsync().ConfigureAwait(false);
-        var scopeWaitElapsed = Stopwatch.GetElapsedTime(scopeWaitStart);
+        try
+        {
+            // Phase 1: scope wait.
+            var scopeWaitStart = Stopwatch.GetTimestamp();
+            var abandonedScopes = await AwaitScopeReleaseAsync().ConfigureAwait(false);
+            var scopeWaitElapsed = Stopwatch.GetElapsedTime(scopeWaitStart);
 
-        // Phase 2: handler invocation. Linked CTS: deadline or force.
-        var handlerResults = await InvokeHandlersAsync().ConfigureAwait(false);
+            // Phase 2: handler invocation. Linked CTS: deadline or force.
+            var handlerResults = await InvokeHandlersAsync().ConfigureAwait(false);
 
-        // Determine overall status.
-        var status = ResolveStatus(handlerResults);
-        Volatile.Write(ref _status, (int)status);
+            // Determine overall status.
+            var status = ResolveStatus(handlerResults);
+            Volatile.Write(ref _status, (int)status);
 
-        // Transition to Drained, then to Disposed (disposes provider).
-        await _shell.ForceAdvanceAsync(ShellLifecycleState.Drained).ConfigureAwait(false);
-        await _shell.DisposeAsync().ConfigureAwait(false);
-
-        return new DrainResult(_shell.Descriptor, status, scopeWaitElapsed, abandonedScopes, handlerResults);
+            return new DrainResult(_shell.Descriptor, status, scopeWaitElapsed, abandonedScopes, handlerResults);
+        }
+        finally
+        {
+            // Transition to Drained, then to Disposed (disposes provider) — in a finally so a
+            // faulted drain phase (e.g. IDrainHandler resolution failure) cannot park the
+            // generation in Draining forever. Disposed-keyed cleanup (endpoint removal,
+            // middleware pipeline removal) depends on this transition always firing.
+            await _shell.ForceAdvanceAsync(ShellLifecycleState.Drained).ConfigureAwait(false);
+            await _shell.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task<int> AwaitScopeReleaseAsync()

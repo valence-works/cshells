@@ -189,7 +189,13 @@ Services registered in the root application (e.g., `ILogger<T>`, `IHttpClientFac
 2. Gets or activates the matching `IShell` from `IShellRegistry`.
 3. Creates a tracked scope from the shell with `IShell.BeginScope()`.
 4. Sets `HttpContext.RequestServices` to the shell-scoped provider.
-5. Passes control to the next middleware (endpoint routing).
+5. Dispatches through the shell's composed feature middleware pipeline (if any), then passes control to the next middleware (endpoint routing).
+
+### Per-Shell Middleware Pipelines
+
+When a shell activates (at startup, lazily on first request, dynamically at runtime, or on reload), its `IMiddlewareShellFeature`s are composed — in ascending `Order`, ties preserving feature-dependency order — into a per-shell pipeline stored in `ShellMiddlewarePipelineRegistry`, keyed by shell name and generation. `ShellMiddleware` dispatches matching requests through this pipeline before rejoining the host pipeline, so shell feature middleware runs only for that shell's requests and works for shells activated after the host pipeline was built. Shells that activated before `MapShells()` ran are registered retroactively when `MapShells()` is called.
+
+Entries are removed when a generation is disposed. `ShellMiddleware` resolves the pipeline delegate before taking the request's shell scope, so a concurrent disposal (bounded or forced drain) can never silently skip a shell's middleware: a request either holds the delegate — usable for the rest of that request — or fails loudly when the scope is taken. If a shell's middleware cannot be composed (a feature throws during activation), the shell fails closed: a pipeline that answers 503 is registered in its place until the shell is successfully reloaded.
 
 ### Shell Resolver
 

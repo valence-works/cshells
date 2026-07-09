@@ -117,6 +117,16 @@ public class RequestLoggingFeature : IMiddlewareShellFeature
 
 Middleware registered here runs inside the shell's service provider scope, so services resolved from `HttpContext.RequestServices` come from the correct shell.
 
+How the pipeline behaves:
+
+- **Per-shell scoping** — each shell's middleware is composed into its own pipeline and runs **only** for requests resolved to that shell (never for other shells' requests or unresolved requests).
+- **Position** — the shell pipeline executes at the point where `MapShells()` was called, immediately after shell resolution sets `HttpContext.RequestServices`. Middleware the host registers before `MapShells()` (e.g. authentication) runs before shell feature middleware.
+- **Dynamic activation** — the pipeline is built whenever the shell activates: at startup, lazily on first request, dynamically at runtime, and again for each new generation on reload. Shells activated before `MapShells()` are registered retroactively when `MapShells()` runs.
+- **Ordering** — override the interface's `Order` property (default `0`) to control the order in which features' middleware is applied within the shell's pipeline. Lower values run earlier (outermost); ties preserve feature-dependency order.
+- **Path prefix** — for shells with a `WebRouting:Path`, feature middleware only runs for requests under the prefix and sees the prefix-stripped `PathBase`/`Path`; the prefix is re-applied before the host pipeline continues, so path rewrites made by feature middleware are preserved downstream. A path of `/` means root-mounted (no prefix scoping).
+- **Failure policy** — if a shell's middleware cannot be composed at activation (a feature throws), the shell fails closed: it answers 503 to every request until it is successfully reloaded, rather than serving without its middleware.
+- **`IMiddleware` support** — middleware classes implementing `IMiddleware` are resolved per request from the shell scope; CShells guarantees an `IMiddlewareFactory` is registered in shell containers. See the Workbench sample's `RequestStampFeature` for a complete example.
+
 ---
 
 ## `[ShellFeature]` Attribute
