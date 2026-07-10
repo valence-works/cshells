@@ -48,7 +48,8 @@ internal static class DtoMappers
             Status: result.Status.ToString(),
             ScopeWaitElapsed: result.ScopeWaitElapsed,
             AbandonedScopeCount: result.AbandonedScopeCount,
-            HandlerResults: result.HandlerResults.Select(MapHandlerResult).ToArray());
+            HandlerResults: result.HandlerResults.Select(MapHandlerResult).ToArray(),
+            TerminatorResults: result.TerminatorResults.Select(MapTerminatorResult).ToArray());
 
     private static DrainHandlerResultResponse MapHandlerResult(DrainHandlerResult hr) =>
         new(
@@ -56,6 +57,13 @@ internal static class DtoMappers
             Outcome: hr.Completed ? "Completed" : (hr.Error is not null ? "Faulted" : "Cancelled"),
             Elapsed: hr.Elapsed,
             ErrorMessage: hr.Error?.Message);
+
+    private static ShellTerminatorResultResponse MapTerminatorResult(ShellTerminatorResult tr) =>
+        new(
+            TerminatorType: tr.TerminatorTypeName,
+            Outcome: tr.Completed ? "Completed" : (tr.Error is not null ? "Faulted" : "Cancelled"),
+            Elapsed: tr.Elapsed,
+            ErrorMessage: tr.Error?.Message);
     
     private static DrainSnapshot? MapDrain(IDrainOperation? drain) => drain is null ? null : new DrainSnapshot(drain.Status.ToString(), drain.Deadline);
 }

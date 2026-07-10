@@ -128,6 +128,27 @@ public class ForceDrainEndpointTests
         _ = oldGen; // pin to keep variable from being optimized; unused otherwise
     }
 
+    [Fact(DisplayName = "Force-drain response includes terminator results")]
+    public async Task ForceDrain_WithTerminator_ResponseIncludesTerminatorResults()
+    {
+        await using var fixture = new ManagementApiFixture(c => c
+            .WithAssemblyContaining<ForceDrainEndpointTests>()
+            .AddShell("acme", s => s.WithFeature<MgmtStuckDrainWithTerminatorFeature>()));
+        await fixture.Registry.GetOrActivateAsync("acme");
+
+        await fixture.PostAsync("/admin/reload/acme");
+
+        var response = await fixture.PostAsync("/admin/acme/force-drain");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<DrainResultResponse[]>(WebJson);
+        Assert.NotNull(body);
+        var terminatorResult = Assert.Single(Assert.Single(body).TerminatorResults);
+        Assert.Equal(nameof(MgmtRecordingTerminator), terminatorResult.TerminatorType);
+        Assert.Equal("Completed", terminatorResult.Outcome);
+        Assert.Null(terminatorResult.ErrorMessage);
+    }
+
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
     /// <summary>
@@ -174,5 +195,19 @@ public class ForceDrainEndpointTests
                 throw;
             }
         }
+    }
+
+    public sealed class MgmtStuckDrainWithTerminatorFeature : IShellFeature
+    {
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddTransient<IDrainHandler, MgmtStuckDrainHandler>();
+            services.AddShellTerminator<MgmtRecordingTerminator>();
+        }
+    }
+
+    private sealed class MgmtRecordingTerminator : IShellTerminator
+    {
+        public Task TerminateAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

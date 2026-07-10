@@ -7,10 +7,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace CShells.Lifecycle;
 
 /// <summary>
-/// Default <see cref="IDrainOperation"/>. Coordinates three drain phases:
+/// Default <see cref="IDrainOperation"/>. Coordinates four drain phases:
 /// (1) scope wait bounded by the deadline; (2) parallel handler invocation; (3) grace after
-/// deadline or force. Exposes itself as <see cref="IDrainExtensionHandle"/> to handlers,
-/// delegating extension requests to the configured <see cref="IDrainPolicy"/>.
+/// deadline or force; (4) sequential <see cref="IShellTerminator"/> invocation while the shell
+/// is <see cref="ShellLifecycleState.Drained"/> and its provider is still alive. Exposes itself
+/// as <see cref="IDrainExtensionHandle"/> to handlers, delegating extension requests to the
+/// configured <see cref="IDrainPolicy"/>.
 /// </summary>
 internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
 {
@@ -51,10 +53,11 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
         if (Interlocked.Exchange(ref _force, 1) != 0)
             return Task.CompletedTask;
 
-        // Drain may have already completed (status is not Pending) — the CTS is disposed in
-        // that case and calling Cancel() would throw ObjectDisposedException. Checking status
-        // first makes ForceAsync a clean no-op after completion.
-        if (Volatile.Read(ref _status) != (int)DrainStatus.Pending)
+        // Drain may have already completed — the CTS is disposed in that case and calling
+        // Cancel() would throw ObjectDisposedException. Checking the completion task (rather
+        // than status, which flips before terminators run) makes ForceAsync a clean no-op
+        // after completion while still able to interrupt a hung terminator.
+        if (_completion.Task.IsCompleted)
             return Task.CompletedTask;
 
         try
@@ -115,15 +118,20 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
         // Phase 2: handler invocation. Linked CTS: deadline or force.
         var handlerResults = await InvokeHandlersAsync().ConfigureAwait(false);
 
-        // Determine overall status.
+        // Determine overall status. Resolved before terminators run, so terminator outcomes
+        // structurally cannot affect the drain status.
         var status = ResolveStatus(handlerResults);
         Volatile.Write(ref _status, (int)status);
 
-        // Transition to Drained, then to Disposed (disposes provider).
         await _shell.ForceAdvanceAsync(ShellLifecycleState.Drained).ConfigureAwait(false);
+
+        // Phase 4: terminator invocation. The shell is Drained; its provider is still alive.
+        var terminatorResults = await InvokeTerminatorsAsync().ConfigureAwait(false);
+
+        // Transition to Disposed (disposes provider).
         await _shell.DisposeAsync().ConfigureAwait(false);
 
-        return new DrainResult(_shell.Descriptor, status, scopeWaitElapsed, abandonedScopes, handlerResults);
+        return new DrainResult(_shell.Descriptor, status, scopeWaitElapsed, abandonedScopes, handlerResults, terminatorResults);
     }
 
     private async Task<int> AwaitScopeReleaseAsync()
@@ -246,6 +254,153 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
         if (!allHandlers.IsCompleted)
         {
             await Task.WhenAny(allHandlers, WaitForCancellationThenGrace(token)).ConfigureAwait(false);
+        }
+
+        return results.ToList();
+    }
+
+    private async Task<IReadOnlyList<ShellTerminatorResult>> InvokeTerminatorsAsync()
+    {
+        // Resolve terminators inside a scope so transient registrations get a fresh instance.
+        // Lifetime is deferred (see continuation below) for the same reason as handler scopes:
+        // an abandoned terminator may still be running after the grace period.
+        AsyncServiceScope scope;
+        try
+        {
+            scope = _shell.ServiceProvider.CreateAsyncScope();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Emergency dispose (host shutdown-timeout breach) raced ahead of this drain;
+            // terminators are deliberately skipped on that path.
+            _logger.LogWarning("Shell {Shell} was disposed before termination; skipping terminators.", _shell.Descriptor);
+            return [];
+        }
+
+        ShellTerminatorOrderingPlanner.TerminatorOrderingPlan plan;
+        try
+        {
+            var terminators = scope.ServiceProvider.GetServices<IShellTerminator>().ToList();
+            var registrations = scope.ServiceProvider.GetServices<ShellTerminatorRegistration>().ToList();
+
+            if (terminators.Count == 0 && registrations.Count == 0)
+            {
+                await scope.DisposeAsync().ConfigureAwait(false);
+                return [];
+            }
+
+            plan = new ShellTerminatorOrderingPlanner().Plan(_shell.Descriptor, terminators, registrations);
+        }
+        catch (Exception ex)
+        {
+            // A broken ordering plan means execution order cannot be trusted; running
+            // terminators in arbitrary order would violate the guarantee they exist for.
+            // Drain must never fail, so skip them and proceed to disposal.
+            _logger.LogError(ex, "Shell terminator planning failed for shell {Shell}; skipping terminators.", _shell.Descriptor);
+            await scope.DisposeAsync().ConfigureAwait(false);
+            return [];
+        }
+
+        foreach (var diagnostic in plan.Diagnostics)
+        {
+            _logger.LogDebug(
+                "{Message} Shell: {Shell}. Terminators: {Terminators}",
+                diagnostic.Message,
+                _shell.Descriptor,
+                string.Join(", ", diagnostic.TerminatorTypes.Select(t => t.FullName ?? t.Name)));
+        }
+
+        // Terminators share one cancellation budget: the remaining drain deadline with a
+        // grace-period floor (scope-wait and handlers may have consumed the deadline). After a
+        // force, a fresh grace-only budget deliberately NOT linked to the already-cancelled
+        // force token — force-drain still gives flush work one bounded chance. Under an
+        // unbounded policy the budget never fires and ForceAsync remains the escape hatch.
+        var budgetCts = new CancellationTokenSource();
+        CancellationTokenSource? combined = null;
+        if (_cancelSource.IsCancellationRequested)
+        {
+            budgetCts.CancelAfter(_gracePeriod);
+        }
+        else
+        {
+            if (_deadline is { } deadline)
+            {
+                var remaining = deadline - DateTimeOffset.UtcNow;
+                budgetCts.CancelAfter(remaining > _gracePeriod ? remaining : _gracePeriod);
+            }
+
+            combined = CancellationTokenSource.CreateLinkedTokenSource(budgetCts.Token, _cancelSource.Token);
+        }
+
+        var token = combined?.Token ?? budgetCts.Token;
+
+        var entries = plan.Entries;
+        var results = new ShellTerminatorResult[entries.Count];
+        // Pre-seed with "not completed" defaults so abandoned terminators leave a valid entry.
+        for (var i = 0; i < entries.Count; i++)
+            results[i] = new ShellTerminatorResult(entries[i].TerminatorType.Name, Completed: false, Elapsed: TimeSpan.Zero, Error: null);
+
+        // Sequential invocation in mirror-reversed lifecycle order; log-and-continue per
+        // terminator so one failure never blocks the rest of the teardown.
+        var loop = Task.Run(async () =>
+        {
+            for (var i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    await entry.Terminator.TerminateAsync(token).ConfigureAwait(false);
+                    sw.Stop();
+                    results[i] = new ShellTerminatorResult(entry.TerminatorType.Name, Completed: true, sw.Elapsed, Error: null);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    sw.Stop();
+                    results[i] = results[i] with { Elapsed = sw.Elapsed };
+                }
+                catch (Exception ex)
+                {
+                    sw.Stop();
+                    _logger.LogWarning(ex, "Shell terminator {Terminator} threw for shell {Shell}", entry.TerminatorType.FullName, _shell.Descriptor);
+                    results[i] = new ShellTerminatorResult(entry.TerminatorType.Name, Completed: false, sw.Elapsed, Error: ex);
+                }
+            }
+        });
+
+        // Defer disposal of the scope and cancellation sources until the loop actually
+        // finishes, even if it is abandoned below — disposing them while a terminator is
+        // mid-flight would yield use-after-dispose for services resolved into the scope.
+        _ = loop.ContinueWith(
+            async _ =>
+            {
+                try
+                {
+                    await scope.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Terminator scope disposal failed for shell {Shell}", _shell.Descriptor);
+                }
+                combined?.Dispose();
+                budgetCts.Dispose();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+        // Wait for the loop to complete, or cancellation + grace to elapse. A terminator still
+        // running after grace is abandoned; disposal proceeds (same accepted residual hazard
+        // as abandoned drain handlers).
+        if (!loop.IsCompleted)
+            await Task.WhenAny(loop, WaitForCancellationThenGrace(token)).ConfigureAwait(false);
+
+        if (!loop.IsCompleted)
+        {
+            _logger.LogWarning(
+                "Shell termination for {Shell} abandoned after cancellation and grace; {Remaining} terminator(s) did not complete.",
+                _shell.Descriptor,
+                results.Count(r => !r.Completed));
         }
 
         return results.ToList();

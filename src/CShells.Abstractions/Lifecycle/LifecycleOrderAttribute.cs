@@ -1,12 +1,14 @@
 namespace CShells.Lifecycle;
 
 /// <summary>
-/// Declares default lifecycle ordering metadata for an initializer type.
+/// Declares default lifecycle ordering metadata for a lifecycle component (initializer or
+/// terminator) type.
 /// </summary>
 /// <remarks>
 /// Explicit metadata supplied by <see cref="ServiceCollectionLifecycleExtensions.AddShellInitializer{TInitializer}(Microsoft.Extensions.DependencyInjection.IServiceCollection, LifecyclePhase, int)"/>
-/// takes precedence over this attribute. The attribute is read from the initializer type and
-/// does not require constructing the initializer before the shell provider exists.
+/// or <see cref="ServiceCollectionLifecycleExtensions.AddShellTerminator{TTerminator}(Microsoft.Extensions.DependencyInjection.IServiceCollection, LifecyclePhase, int)"/>
+/// takes precedence over this attribute. The attribute is read from the component type and
+/// does not require constructing the component before the shell provider exists.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class LifecycleOrderAttribute : Attribute
