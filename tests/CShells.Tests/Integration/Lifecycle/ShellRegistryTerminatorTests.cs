@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Hosting;
@@ -6,6 +7,7 @@ using CShells.Lifecycle.Policies;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace CShells.Tests.Integration.Lifecycle;
 
@@ -195,6 +197,34 @@ public class ShellRegistryTerminatorTests
         Assert.Equal(0, SequenceRecorder.TerminatorHits);
     }
 
+    [Fact(DisplayName = "Emergency disposal during terminator resolution is logged as a warning, not a planning error")]
+    public async Task EmergencyDisposeDuringTerminatorResolution_DoesNotLogPlanningError()
+    {
+        var logs = new CollectingLoggerProvider();
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.AddProvider(logs).SetMinimumLevel(LogLevel.Trace));
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShells(cshells => cshells
+            .WithAssemblyContaining<ShellRegistryTerminatorTests>()
+            .AddShell("resolution-race", s => s.WithFeature<DisposeDuringTerminatorResolutionFeature>()));
+
+        await using var sp = services.BuildServiceProvider();
+        var registry = sp.GetRequiredService<IShellRegistry>();
+        var shell = await registry.ActivateAsync("resolution-race");
+        SequenceRecorder.ObservedShell = shell;
+
+        var op = await registry.DrainAsync(shell);
+        var result = await op.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(DrainStatus.Completed, result.Status);
+        Assert.Empty(result.TerminatorResults);
+        Assert.Equal(ShellLifecycleState.Disposed, shell.State);
+        Assert.Contains(logs.Entries, entry =>
+            entry.Level == LogLevel.Warning && entry.Message.Contains("disposed before termination", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Entries, entry =>
+            entry.Level >= LogLevel.Error && entry.Message.Contains("terminator planning failed", StringComparison.Ordinal));
+    }
+
     [Fact(DisplayName = "Forced drain still runs terminators within the grace budget")]
     public async Task ForcedDrain_StillInvokesTerminatorsWithGraceBudget()
     {
@@ -297,6 +327,37 @@ public class ShellRegistryTerminatorTests
         {
             lock (Sequence)
                 Sequence.Add(entry);
+        }
+    }
+
+    private sealed class CollectingLoggerProvider : ILoggerProvider
+    {
+        public ConcurrentQueue<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public ILogger CreateLogger(string categoryName) => new CollectingLogger(Entries);
+
+        public void Dispose() { }
+
+        private sealed class CollectingLogger(ConcurrentQueue<(LogLevel Level, string Message)> entries) : ILogger
+        {
+            public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                entries.Enqueue((logLevel, formatter(state, exception)));
+
+            private sealed class NullScope : IDisposable
+            {
+                public static readonly NullScope Instance = new();
+
+                public void Dispose() { }
+            }
         }
     }
 
@@ -499,6 +560,18 @@ public class ShellRegistryTerminatorTests
     private sealed class StuckHandler : IDrainHandler
     {
         public Task DrainAsync(IDrainExtensionHandle _, CancellationToken ct) => Task.Delay(Timeout.InfiniteTimeSpan, ct);
+    }
+
+    public sealed class DisposeDuringTerminatorResolutionFeature : IShellFeature
+    {
+        public void ConfigureServices(IServiceCollection services) =>
+            services.AddTransient<IShellTerminator>(_ => DisposeShellAndThrow());
+
+        private static IShellTerminator DisposeShellAndThrow()
+        {
+            ((Shell)SequenceRecorder.ObservedShell!).DisposeAsync().AsTask().GetAwaiter().GetResult();
+            throw new ObjectDisposedException(nameof(Shell.ServiceProvider));
+        }
     }
 
     public sealed class CancellableTerminatorFeature : IShellFeature
