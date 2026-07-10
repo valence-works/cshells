@@ -5,8 +5,10 @@ namespace CShells.Lifecycle;
 /// </summary>
 /// <remarks>
 /// Initializer execution is ordered by phase first, then by numeric order within the phase.
-/// Existing unordered <see cref="IShellInitializer"/> registrations run in
-/// <see cref="Default"/> to preserve compatibility.
+/// <see cref="IShellTerminator"/> instances execute phases mirror-reversed
+/// (<see cref="Start"/> first, <see cref="Prepare"/> last, descending order within a phase).
+/// Existing unordered <see cref="IShellInitializer"/> and <see cref="IShellTerminator"/>
+/// registrations run in <see cref="Default"/> to preserve compatibility.
 /// </remarks>
 public enum LifecyclePhase
 {

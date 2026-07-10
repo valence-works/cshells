@@ -29,4 +29,26 @@ public sealed record DrainResult(
     DrainStatus Status,
     TimeSpan ScopeWaitElapsed,
     int AbandonedScopeCount,
-    IReadOnlyList<DrainHandlerResult> HandlerResults);
+    IReadOnlyList<DrainHandlerResult> HandlerResults)
+{
+    /// <summary>
+    /// Creates a drain result with per-terminator details.
+    /// </summary>
+    public DrainResult(
+        ShellDescriptor shell,
+        DrainStatus status,
+        TimeSpan scopeWaitElapsed,
+        int abandonedScopeCount,
+        IReadOnlyList<DrainHandlerResult> handlerResults,
+        IReadOnlyList<ShellTerminatorResult> terminatorResults)
+        : this(shell, status, scopeWaitElapsed, abandonedScopeCount, handlerResults)
+    {
+        TerminatorResults = terminatorResults;
+    }
+
+    /// <summary>
+    /// One entry per resolved <see cref="IShellTerminator"/>; empty when termination was skipped
+    /// (no terminators, ordering-plan failure, or provider already disposed).
+    /// </summary>
+    public IReadOnlyList<ShellTerminatorResult> TerminatorResults { get; init; } = [];
+}
