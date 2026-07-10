@@ -64,6 +64,6 @@ internal static class DtoMappers
             Outcome: tr.Completed ? "Completed" : (tr.Error is not null ? "Faulted" : "Cancelled"),
             Elapsed: tr.Elapsed,
             ErrorMessage: tr.Error?.Message);
-    
+
     private static DrainSnapshot? MapDrain(IDrainOperation? drain) => drain is null ? null : new DrainSnapshot(drain.Status.ToString(), drain.Deadline);
 }

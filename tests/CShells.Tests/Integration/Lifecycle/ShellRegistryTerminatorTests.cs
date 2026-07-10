@@ -93,6 +93,23 @@ public class ShellRegistryTerminatorTests
         Assert.Equal(ShellLifecycleState.Disposed, shell.State);
     }
 
+    [Fact(DisplayName = "Terminator planning and scope-disposal failures do not fault the drain")]
+    public async Task TerminatorPlanningAndScopeDisposalFailures_DoNotFaultDrain()
+    {
+        await using var host = ShellRegistryActivateTests.BuildHost(cshells => cshells
+            .WithAssemblyContaining<ShellRegistryTerminatorTests>()
+            .AddShell("broken-plan", s => s.WithFeature<BrokenPlanWithThrowingScopeFeature>()));
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var shell = await registry.ActivateAsync("broken-plan");
+
+        var op = await registry.DrainAsync(shell);
+        var result = await op.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(DrainStatus.Completed, result.Status);
+        Assert.Empty(result.TerminatorResults);
+        Assert.Equal(ShellLifecycleState.Disposed, shell.State);
+    }
+
     [Fact(DisplayName = "Terminators run sequentially, never concurrently")]
     public async Task Terminators_RunSequentially()
     {
@@ -196,6 +213,30 @@ public class ShellRegistryTerminatorTests
         Assert.Equal(DrainStatus.Forced, result.Status);
         Assert.Equal(1, SequenceRecorder.TerminatorHits);
         Assert.True(result.TerminatorResults.Single().Completed);
+        Assert.Equal(ShellLifecycleState.Disposed, shell.State);
+    }
+
+    [Fact(DisplayName = "ForceAsync during termination cancels the terminator and reports Forced status")]
+    public async Task ForceDuringTermination_ReportsForcedStatus()
+    {
+        await using var host = ShellRegistryActivateTests.BuildHost(cshells =>
+        {
+            cshells.WithAssemblyContaining<ShellRegistryTerminatorTests>();
+            cshells.AddShell("force-terminator", s => s.WithFeature<CancellableTerminatorFeature>());
+            cshells.ConfigureGracePeriod(TimeSpan.FromMilliseconds(50));
+        });
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var shell = await registry.ActivateAsync("force-terminator");
+        var gate = shell.ServiceProvider.GetRequiredService<TerminatorGate>();
+
+        var op = await registry.DrainAsync(shell);
+        await gate.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await op.ForceAsync();
+        var result = await op.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(DrainStatus.Forced, result.Status);
+        Assert.False(Assert.Single(result.TerminatorResults).Completed);
         Assert.Equal(ShellLifecycleState.Disposed, shell.State);
     }
 
@@ -372,6 +413,41 @@ public class ShellRegistryTerminatorTests
         }
     }
 
+    public sealed class BrokenPlanWithThrowingScopeFeature : IShellFeature
+    {
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddScoped<ThrowingDisposeDependency>();
+            services.AddTransient<IShellTerminator, DependencyTerminator>();
+            services.AddSingleton(new ShellTerminatorRegistration(
+                typeof(UnresolvedTerminator),
+                LifecyclePhase.Default,
+                Order: 0,
+                RegistrationIndex: -1,
+                IsExplicit: true,
+                Source: "test"));
+        }
+    }
+
+    private sealed class DependencyTerminator(ThrowingDisposeDependency dependency) : IShellTerminator
+    {
+        public Task TerminateAsync(CancellationToken cancellationToken = default)
+        {
+            _ = dependency;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class UnresolvedTerminator : IShellTerminator
+    {
+        public Task TerminateAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class ThrowingDisposeDependency : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => ValueTask.FromException(new ApplicationException("scope disposal failed"));
+    }
+
     public sealed class ConcurrencyProbeFeature : IShellFeature
     {
         public void ConfigureServices(IServiceCollection services)
@@ -423,6 +499,29 @@ public class ShellRegistryTerminatorTests
     private sealed class StuckHandler : IDrainHandler
     {
         public Task DrainAsync(IDrainExtensionHandle _, CancellationToken ct) => Task.Delay(Timeout.InfiniteTimeSpan, ct);
+    }
+
+    public sealed class CancellableTerminatorFeature : IShellFeature
+    {
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddSingleton<TerminatorGate>();
+            services.AddShellTerminator<CancellableTerminator>();
+        }
+    }
+
+    private sealed class TerminatorGate
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class CancellableTerminator(TerminatorGate gate) : IShellTerminator
+    {
+        public async Task TerminateAsync(CancellationToken cancellationToken = default)
+        {
+            gate.Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
     }
 
     public sealed class HungTerminatorFeature : IShellFeature

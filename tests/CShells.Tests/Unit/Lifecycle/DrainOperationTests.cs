@@ -62,6 +62,21 @@ public class DrainOperationTests
         Assert.Equal(DrainStatus.Completed, op.Status);
     }
 
+    [Fact(DisplayName = "DrainResult's pre-terminator constructor remains compatible")]
+    public void DrainResult_PreTerminatorConstructor_HasEmptyTerminatorResults()
+    {
+        var result = new DrainResult(
+            ShellDescriptor.Create("legacy", 1),
+            DrainStatus.Completed,
+            TimeSpan.Zero,
+            0,
+            []);
+        var (_, _, _, _, handlerResults) = result;
+
+        Assert.Empty(result.TerminatorResults);
+        Assert.Same(result.HandlerResults, handlerResults);
+    }
+
     [Fact(DisplayName = "DrainResult carries the shell's descriptor and the per-handler elapsed timings")]
     public async Task DrainResult_Carries_PerHandler_Details()
     {

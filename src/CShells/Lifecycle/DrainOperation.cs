@@ -21,6 +21,7 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
     private readonly TimeSpan _gracePeriod;
     private readonly ILogger<DrainOperation> _logger;
     private readonly TaskCompletionSource<DrainResult> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly object _completionGate = new();
     private readonly CancellationTokenSource _cancelSource = new();
     private DateTimeOffset? _deadline;
     private int _status = (int)DrainStatus.Pending;
@@ -50,15 +51,16 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
     /// <inheritdoc />
     public Task ForceAsync(CancellationToken cancellationToken = default)
     {
-        if (Interlocked.Exchange(ref _force, 1) != 0)
-            return Task.CompletedTask;
+        lock (_completionGate)
+        {
+            // Serialize the completion boundary with ForceAsync so a force accepted while a
+            // terminator is running is reflected in the final result. Once completion wins the
+            // lock, a later force remains a no-op.
+            if (_completion.Task.IsCompleted || _force != 0)
+                return Task.CompletedTask;
 
-        // Drain may have already completed — the CTS is disposed in that case and calling
-        // Cancel() would throw ObjectDisposedException. Checking the completion task (rather
-        // than status, which flips before terminators run) makes ForceAsync a clean no-op
-        // after completion while still able to interrupt a hung terminator.
-        if (_completion.Task.IsCompleted)
-            return Task.CompletedTask;
+            _force = 1;
+        }
 
         try
         {
@@ -95,7 +97,12 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
             try
             {
                 var result = await ExecuteAsync().ConfigureAwait(false);
-                _completion.TrySetResult(result);
+                lock (_completionGate)
+                {
+                    var finalStatus = ResolveStatus(result.HandlerResults);
+                    Volatile.Write(ref _status, (int)finalStatus);
+                    _completion.TrySetResult(result with { Status = finalStatus });
+                }
             }
             catch (Exception ex)
             {
@@ -139,12 +146,19 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
             // middleware pipeline removal) depends on this transition always firing.
             await _shell.ForceAdvanceAsync(ShellLifecycleState.Drained).ConfigureAwait(false);
 
-            // Phase 4: terminators run while the shell is Drained and the provider is still
-            // alive, before disposal. Best-effort during teardown — they self-protect against an
-            // already-disposed provider, so a faulted drain still disposes cleanly.
-            terminatorResults = await InvokeTerminatorsAsync().ConfigureAwait(false);
-
-            await _shell.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                // Phase 4: terminators run while the shell is Drained and the provider is still
+                // alive, before disposal. Best-effort during teardown — they self-protect against
+                // an already-disposed provider, so a faulted drain still disposes cleanly.
+                terminatorResults = await InvokeTerminatorsAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                // An unexpected terminator infrastructure failure must not strand the shell in
+                // Drained with its provider still alive.
+                await _shell.DisposeAsync().ConfigureAwait(false);
+            }
         }
 
         return new DrainResult(_shell.Descriptor, status, scopeWaitElapsed, abandonedScopes, handlerResults, terminatorResults);
@@ -277,6 +291,12 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
 
     private async Task<IReadOnlyList<ShellTerminatorResult>> InvokeTerminatorsAsync()
     {
+        if (_shell.State == ShellLifecycleState.Disposed)
+        {
+            _logger.LogWarning("Shell {Shell} was disposed before termination; skipping terminators.", _shell.Descriptor);
+            return [];
+        }
+
         // Resolve terminators inside a scope so transient registrations get a fresh instance.
         // Lifetime is deferred (see continuation below) for the same reason as handler scopes:
         // an abandoned terminator may still be running after the grace period.
@@ -301,11 +321,19 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
 
             if (terminators.Count == 0 && registrations.Count == 0)
             {
-                await scope.DisposeAsync().ConfigureAwait(false);
+                await DisposeTerminatorScopeAsync(scope).ConfigureAwait(false);
                 return [];
             }
 
             plan = new ShellTerminatorOrderingPlanner().Plan(_shell.Descriptor, terminators, registrations);
+        }
+        catch (ObjectDisposedException) when (_shell.State == ShellLifecycleState.Disposed)
+        {
+            // Emergency disposal can race after the scope is created but before its services
+            // are resolved. This is an expected skip, not an ordering-plan failure.
+            _logger.LogWarning("Shell {Shell} was disposed before termination; skipping terminators.", _shell.Descriptor);
+            await DisposeTerminatorScopeAsync(scope).ConfigureAwait(false);
+            return [];
         }
         catch (Exception ex)
         {
@@ -313,7 +341,7 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
             // terminators in arbitrary order would violate the guarantee they exist for.
             // Drain must never fail, so skip them and proceed to disposal.
             _logger.LogError(ex, "Shell terminator planning failed for shell {Shell}; skipping terminators.", _shell.Descriptor);
-            await scope.DisposeAsync().ConfigureAwait(false);
+            await DisposeTerminatorScopeAsync(scope).ConfigureAwait(false);
             return [];
         }
 
@@ -390,14 +418,7 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
         _ = loop.ContinueWith(
             async _ =>
             {
-                try
-                {
-                    await scope.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Terminator scope disposal failed for shell {Shell}", _shell.Descriptor);
-                }
+                await DisposeTerminatorScopeAsync(scope).ConfigureAwait(false);
                 combined?.Dispose();
                 budgetCts.Dispose();
             },
@@ -420,6 +441,18 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
         }
 
         return results.ToList();
+    }
+
+    private async Task DisposeTerminatorScopeAsync(AsyncServiceScope scope)
+    {
+        try
+        {
+            await scope.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Terminator scope disposal failed for shell {Shell}", _shell.Descriptor);
+        }
     }
 
     private async Task WaitForCancellationThenGrace(CancellationToken token)

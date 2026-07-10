@@ -24,14 +24,31 @@ public enum DrainStatus
 /// Scope handles still outstanding when phase 1 ended (non-zero only when the phase was bounded out by the deadline).
 /// </param>
 /// <param name="HandlerResults">One entry per registered <see cref="IDrainHandler"/>.</param>
-/// <param name="TerminatorResults">
-/// One entry per resolved <see cref="IShellTerminator"/>; empty when termination was skipped
-/// (no terminators, ordering-plan failure, or provider already disposed).
-/// </param>
 public sealed record DrainResult(
     ShellDescriptor Shell,
     DrainStatus Status,
     TimeSpan ScopeWaitElapsed,
     int AbandonedScopeCount,
-    IReadOnlyList<DrainHandlerResult> HandlerResults,
-    IReadOnlyList<ShellTerminatorResult> TerminatorResults);
+    IReadOnlyList<DrainHandlerResult> HandlerResults)
+{
+    /// <summary>
+    /// Creates a drain result with per-terminator details.
+    /// </summary>
+    public DrainResult(
+        ShellDescriptor shell,
+        DrainStatus status,
+        TimeSpan scopeWaitElapsed,
+        int abandonedScopeCount,
+        IReadOnlyList<DrainHandlerResult> handlerResults,
+        IReadOnlyList<ShellTerminatorResult> terminatorResults)
+        : this(shell, status, scopeWaitElapsed, abandonedScopeCount, handlerResults)
+    {
+        TerminatorResults = terminatorResults;
+    }
+
+    /// <summary>
+    /// One entry per resolved <see cref="IShellTerminator"/>; empty when termination was skipped
+    /// (no terminators, ordering-plan failure, or provider already disposed).
+    /// </summary>
+    public IReadOnlyList<ShellTerminatorResult> TerminatorResults { get; init; } = [];
+}
