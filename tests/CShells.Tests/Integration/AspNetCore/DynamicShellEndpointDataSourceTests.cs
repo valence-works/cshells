@@ -1,3 +1,4 @@
+using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Routing;
 using CShells.AspNetCore.Notifications;
 using CShells.Features;
@@ -103,7 +104,8 @@ public class DynamicShellEndpointDataSourceTests
             dataSource,
             new NoopFeatureFactory(),
             new EndpointRouteBuilderAccessor(),
-            new ApplicationBuilderAccessor());
+            new ApplicationBuilderAccessor(),
+            new ShellMiddlewarePipelineRegistry());
 
         dataSource.AddEndpoints([CreateEndpoint("default/api/items", shellId, 1, settings)]);
 

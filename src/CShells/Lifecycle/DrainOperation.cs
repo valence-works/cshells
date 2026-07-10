@@ -110,26 +110,42 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
 
     private async Task<DrainResult> ExecuteAsync()
     {
-        // Phase 1: scope wait.
         var scopeWaitStart = Stopwatch.GetTimestamp();
-        var abandonedScopes = await AwaitScopeReleaseAsync().ConfigureAwait(false);
-        var scopeWaitElapsed = Stopwatch.GetElapsedTime(scopeWaitStart);
+        int abandonedScopes;
+        TimeSpan scopeWaitElapsed;
+        IReadOnlyList<DrainHandlerResult> handlerResults;
+        DrainStatus status;
+        IReadOnlyList<ShellTerminatorResult> terminatorResults = [];
 
-        // Phase 2: handler invocation. Linked CTS: deadline or force.
-        var handlerResults = await InvokeHandlersAsync().ConfigureAwait(false);
+        try
+        {
+            // Phase 1: scope wait.
+            abandonedScopes = await AwaitScopeReleaseAsync().ConfigureAwait(false);
+            scopeWaitElapsed = Stopwatch.GetElapsedTime(scopeWaitStart);
 
-        // Determine overall status. Resolved before terminators run, so terminator outcomes
-        // structurally cannot affect the drain status.
-        var status = ResolveStatus(handlerResults);
-        Volatile.Write(ref _status, (int)status);
+            // Phase 2: handler invocation. Linked CTS: deadline or force.
+            handlerResults = await InvokeHandlersAsync().ConfigureAwait(false);
 
-        await _shell.ForceAdvanceAsync(ShellLifecycleState.Drained).ConfigureAwait(false);
+            // Determine overall status. Resolved before terminators run, so terminator outcomes
+            // structurally cannot affect the drain status.
+            status = ResolveStatus(handlerResults);
+            Volatile.Write(ref _status, (int)status);
+        }
+        finally
+        {
+            // Transition to Drained, then to Disposed (disposes provider) — in a finally so a
+            // faulted drain phase (e.g. IDrainHandler resolution failure) cannot park the
+            // generation in Draining forever. Disposed-keyed cleanup (endpoint removal,
+            // middleware pipeline removal) depends on this transition always firing.
+            await _shell.ForceAdvanceAsync(ShellLifecycleState.Drained).ConfigureAwait(false);
 
-        // Phase 4: terminator invocation. The shell is Drained; its provider is still alive.
-        var terminatorResults = await InvokeTerminatorsAsync().ConfigureAwait(false);
+            // Phase 4: terminators run while the shell is Drained and the provider is still
+            // alive, before disposal. Best-effort during teardown — they self-protect against an
+            // already-disposed provider, so a faulted drain still disposes cleanly.
+            terminatorResults = await InvokeTerminatorsAsync().ConfigureAwait(false);
 
-        // Transition to Disposed (disposes provider).
-        await _shell.DisposeAsync().ConfigureAwait(false);
+            await _shell.DisposeAsync().ConfigureAwait(false);
+        }
 
         return new DrainResult(_shell.Descriptor, status, scopeWaitElapsed, abandonedScopes, handlerResults, terminatorResults);
     }

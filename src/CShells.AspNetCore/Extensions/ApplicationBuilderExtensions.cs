@@ -1,5 +1,7 @@
 using CShells.AspNetCore.Middleware;
+using CShells.AspNetCore.Notifications;
 using CShells.AspNetCore.Routing;
+using CShells.Lifecycle;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -67,6 +69,17 @@ public static class ApplicationBuilderExtensions
         // Step 6: Add the data source to the endpoint route builder
         // This makes all shell endpoints available to the routing system
         endpoints.DataSources.Add(endpointDataSource);
+
+        // Step 7: Replay registration for shells that activated before this call captured the
+        // accessors (e.g. explicit warm-up activation in Program.cs before MapShells). Without
+        // the replay those generations would permanently lack endpoints and middleware.
+        var registrationHandler = endpoints.ServiceProvider.GetService<ShellEndpointRegistrationHandler>();
+        var shellRegistry = endpoints.ServiceProvider.GetService<IShellRegistry>();
+        if (registrationHandler is not null && shellRegistry is not null)
+        {
+            foreach (var shell in shellRegistry.GetActiveShells())
+                registrationHandler.RegisterActiveShell(shell);
+        }
 
         logger.LogInformation("CShells middleware and endpoints configured successfully");
 

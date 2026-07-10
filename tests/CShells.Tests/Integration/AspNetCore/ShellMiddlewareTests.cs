@@ -135,36 +135,125 @@ public class ShellMiddlewareTests
         Assert.Equal(0, shell.ActiveScopeCount);
     }
 
-    [Theory(DisplayName = "Constructor guard clauses throw ArgumentNullException")]
-    [InlineData(true, false, false, false, false, false, "next")]
-    [InlineData(false, true, false, false, false, false, "resolver")]
-    [InlineData(false, false, true, false, false, false, "registry")]
-    [InlineData(false, false, false, true, false, false, "endpointDataSource")]
-    [InlineData(false, false, false, false, true, false, "cache")]
-    [InlineData(false, false, false, false, false, true, "options")]
-    public void Constructor_GuardClauses_ThrowArgumentNullException(
-        bool nullNext, bool nullResolver, bool nullRegistry, bool nullDataSource, bool nullCache, bool nullOptions, string expectedParam)
+    [Fact(DisplayName = "InvokeAsync with a registered shell pipeline dispatches through it, then rejoins next")]
+    public async Task InvokeAsync_PipelineRegistered_DispatchesThroughShellPipeline()
     {
-        RequestDelegate? next = nullNext ? null : _ => Task.CompletedTask;
-        IShellResolver? resolver = nullResolver ? null : new NullShellResolver();
-        IShellRegistry? registry = nullRegistry ? null : new FakeRegistry();
-        DynamicShellEndpointDataSource? dataSource = nullDataSource ? null : new DynamicShellEndpointDataSource();
-        IMemoryCache? cache = nullCache ? null : new MemoryCache(new MemoryCacheOptions());
-        IOptions<ShellMiddlewareOptions>? options = nullOptions ? null : Options.Create(new ShellMiddlewareOptions());
+        var shell = FakeShell.WithServices(s => s.AddSingleton<ITestService, TestService>(), name: "TestShell");
+        var pipelineRegistry = new ShellMiddlewarePipelineRegistry();
+        var executionOrder = new List<string>();
+        IServiceProvider? servicesInsidePipeline = null;
 
-        var ex = Assert.Throws<ArgumentNullException>(() => new ShellMiddleware(next!, resolver!, registry!, dataSource!, cache!, options!));
-        Assert.Equal(expectedParam, ex.ParamName);
+        var continuation = new ShellPipelineContinuation();
+        pipelineRegistry.Set(new ShellId("TestShell"), shell.Descriptor.Generation, ctx =>
+        {
+            executionOrder.Add("pipeline");
+            servicesInsidePipeline = ctx.RequestServices;
+            return continuation.Next(ctx);
+        }, continuation);
+
+        var middleware = CreateMiddleware(
+            _ => { executionOrder.Add("next"); return Task.CompletedTask; },
+            resolver: new FixedShellResolver("TestShell"),
+            registry: new FakeRegistry(shell),
+            pipelineRegistry: pipelineRegistry);
+
+        var (httpContext, _) = CreateHttpContextWithFireableResponse();
+
+        await middleware.InvokeAsync(httpContext);
+
+        Assert.Equal(["pipeline", "next"], executionOrder);
+        Assert.NotNull(servicesInsidePipeline?.GetService<ITestService>()); // shell scope was already set
+    }
+
+    [Fact(DisplayName = "Another shell's pipeline is not invoked for the resolved shell")]
+    public async Task InvokeAsync_PipelineForDifferentShell_FallsBackToNext()
+    {
+        var shell = FakeShell.WithServices(_ => { }, name: "ShellB");
+        var pipelineRegistry = new ShellMiddlewarePipelineRegistry();
+        var shellAPipelineInvoked = false;
+        var nextCalled = false;
+
+        pipelineRegistry.Set(new ShellId("ShellA"), 1,
+            _ => { shellAPipelineInvoked = true; return Task.CompletedTask; },
+            new ShellPipelineContinuation());
+
+        var middleware = CreateMiddleware(
+            _ => { nextCalled = true; return Task.CompletedTask; },
+            resolver: new FixedShellResolver("ShellB"),
+            registry: new FakeRegistry(shell),
+            pipelineRegistry: pipelineRegistry);
+
+        var (httpContext, _) = CreateHttpContextWithFireableResponse();
+
+        await middleware.InvokeAsync(httpContext);
+
+        Assert.True(nextCalled);
+        Assert.False(shellAPipelineInvoked);
+    }
+
+    [Fact(DisplayName = "Pipeline registered during cold activation runs on the activating request")]
+    public async Task InvokeAsync_ColdActivation_RegistersAndRunsPipelineOnFirstRequest()
+    {
+        // Mirrors the production guarantee: the registry awaits lifecycle subscribers inline
+        // during activation, so the pipeline entry exists before GetOrActivateAsync returns.
+        var shell = FakeShell.WithServices(_ => { }, name: "ColdShell");
+        var pipelineRegistry = new ShellMiddlewarePipelineRegistry();
+        var pipelineInvoked = false;
+
+        var continuation = new ShellPipelineContinuation();
+        var registry = new ShellMiddlewareLazyActivationTests.ColdActivatingRegistry(shell, onActivate: () =>
+            pipelineRegistry.Set(new ShellId("ColdShell"), shell.Descriptor.Generation, ctx =>
+            {
+                pipelineInvoked = true;
+                return continuation.Next(ctx);
+            }, continuation));
+
+        var middleware = CreateMiddleware(
+            _ => Task.CompletedTask,
+            resolver: new FixedShellResolver("ColdShell"),
+            registry: registry,
+            pipelineRegistry: pipelineRegistry);
+
+        var (httpContext, _) = CreateHttpContextWithFireableResponse();
+        httpContext.RequestServices = new ServiceCollection().BuildServiceProvider();
+
+        await middleware.InvokeAsync(httpContext);
+
+        Assert.True(pipelineInvoked);
+    }
+
+    [Theory(DisplayName = "Constructor guard clauses throw ArgumentNullException")]
+    [InlineData("next")]
+    [InlineData("resolver")]
+    [InlineData("registry")]
+    [InlineData("endpointDataSource")]
+    [InlineData("pipelineRegistry")]
+    [InlineData("cache")]
+    [InlineData("options")]
+    public void Constructor_GuardClauses_ThrowArgumentNullException(string nullParam)
+    {
+        RequestDelegate? next = nullParam == "next" ? null : _ => Task.CompletedTask;
+        IShellResolver? resolver = nullParam == "resolver" ? null : new NullShellResolver();
+        IShellRegistry? registry = nullParam == "registry" ? null : new FakeRegistry();
+        DynamicShellEndpointDataSource? dataSource = nullParam == "endpointDataSource" ? null : new DynamicShellEndpointDataSource();
+        ShellMiddlewarePipelineRegistry? pipelineRegistry = nullParam == "pipelineRegistry" ? null : new ShellMiddlewarePipelineRegistry();
+        IMemoryCache? cache = nullParam == "cache" ? null : new MemoryCache(new MemoryCacheOptions());
+        IOptions<ShellMiddlewareOptions>? options = nullParam == "options" ? null : Options.Create(new ShellMiddlewareOptions());
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new ShellMiddleware(next!, resolver!, registry!, dataSource!, pipelineRegistry!, cache!, options!));
+        Assert.Equal(nullParam, ex.ParamName);
     }
 
     // =================================================================
     // Test doubles
     // =================================================================
 
-    private static ShellMiddleware CreateMiddleware(
+    internal static ShellMiddleware CreateMiddleware(
         RequestDelegate next,
         IShellResolver? resolver = null,
         IShellRegistry? registry = null,
         DynamicShellEndpointDataSource? endpointDataSource = null,
+        ShellMiddlewarePipelineRegistry? pipelineRegistry = null,
         IMemoryCache? cache = null,
         IOptions<ShellMiddlewareOptions>? options = null) =>
         new(
@@ -172,6 +261,7 @@ public class ShellMiddlewareTests
             resolver ?? new NullShellResolver(),
             registry ?? new FakeRegistry(),
             endpointDataSource ?? new DynamicShellEndpointDataSource(),
+            pipelineRegistry ?? new ShellMiddlewarePipelineRegistry(),
             cache ?? new MemoryCache(new MemoryCacheOptions()),
             options ?? Options.Create(new ShellMiddlewareOptions()));
 

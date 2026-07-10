@@ -206,6 +206,10 @@ public static class CShellsBuilderExtensions
             // Register the application builder accessor to capture IApplicationBuilder during MapShells()
             builder.Services.TryAddSingleton<ApplicationBuilderAccessor>();
 
+            // Register the per-shell middleware pipeline registry, populated on shell activation
+            // and dispatched per request by ShellMiddleware
+            builder.Services.TryAddSingleton<Middleware.ShellMiddlewarePipelineRegistry>();
+
             // Register the endpoint registration handler as a lifecycle subscriber. It
             // self-subscribes to IShellRegistry in its constructor and rebuilds endpoints on
             // Initializing → Active / tears them down on Deactivating.
