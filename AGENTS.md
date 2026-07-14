@@ -117,6 +117,12 @@ When asked to review or address PR review comments, think critically about each 
 - If a suggestion is unclear, incorrect, obsolete, out of scope, or would harm the design, do not apply it; explain the reason.
 - Always reply to every review comment that was processed, regardless of whether code was changed, declined, deferred, or needs clarification.
 
+## Agent Orchestration
+
+- **Root agent:** Use **Sol 5.6 High**. If unavailable, fall back in order to the closest available **Sol/Terra model at high reasoning**, then the closest available **frontier model**. Report the exact fallback used.
+- **Delegates:** Use **Luna Extra High**. If unavailable, fall back in order to **Luna High**, then the closest available **model at high reasoning**. Report the exact fallback used.
+- **Delegation failures:** Treat timeouts and other delegation failures separately from model unavailability. After a bounded wait, the root agent continues and retains ownership of integration and QA; report when no delegated result was available for review.
+
 ## Testing Patterns
 
 - Unit tests → `tests/CShells.Tests/Unit/`
