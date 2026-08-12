@@ -34,9 +34,10 @@ internal static class GetShellHandler
                 // Surface as null blueprint; the response still carries live generations.
             }
 
-            // Per FR-011, surface every generation NOT yet disposed. The registry retains
-            // disposed shells in its in-memory slot, but they are no longer "live" from the
-            // operator's perspective.
+            // Per FR-011, surface every generation NOT yet disposed. The registry releases a generation
+            // once it reaches Disposed, so GetAll already excludes torn-down generations; the Disposed
+            // filter is a defensive guard against a generation that transitions to Disposed between the
+            // GetAll snapshot and this projection.
             var liveGenerations = registry.GetAll(name)
                 .Where(s => s.State != ShellLifecycleState.Disposed)
                 .ToArray();
