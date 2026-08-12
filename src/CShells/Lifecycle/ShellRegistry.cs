@@ -506,8 +506,23 @@ internal sealed class ShellRegistry : IShellRegistry
         var buildResult = await _providerBuilder!.BuildAsync(settings, cancellationToken).ConfigureAwait(false);
 
         var descriptor = ShellDescriptor.Create(blueprint.Name, (int)generation, blueprint.Metadata);
-        var shell = new Shell(descriptor, buildResult.Provider, (s, prev, curr) =>
-            FireStateChangedAsync(s, prev, curr, cancellationToken: default));
+        var shell = new Shell(descriptor, buildResult.Provider, async (s, prev, curr) =>
+        {
+            await FireStateChangedAsync(s, prev, curr).ConfigureAwait(false);
+
+            // A generation transitioning to Disposed has had its endpoints/middleware removed (the
+            // Disposed-keyed subscriber cleanup ran just above, since FireStateChangedAsync is awaited
+            // first), and its IServiceProvider teardown is in flight on this same call stack (Shell
+            // advances to Disposed before disposing the provider). Release the registry's last strong
+            // reference to it now so the Shell — and, transitively, its (being-)disposed provider, which
+            // still holds the generation's service *types* — becomes GC-eligible once that teardown
+            // completes. Without this, slot.All pins every generation ever created for the lifetime of the
+            // host: an unbounded leak, and — when a generation's assemblies were loaded into a collectible
+            // AssemblyLoadContext — the disposed provider's type references keep that context (and its
+            // assemblies) resident forever, so it can never be unloaded.
+            if (curr == ShellLifecycleState.Disposed)
+                ReleaseGeneration(slot, s);
+        });
 
         // Populate the holder so services in the shell's provider can resolve IShell.
         buildResult.Holder.Set(shell);
@@ -526,7 +541,17 @@ internal sealed class ShellRegistry : IShellRegistry
             throw new InvalidOperationException("Shell failed to transition from Initializing to Active.");
 
         slot.Active = shell;
-        slot.All = slot.All.Add(shell);
+        // Atomic add: paired with the lock-free removal in ReleaseGeneration, which runs off the
+        // drain background thread (outside this name's semaphore) when a generation reaches Disposed.
+        ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Add(s), shell);
+
+        // Safe-by-construction guard against an add-after-release: if this generation somehow already
+        // reached Disposed before the add above (unreachable today — a drained initializer fails the
+        // Initializing→Active CAS at TryTransitionAsync and throws before we get here), its Disposed
+        // callback's Remove ran against a list that did not yet contain it and was a no-op, so the add
+        // just re-inserted a disposed shell. Re-run the release now rather than leak it back in.
+        if (shell.State == ShellLifecycleState.Disposed)
+            ReleaseGeneration(slot, shell);
 
         _logger.LogInformation("Activated shell {Descriptor} with {FeatureCount} feature(s)",
             descriptor, buildResult.EnabledFeatures.Count);
@@ -560,6 +585,31 @@ internal sealed class ShellRegistry : IShellRegistry
         }
     }
 
+    /// <summary>
+    /// Removes a fully-disposed generation from its slot's historical list so it stops being rooted
+    /// by the registry, and — when that generation is still the published <see cref="NameSlot.Active"/>
+    /// one — clears Active too, preserving the invariant that <c>GetAll</c> always contains
+    /// <c>GetActive</c>. Lock-free (runs from the drain background thread, not under the slot semaphore);
+    /// the paired add in <see cref="CreateGenerationAsync"/> is also atomic. Idempotent — removing a
+    /// shell not present is a no-op.
+    /// </summary>
+    private static void ReleaseGeneration(NameSlot slot, IShell shell)
+    {
+        if (shell is not Shell typed)
+            return;
+
+        ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Remove(s), typed);
+
+        // Preserve GetAll ⊇ {GetActive}: if the generation being released is still the active one — an
+        // active generation drained without a reload replacing it, reachable via the public DrainAsync and
+        // on host shutdown — clear Active too, so GetActive never returns a Disposed shell that GetAll no
+        // longer holds. Atomic CAS: a concurrent reload that already promoted a newer generation into
+        // Active leaves it untouched (the stored reference no longer matches `typed`).
+#pragma warning disable 420 // Interlocked provides the fence; other volatile reads/writes of Active are unaffected.
+        Interlocked.CompareExchange(ref slot.Active, null, typed);
+#pragma warning restore 420
+    }
+
     private static async ValueTask DisposePartialProviderAsync(ServiceProvider provider)
     {
         try
@@ -585,10 +635,12 @@ internal sealed class ShellRegistry : IShellRegistry
         // Incremented under the Semaphore. `long` so the cast to int in ShellDescriptor is explicit.
         internal long NextGeneration;
 
-        // Mutated under the Semaphore; read without locking by GetActive.
+        // Written under the Semaphore, plus a lock-free CAS-to-null in ReleaseGeneration when the active
+        // generation is disposed; read without locking by GetActive.
         internal volatile Shell? Active;
 
-        // Immutable list; replaced under the Semaphore.
+        // Immutable list. Added to under the Semaphore; removed from lock-free on the drain thread
+        // (ReleaseGeneration) — both via ImmutableInterlocked.Update.
         internal ImmutableList<Shell> All = [];
     }
 }

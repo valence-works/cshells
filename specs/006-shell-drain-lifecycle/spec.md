@@ -438,9 +438,13 @@ indefinitely, reload, assert the drain completes after approximately 1 second wi
 
 - **FR-031**: The registry MUST provide a way to retrieve the single `Active` shell for a
   given name (`GetActive(name)`).
-- **FR-032**: The registry MUST provide a way to retrieve all shells currently held for a
-  given name regardless of lifecycle state (`GetAll(name)`), including draining generations
-  and the currently active one.
+- **FR-032**: The registry MUST provide a way to retrieve all generations currently *retained*
+  for a given name (`GetAll(name)`): the active generation and any earlier generations still
+  draining. A generation is released once it reaches `Disposed` (its teardown complete), so
+  fully torn-down generations are NOT returned and callers MUST NOT depend on historical
+  generations remaining available after teardown. The returned set MUST always contain the shell
+  returned by `GetActive(name)` — a disposed active generation is released from `GetActive` and
+  `GetAll` together.
 - **FR-033**: Shell descriptor metadata MUST be opaque to the library and surfaced unchanged
   in events and queries. Metadata on every generation's descriptor MUST be sourced from the
   blueprint's `Metadata` property at generation time.

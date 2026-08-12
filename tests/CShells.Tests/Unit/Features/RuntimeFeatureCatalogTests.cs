@@ -60,6 +60,32 @@ public class RuntimeFeatureCatalogTests
         Assert.Contains(catalog.CurrentSnapshot.FeatureDescriptors, descriptor => descriptor.Id == "Unique");
     }
 
+    [Fact(DisplayName = "EnsureInitializedAsync initializes on first access and returns the committed snapshot")]
+    public async Task EnsureInitializedAsync_InitializesAndReturnsCommittedSnapshot()
+    {
+        // Arrange
+        var refreshCalls = 0;
+        var uniqueAssembly = CreateDynamicFeatureAssembly("RuntimeFeatureCatalogGetSnapshot", "GetSnapshotFeature", "GetSnapshot");
+        var catalog = new RuntimeFeatureCatalog(
+            _ =>
+            {
+                refreshCalls++;
+                return Task.FromResult<IReadOnlyCollection<Assembly>>([uniqueAssembly]);
+            },
+            NullLogger<RuntimeFeatureCatalog>.Instance);
+
+        // Act
+        await catalog.EnsureInitializedAsync();
+        var first = catalog.CurrentSnapshot;
+        await catalog.EnsureInitializedAsync();
+        var second = catalog.CurrentSnapshot;
+
+        // Assert: first access discovers once; subsequent access reuses the committed snapshot.
+        Assert.Equal(1, refreshCalls);
+        Assert.Same(first, second);
+        Assert.Contains(first.FeatureDescriptors, descriptor => descriptor.Id == "GetSnapshot");
+    }
+
     private static Assembly CreateDynamicFeatureAssembly(string assemblyName, string typeName, string featureName)
     {
         var dynamicAssembly = AssemblyBuilder.DefineDynamicAssembly(new(assemblyName), AssemblyBuilderAccess.Run);

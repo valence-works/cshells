@@ -26,6 +26,12 @@ internal sealed class RuntimeFeatureCatalog(
         await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<RuntimeFeatureCatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        return CurrentSnapshot;
+    }
+
     public async Task<RuntimeFeatureCatalogSnapshot> RefreshAsync(CancellationToken cancellationToken = default)
     {
         await refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -64,11 +70,4 @@ internal sealed class RuntimeFeatureCatalog(
         }
     }
 }
-
-internal sealed record RuntimeFeatureCatalogSnapshot(
-    long Generation,
-    IReadOnlyCollection<Assembly> Assemblies,
-    IReadOnlyCollection<ShellFeatureDescriptor> FeatureDescriptors,
-    IReadOnlyDictionary<string, ShellFeatureDescriptor> FeatureMap,
-    DateTimeOffset RefreshedAt);
 

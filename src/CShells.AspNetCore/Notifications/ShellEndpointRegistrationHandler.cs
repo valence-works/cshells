@@ -1,5 +1,7 @@
 using CShells.AspNetCore.Features;
+using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Routing;
+using Microsoft.AspNetCore.Http;
 using CShells.Features;
 using CShells.Lifecycle;
 using Microsoft.AspNetCore.Builder;
@@ -12,8 +14,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace CShells.AspNetCore.Notifications;
 
 /// <summary>
-/// Reacts to shell lifecycle transitions by (re-)registering or removing endpoints + middleware
-/// in the dynamic endpoint data source. Subscribed to the registry via
+/// Reacts to shell lifecycle transitions by (re-)registering or removing endpoints in the
+/// dynamic endpoint data source and per-shell middleware pipelines in the
+/// <see cref="ShellMiddlewarePipelineRegistry"/>. Subscribed to the registry via
 /// <see cref="IShellLifecycleSubscriber"/>.
 /// </summary>
 public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
@@ -21,6 +24,7 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
     private readonly DynamicShellEndpointDataSource _endpointDataSource;
     private readonly EndpointRouteBuilderAccessor _endpointRouteBuilderAccessor;
     private readonly ApplicationBuilderAccessor _applicationBuilderAccessor;
+    private readonly ShellMiddlewarePipelineRegistry _pipelineRegistry;
     private readonly IShellFeatureFactory _featureFactory;
     private readonly IHostEnvironment? _environment;
     private readonly ILogger<ShellEndpointRegistrationHandler> _logger;
@@ -30,12 +34,14 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
         IShellFeatureFactory featureFactory,
         EndpointRouteBuilderAccessor endpointRouteBuilderAccessor,
         ApplicationBuilderAccessor applicationBuilderAccessor,
+        ShellMiddlewarePipelineRegistry pipelineRegistry,
         IHostEnvironment? environment = null,
         ILogger<ShellEndpointRegistrationHandler>? logger = null)
     {
         _endpointDataSource = Guard.Against.Null(endpointDataSource);
         _endpointRouteBuilderAccessor = Guard.Against.Null(endpointRouteBuilderAccessor);
         _applicationBuilderAccessor = Guard.Against.Null(applicationBuilderAccessor);
+        _pipelineRegistry = Guard.Against.Null(pipelineRegistry);
         _featureFactory = Guard.Against.Null(featureFactory);
         _environment = environment;
         _logger = logger ?? NullLogger<ShellEndpointRegistrationHandler>.Instance;
@@ -50,16 +56,13 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
             if (_endpointRouteBuilderAccessor.EndpointRouteBuilder is null)
             {
                 _logger.LogWarning(
-                    "Cannot register endpoints for shell '{Shell}': IEndpointRouteBuilder not available. " +
-                    "Endpoints will be registered on next application start.",
+                    "Cannot register endpoints or middleware for shell '{Shell}': MapShells() has not run yet. " +
+                    "Registration is replayed when MapShells() captures the routing infrastructure.",
                     shell.Descriptor);
                 return Task.CompletedTask;
             }
 
-            _logger.LogInformation("Registering endpoints for active shell '{Shell}'", shell.Descriptor);
-            var shellId = new ShellId(shell.Descriptor.Name);
-            _endpointDataSource.RemoveEndpoints(shellId);
-            RegisterShellEndpoints(shell);
+            RegisterActiveShell(shell);
             return Task.CompletedTask;
         }
 
@@ -70,9 +73,29 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
             _logger.LogInformation("Removing endpoints for shell '{Shell}' generation {Generation} ({State})",
                 shell.Descriptor, shell.Descriptor.Generation, current);
             _endpointDataSource.RemoveEndpoints(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
+
+            // The middleware pipeline is removed only on disposal: unlike endpoints (which must
+            // stop matching as soon as the generation deactivates), the pipeline is only looked
+            // up by requests that already hold this generation's scope — and drain's scope-wait
+            // keeps the generation from reaching Disposed while any such request is in flight.
+            if (current == ShellLifecycleState.Disposed)
+                _pipelineRegistry.Remove(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Registers endpoints and the middleware pipeline for an active shell. Invoked on the
+    /// Initializing → Active transition, and replayed by <c>MapShells()</c> for shells that
+    /// activated before the routing infrastructure was captured.
+    /// </summary>
+    public void RegisterActiveShell(IShell shell)
+    {
+        Guard.Against.Null(shell);
+        _logger.LogInformation("Registering endpoints for active shell '{Shell}'", shell.Descriptor);
+        _endpointDataSource.RemoveEndpoints(new ShellId(shell.Descriptor.Name));
+        RegisterShellEndpoints(shell);
     }
 
     private void RegisterShellEndpoints(IShell shell)
@@ -106,7 +129,31 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
         var allFeatureDescriptors = shell.ServiceProvider.GetRequiredService<IEnumerable<ShellFeatureDescriptor>>().ToList();
         var featureContext = new ShellFeatureContext(settings, allFeatureDescriptors.AsReadOnly());
 
-        RegisterShellMiddleware(settings, shell, allFeatureDescriptors, featureContext, shellPathPrefix);
+        try
+        {
+            RegisterShellMiddleware(settings, shell, allFeatureDescriptors, featureContext, shellPathPrefix);
+        }
+        catch (Exception ex)
+        {
+            // Fail closed. The lifecycle fan-out swallows subscriber exceptions, so rethrowing
+            // cannot fail the activation — the shell WILL go Active. A shell whose middleware
+            // could not be composed must not serve requests without it (the features may be
+            // auth- or dispatch-critical), so register a pipeline that rejects everything, and
+            // continue so endpoint registration still happens and requests get a diagnosable
+            // 503 instead of a silent 404.
+            _logger.LogError(ex,
+                "Failed to compose the middleware pipeline for shell '{Shell}' generation {Generation}. " +
+                "The shell will respond 503 to all requests until it is successfully reloaded.",
+                shell.Descriptor, shell.Descriptor.Generation);
+
+            _pipelineRegistry.Set(settings.Id, shell.Descriptor.Generation,
+                context =>
+                {
+                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    return Task.CompletedTask;
+                },
+                new ShellPipelineContinuation());
+        }
 
         var webFeatures = DiscoverWebFeatures(settings, allFeatureDescriptors);
         foreach (var (featureId, featureType) in webFeatures)
@@ -182,36 +229,89 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
             return;
         }
 
-        var middlewareFeatures = DiscoverMiddlewareFeatures(settings, allFeatureDescriptors).ToList();
+        var middlewareFeatures = new List<(string FeatureId, IMiddlewareShellFeature Feature)>();
+        foreach (var (featureId, featureType) in DiscoverMiddlewareFeatures(settings, allFeatureDescriptors))
+        {
+            try
+            {
+                middlewareFeatures.Add((featureId, _featureFactory.CreateFeature<IMiddlewareShellFeature>(featureType, settings, featureContext)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create middleware feature '{FeatureId}' for shell '{Shell}'", featureId, shell.Descriptor);
+                throw;
+            }
+        }
+
         if (middlewareFeatures.Count == 0)
             return;
 
         _logger.LogInformation("Registering middleware for {Count} feature(s) in shell '{Shell}'",
             middlewareFeatures.Count, shell.Descriptor);
 
-        foreach (var (featureId, featureType) in middlewareFeatures)
+        // Stable sort: equal Order preserves feature-dependency (discovery) order.
+        var orderedFeatures = middlewareFeatures.OrderBy(f => f.Feature.Order).ToList();
+
+        // Compose a per-shell pipeline on a clone of the builder captured at MapShells() time.
+        // Cloning keeps ServerFeatures available while leaving the built root pipeline untouched;
+        // the shell's own provider becomes ApplicationServices so build-time middleware
+        // construction resolves against the shell container.
+        var builder = appBuilder.New();
+        builder.ApplicationServices = shell.ServiceProvider;
+
+        // The terminal rejoins the host pipeline through the continuation bound by the registry
+        // on first Get. It must not blanket-reset the request path: deliberate Path rewrites made
+        // by feature middleware belong to the request and flow downstream, exactly as they would
+        // for middleware in the host pipeline.
+        var continuation = new ShellPipelineContinuation();
+
+        void ApplyFeatures(IApplicationBuilder target)
         {
-            try
+            foreach (var (featureId, feature) in orderedFeatures)
             {
-                var feature = _featureFactory.CreateFeature<IMiddlewareShellFeature>(featureType, settings, featureContext);
-
-                if (!string.IsNullOrEmpty(shellPathPrefix))
+                try
                 {
-                    appBuilder.Map(shellPathPrefix, branch => feature.UseMiddleware(branch, _environment));
+                    feature.UseMiddleware(target, _environment);
+                    _logger.LogDebug("Registered middleware for feature '{FeatureId}' in shell '{Shell}'", featureId, shell.Descriptor);
                 }
-                else
+                catch (Exception ex)
                 {
-                    feature.UseMiddleware(appBuilder, _environment);
+                    _logger.LogError(ex, "Failed to register middleware for feature '{FeatureId}' in shell '{Shell}'", featureId, shell.Descriptor);
+                    throw;
                 }
-
-                _logger.LogDebug("Registered middleware for feature '{FeatureId}' in shell '{Shell}'", featureId, shell.Descriptor);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to register middleware for feature '{FeatureId}' in shell '{Shell}'", featureId, shell.Descriptor);
-                throw;
             }
         }
+
+        if (!string.IsNullOrEmpty(shellPathPrefix))
+        {
+            builder.Map(shellPathPrefix, branch =>
+            {
+                ApplyFeatures(branch);
+
+                // Undo exactly what Map stripped — re-apply the matched prefix segment (in its
+                // original request casing) — while preserving any Path rewrite feature middleware
+                // made inside the branch. Downstream host middleware then sees the full path.
+                branch.Run(context =>
+                {
+                    var pathBase = context.Request.PathBase.Value ?? string.Empty;
+                    if (pathBase.EndsWith(shellPathPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var matchedSegment = pathBase[^shellPathPrefix.Length..];
+                        context.Request.PathBase = new PathString(pathBase[..^shellPathPrefix.Length]);
+                        context.Request.Path = new PathString(matchedSegment + context.Request.Path.Value);
+                    }
+                    return continuation.Next(context);
+                });
+            });
+            builder.Run(context => continuation.Next(context)); // requests outside the prefix skip the features and rejoin
+        }
+        else
+        {
+            ApplyFeatures(builder);
+            builder.Run(context => continuation.Next(context));
+        }
+
+        _pipelineRegistry.Set(settings.Id, shell.Descriptor.Generation, builder.Build(), continuation);
     }
 
     private static string? GetPathPrefix(ShellSettings settings)
@@ -225,7 +325,10 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
         var trimmedPath = path.Trim();
         if (!trimmedPath.StartsWith('/')) trimmedPath = "/" + trimmedPath;
         if (trimmedPath.EndsWith('/') && trimmedPath.Length > 1) trimmedPath = trimmedPath.TrimEnd('/');
-        return trimmedPath;
+
+        // "/" means root-mounted, i.e. no prefix scoping — and ASP.NET's Map rejects any
+        // pathMatch ending in '/', so passing it through would throw during activation.
+        return trimmedPath == "/" ? null : trimmedPath;
     }
 
     private static string? GetRoutePrefix(ShellSettings settings)

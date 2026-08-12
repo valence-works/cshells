@@ -20,12 +20,20 @@ internal sealed class CShellsStartupHostedService(
 {
     private readonly IShellRegistry _registry = Guard.Against.Null(registry);
     private readonly ILogger<CShellsStartupHostedService> _logger = logger ?? NullLogger<CShellsStartupHostedService>.Instance;
+    private readonly object _shutdownGate = new();
+    private Task? _shutdownTask;
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <inheritdoc />
-    public async Task StopAsync(CancellationToken cancellationToken)
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        lock (_shutdownGate)
+            return _shutdownTask ??= ExecuteShutdownAsync(cancellationToken);
+    }
+
+    private async Task ExecuteShutdownAsync(CancellationToken cancellationToken)
     {
         // The registry's in-memory index is the authoritative source of active shells at
         // shutdown. GetActiveShells reads only the in-memory slot dict — zero I/O — so

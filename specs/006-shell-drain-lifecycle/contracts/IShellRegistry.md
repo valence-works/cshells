@@ -116,8 +116,11 @@ public interface IShellRegistry
     IShell? GetActive(string name);
 
     /// <summary>
-    /// All generations currently held for <paramref name="name"/> regardless of lifecycle
-    /// state, including draining generations and the currently active one (FR-032).
+    /// The generations currently retained for <paramref name="name"/>: the active generation plus any
+    /// earlier generations still draining. A generation is released once it reaches
+    /// <see cref="ShellLifecycleState.Disposed"/>, so fully torn-down generations are NOT returned —
+    /// callers cannot rely on historical generations remaining available after teardown. Always contains
+    /// the shell returned by <c>GetActive</c>; empty when the name has no retained generations (FR-032).
     /// </summary>
     IReadOnlyCollection<IShell> GetAll(string name);
 
