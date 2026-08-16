@@ -1,9 +1,11 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
+using CShells.AspNetCore.Extensions;
 using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Routing;
 using CShells.AspNetCore.Notifications;
+using CShells.DependencyInjection;
 using CShells.AspNetCore.Features;
 using CShells.Features;
 using CShells.Lifecycle;
@@ -11,6 +13,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Primitives;
@@ -137,6 +140,14 @@ public class DynamicShellEndpointDataSourceTests
 
         Assert.Contains("DynamicShell:FeatureV2", exception.Message);
         Assert.Contains("DynamicShell:FeatureV1", exception.Message);
+        Assert.Contains("shell 'other' generation 1", exception.Message);
+        Assert.Contains("shell 'default' generation 1", exception.Message);
+        Assert.Equal(conflictingShell, exception.Conflict.CandidateOwner.ShellId);
+        Assert.Equal(1, exception.Conflict.CandidateOwner.Generation);
+        Assert.Equal("FeatureV2", exception.Conflict.CandidateOwner.OwnerId);
+        Assert.Equal(shellId, exception.Conflict.ExistingOwner.ShellId);
+        Assert.Equal(1, exception.Conflict.ExistingOwner.Generation);
+        Assert.Equal("FeatureV1", exception.Conflict.ExistingOwner.OwnerId);
         var remaining = Assert.Single(dataSource.Endpoints);
         Assert.Equal("default", remaining.Metadata.GetMetadata<ShellEndpointMetadata>()!.ShellId.Name);
     }
@@ -157,6 +168,14 @@ public class DynamicShellEndpointDataSourceTests
         Assert.Contains("DynamicShell:B", exception.Message);
         Assert.Contains("DynamicShell:A", exception.Message);
         Assert.Single(dataSource.Endpoints);
+    }
+
+    [Fact(DisplayName = "Method overlap compares HTTP methods case-insensitively")]
+    public void MethodsConflict_MethodCaseDiffers_ReturnsTrue()
+    {
+        // HttpMethodMetadata normalizes methods to upper case, so exercise the data source's
+        // comparison seam directly to keep its behavior correct for any non-normalized inventory.
+        Assert.True(DynamicShellEndpointDataSource.MethodsConflict(["GET"], ["get"]));
     }
 
     [Fact(DisplayName = "PublishGeneration rejects same-batch collisions before publication")]
@@ -191,6 +210,13 @@ public class DynamicShellEndpointDataSourceTests
 
         Assert.Contains("DynamicShell:Feature", exception.Message);
         Assert.Contains("Host:Host API", exception.Message);
+        Assert.Equal(shellId, exception.Conflict.CandidateOwner.ShellId);
+        Assert.Equal(1, exception.Conflict.CandidateOwner.Generation);
+        Assert.Equal("Feature", exception.Conflict.CandidateOwner.OwnerId);
+        Assert.Equal(EndpointOwnerKind.Host, exception.Conflict.ExistingOwner.OwnerKind);
+        Assert.Equal("Host API", exception.Conflict.ExistingOwner.OwnerId);
+        Assert.Null(exception.Conflict.ExistingOwner.ShellId);
+        Assert.Null(exception.Conflict.ExistingOwner.Generation);
         Assert.Empty(dataSource.Endpoints);
     }
 
@@ -202,7 +228,7 @@ public class DynamicShellEndpointDataSourceTests
         var settings = new ShellSettings();
         dataSource.PublishGeneration(shellId, 1, [CreateEndpoint("api/items", shellId, 1, settings, "FeatureV1")]);
 
-        IReadOnlyList<Endpoint>? observed = null;
+        var observed = (IReadOnlyList<Endpoint>?)null;
         using var registration = dataSource.GetChangeToken().RegisterChangeCallback(_ => observed = dataSource.Endpoints, null);
         dataSource.PublishGeneration(shellId, 2,
         [
@@ -238,6 +264,69 @@ public class DynamicShellEndpointDataSourceTests
         Assert.Throws<InvalidOperationException>(() => handler.RegisterActiveShell(shell));
         var remaining = Assert.Single(dataSource.Endpoints);
         Assert.Equal(1, remaining.Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation);
+    }
+
+    [Fact(DisplayName = "Rejected reload restores the prior endpoint snapshot and keeps its pipeline live")]
+    public async Task Reload_LaterSubscriberRejectsCandidate_RestoresPriorGeneration()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<RollbackStableFeature>()
+            .AddShell("rollback", shell => shell.WithFeature<RollbackStableFeature>()));
+        services.AddSingleton<IShellLifecycleSubscriber, RejectSecondGenerationSubscriber>();
+
+        await using var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var pipelines = host.GetRequiredService<ShellMiddlewarePipelineRegistry>();
+        var shellId = new ShellId("rollback");
+        var generationOne = await registry.ActivateAsync(shellId.Name);
+
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        await AssertPipelineMarkerAsync(pipelines, shellId, generation: 1, "stable");
+
+        var reload = await registry.ReloadAsync(shellId.Name);
+
+        Assert.IsType<ShellGenerationActivationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.Same(generationOne, registry.GetActive(shellId.Name));
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        await AssertPipelineMarkerAsync(pipelines, shellId, generation: 1, "stable");
+        Assert.Null(pipelines.Get(shellId, generation: 2, _ => Task.CompletedTask));
+    }
+
+    [Fact(DisplayName = "Middleware composition failure rejects a reload and preserves the prior generation")]
+    public async Task Reload_MiddlewareCompositionFails_PreservesPriorGeneration()
+    {
+        var attempts = new MiddlewareCompositionAttempts();
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton(attempts);
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<FailOnSecondCompositionFeature>()
+            .AddShell("composition", shell => shell.WithFeature<FailOnSecondCompositionFeature>()));
+
+        await using var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var pipelines = host.GetRequiredService<ShellMiddlewarePipelineRegistry>();
+        var shellId = new ShellId("composition");
+        var generationOne = await registry.ActivateAsync(shellId.Name);
+
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        await AssertPipelineMarkerAsync(pipelines, shellId, generation: 1, "composition");
+
+        var reload = await registry.ReloadAsync(shellId.Name);
+
+        Assert.IsType<ShellGenerationActivationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.Same(generationOne, registry.GetActive(shellId.Name));
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        await AssertPipelineMarkerAsync(pipelines, shellId, generation: 1, "composition");
+        Assert.Null(pipelines.Get(shellId, generation: 2, _ => Task.CompletedTask));
     }
 
     [Fact(DisplayName = "Repeated collectible feature generations unload after replacement and removal")]
@@ -339,6 +428,31 @@ public class DynamicShellEndpointDataSourceTests
             "published or retired endpoint state still retains feature assembly code.");
     }
 
+    private static void CaptureRoutingInfrastructure(IServiceProvider services)
+    {
+        services.GetRequiredService<EndpointRouteBuilderAccessor>().EndpointRouteBuilder = new TestEndpointRouteBuilder(services);
+        services.GetRequiredService<ApplicationBuilderAccessor>().ApplicationBuilder = new ApplicationBuilder(services);
+    }
+
+    private static void AssertGeneration(DynamicShellEndpointDataSource dataSource, int expectedGeneration)
+    {
+        var endpoint = Assert.Single(dataSource.Endpoints);
+        Assert.Equal(expectedGeneration, endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation);
+    }
+
+    private static async Task AssertPipelineMarkerAsync(
+        ShellMiddlewarePipelineRegistry pipelines,
+        ShellId shellId,
+        int generation,
+        string expectedMarker)
+    {
+        var pipeline = pipelines.Get(shellId, generation, _ => Task.CompletedTask);
+        Assert.NotNull(pipeline);
+        var context = new DefaultHttpContext();
+        await pipeline!(context);
+        Assert.Equal(expectedMarker, context.Items["pipeline-marker"]);
+    }
+
     private sealed class CollectibleFeatureLoadContext : AssemblyLoadContext
     {
         public CollectibleFeatureLoadContext()
@@ -427,4 +541,66 @@ public class DynamicShellEndpointDataSourceTests
         public ICollection<EndpointDataSource> DataSources { get; } = [];
         public IApplicationBuilder CreateApplicationBuilder() => new ApplicationBuilder(ServiceProvider);
     }
+}
+
+[ShellFeature("RollbackStable")]
+public sealed class RollbackStableFeature : IWebShellFeature, IMiddlewareShellFeature
+{
+    public void ConfigureServices(IServiceCollection services)
+    {
+    }
+
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment) =>
+        endpoints.MapGet("/rollback", () => Results.Ok());
+
+    public void UseMiddleware(IApplicationBuilder app, IHostEnvironment? environment) =>
+        app.Use(next => context =>
+        {
+            context.Items["pipeline-marker"] = "stable";
+            return next(context);
+        });
+}
+
+[ShellFeature("FailOnSecondComposition")]
+public sealed class FailOnSecondCompositionFeature(MiddlewareCompositionAttempts attempts) : IWebShellFeature, IMiddlewareShellFeature
+{
+    public void ConfigureServices(IServiceCollection services)
+    {
+    }
+
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment) =>
+        endpoints.MapGet("/composition", () => Results.Ok());
+
+    public void UseMiddleware(IApplicationBuilder app, IHostEnvironment? environment)
+    {
+        if (attempts.Increment() == 2)
+            throw new InvalidOperationException("second generation middleware composition failed");
+
+        app.Use(next => context =>
+        {
+            context.Items["pipeline-marker"] = "composition";
+            return next(context);
+        });
+    }
+}
+
+public sealed class MiddlewareCompositionAttempts
+{
+    private int attempts;
+
+    public int Increment() => Interlocked.Increment(ref attempts);
+}
+
+public sealed class RejectSecondGenerationSubscriber : IShellLifecycleSubscriber
+{
+    public Task OnStateChangedAsync(
+        IShell shell,
+        ShellLifecycleState previous,
+        ShellLifecycleState current,
+        CancellationToken cancellationToken = default) =>
+        current == ShellLifecycleState.Active && shell.Descriptor.Generation == 2
+            ? throw new ShellGenerationActivationException(
+                shell.Descriptor,
+                new InvalidOperationException("later subscriber rejected generation two"))
+            : Task.CompletedTask;
 }

@@ -237,7 +237,6 @@ public class ShellMiddlewareTests
             generationOne.Descriptor.Generation,
             [CreateEndpoint("/payments/old", shellId, generationOne.Descriptor.Generation, settings, "GenerationOne")]);
         var oldEndpoint = endpointDataSource.Endpoints.Single();
-        var guardScope = generationOne.BeginScope();
 
         var oldRequestEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseOldRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -265,6 +264,12 @@ public class ShellMiddlewareTests
         oldContext.Features.Set<IHttpResponseFeature>(oldResponse);
         oldContext.SetEndpoint(oldEndpoint);
 
+        // Enter middleware before reload so this request's own generation-one scope is the
+        // in-flight work that the real drain operation must wait for.
+        var oldRequest = middleware.InvokeAsync(oldContext);
+        await oldRequestEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(oldPipelineInvoked);
+
         var reload = await registry.ReloadAsync(shellId.Name);
         Assert.Null(reload.Error);
         Assert.NotNull(reload.NewShell);
@@ -289,12 +294,6 @@ public class ShellMiddlewareTests
             },
             new ShellPipelineContinuation());
 
-        // Start the old matched request only after reload has promoted generation two. Its
-        // endpoint metadata must still select generation one's draining shell and pipeline.
-        var oldRequest = middleware.InvokeAsync(oldContext);
-        await oldRequestEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.True(oldPipelineInvoked);
-
         var newResponse = new FireableResponseFeature();
         var newContext = new DefaultHttpContext();
         newContext.Features.Set<IHttpResponseFeature>(newResponse);
@@ -310,7 +309,6 @@ public class ShellMiddlewareTests
         await Assert.ThrowsAsync<TimeoutException>(() => oldDrain.WaitAsync().WaitAsync(TimeSpan.FromMilliseconds(100)));
 
         await oldResponse.FireOnCompletedAsync();
-        await guardScope.DisposeAsync();
         await oldDrain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(ShellLifecycleState.Disposed, generationOne.State);

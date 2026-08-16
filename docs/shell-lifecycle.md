@@ -18,6 +18,15 @@ endpoint snapshot, so a failed mapping or collision leaves the previous generati
 successful replacement never exposes an empty routing state. Collision diagnostics include both
 route owners and compare normalized parameter templates plus the full HTTP method sets.
 
+Endpoint replacement remains provisional until the prior generation starts normal deactivation.
+The endpoint data source privately retains the retired snapshot during that interval. If a later
+lifecycle subscriber rejects the candidate, disposal atomically restores the prior snapshot and
+removes the candidate pipeline. Normal deactivation commits the replacement and releases the
+retired snapshot. Middleware composition failures reject activation before publication rather than
+installing a degraded fallback pipeline. A composed candidate pipeline is staged immediately before
+endpoint publication, ensuring the pipeline exists when routing observes the new snapshot; failed
+publication removes that staged entry.
+
 Requests that have already matched an endpoint remain bound to the shell identifier and exact
 generation in that endpoint's metadata. The old generation is removed from routing when draining
 begins, while its middleware pipeline and scoped provider remain available until in-flight scopes

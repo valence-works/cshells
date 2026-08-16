@@ -51,15 +51,15 @@ public record ShellEndpointMetadata(
 /// <summary>
 /// Describes a deterministic conflict between two route endpoints.
 /// </summary>
-/// <param name="CandidateOwner">The owner of the unpublished candidate endpoint.</param>
-/// <param name="ExistingOwner">The owner of the already published endpoint.</param>
+/// <param name="CandidateOwner">Structured ownership of the unpublished candidate endpoint.</param>
+/// <param name="ExistingOwner">Structured ownership of the already published endpoint.</param>
 /// <param name="CandidateMethods">Methods accepted by the candidate endpoint.</param>
 /// <param name="ExistingMethods">Methods accepted by the existing endpoint.</param>
 /// <param name="CandidatePattern">The candidate route template.</param>
 /// <param name="ExistingPattern">The existing route template.</param>
 public sealed record ShellEndpointConflict(
-    string CandidateOwner,
-    string ExistingOwner,
+    EndpointOwnershipMetadata CandidateOwner,
+    EndpointOwnershipMetadata ExistingOwner,
     IReadOnlyList<string> CandidateMethods,
     IReadOnlyList<string> ExistingMethods,
     string CandidatePattern,
@@ -82,8 +82,16 @@ public sealed class ShellEndpointConflictException : InvalidOperationException
     public ShellEndpointConflict Conflict { get; }
 
     private static string CreateMessage(ShellEndpointConflict conflict) =>
-        $"Endpoint route conflict: candidate owner '{conflict.CandidateOwner}' " +
+        $"Endpoint route conflict: candidate owner '{FormatOwner(conflict.CandidateOwner)}' " +
         $"({string.Join(", ", conflict.CandidateMethods)} {conflict.CandidatePattern}) " +
-        $"conflicts with existing owner '{conflict.ExistingOwner}' " +
+        $"conflicts with existing owner '{FormatOwner(conflict.ExistingOwner)}' " +
         $"({string.Join(", ", conflict.ExistingMethods)} {conflict.ExistingPattern}).";
+
+    private static string FormatOwner(EndpointOwnershipMetadata owner)
+    {
+        var description = $"{owner.OwnerKind}:{owner.OwnerId}";
+        return owner.ShellId is { } shellId && owner.Generation is { } generation
+            ? $"{description}, shell '{shellId}' generation {generation}"
+            : description;
+    }
 }

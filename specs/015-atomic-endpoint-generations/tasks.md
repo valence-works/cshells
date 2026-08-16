@@ -22,4 +22,10 @@
 
 - [x] T011 Run focused ASP.NET Core tests.
 - [x] T012 Run full CShells tests/build and diff review.
-- [x] T013 Perform self-review/fix iterations and leave a clean committed worktree.
+- [x] T013 Add transactional rollback when a later lifecycle subscriber rejects a provisionally
+  published generation.
+- [x] T014 Reject middleware-composition failures, compare HTTP methods case-insensitively, and
+  prove the combined in-flight reload/drain sequence without an independent guard scope.
+- [x] T015 Close the endpoint/pipeline visibility window and add structured shell, generation,
+  and feature conflict ownership.
+- [x] T016 Perform self-review/fix iterations and leave a clean committed worktree.

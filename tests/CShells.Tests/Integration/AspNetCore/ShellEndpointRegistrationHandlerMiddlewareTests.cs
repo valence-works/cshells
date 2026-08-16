@@ -20,6 +20,7 @@ namespace CShells.Tests.Integration.AspNetCore;
 public class ShellEndpointRegistrationHandlerMiddlewareTests
 {
     private readonly ShellMiddlewarePipelineRegistry _pipelines = new();
+    private readonly DynamicShellEndpointDataSource _endpoints = new();
     private readonly ApplicationBuilderAccessor _appBuilderAccessor;
     private readonly ShellEndpointRegistrationHandler _handler;
 
@@ -28,7 +29,7 @@ public class ShellEndpointRegistrationHandlerMiddlewareTests
         var rootProvider = new ServiceCollection().BuildServiceProvider();
         _appBuilderAccessor = new ApplicationBuilderAccessor { ApplicationBuilder = new ApplicationBuilder(rootProvider) };
         _handler = new ShellEndpointRegistrationHandler(
-            new DynamicShellEndpointDataSource(),
+            _endpoints,
             new ActivatorFeatureFactory(),
             new EndpointRouteBuilderAccessor { EndpointRouteBuilder = new FakeEndpointRouteBuilder(rootProvider) },
             _appBuilderAccessor,
@@ -43,6 +44,35 @@ public class ShellEndpointRegistrationHandlerMiddlewareTests
         await _handler.OnStateChangedAsync(shell, ShellLifecycleState.Initializing, ShellLifecycleState.Active);
 
         Assert.NotNull(GetPipeline("acme", 1));
+    }
+
+    [Fact(DisplayName = "The generation pipeline is available when its endpoint snapshot becomes visible")]
+    public async Task ActiveTransition_PublishesPipelineBeforeEndpointsBecomeVisible()
+    {
+        var shell = CreateShell("acme", generation: 1, pathPrefix: null,
+            ("EndpointAndMiddleware", typeof(EndpointAndMiddlewareFeature)));
+        var pipelineVisibleAtEndpointPublication = false;
+        using var registration = _endpoints.GetChangeToken().RegisterChangeCallback(
+            _ => pipelineVisibleAtEndpointPublication = GetPipeline("acme", 1) is not null,
+            null);
+
+        await _handler.OnStateChangedAsync(shell, ShellLifecycleState.Initializing, ShellLifecycleState.Active);
+
+        Assert.True(pipelineVisibleAtEndpointPublication);
+        Assert.Single(_endpoints.Endpoints);
+    }
+
+    [Fact(DisplayName = "Rejected endpoint publication removes its staged generation pipeline")]
+    public async Task ActiveTransition_EndpointConflict_RemovesStagedPipeline()
+    {
+        var shell = CreateShell("acme", generation: 1, pathPrefix: null,
+            ("ConflictingEndpointAndMiddleware", typeof(ConflictingEndpointAndMiddlewareFeature)));
+
+        await Assert.ThrowsAsync<ShellGenerationActivationException>(() =>
+            _handler.OnStateChangedAsync(shell, ShellLifecycleState.Initializing, ShellLifecycleState.Active));
+
+        Assert.Null(GetPipeline("acme", 1));
+        Assert.Empty(_endpoints.Endpoints);
     }
 
     [Fact(DisplayName = "Initializing → Active without middleware features registers no pipeline")]
@@ -181,24 +211,16 @@ public class ShellEndpointRegistrationHandlerMiddlewareTests
         Assert.True(run.ContinuationCalled);
     }
 
-    [Fact(DisplayName = "A middleware feature that fails to compose registers a fail-closed 503 pipeline instead of going dark")]
-    public async Task CompositionFailure_RegistersFailClosed503Pipeline()
+    [Fact(DisplayName = "A middleware feature that fails to compose rejects activation and publishes no pipeline")]
+    public async Task CompositionFailure_RejectsActivationWithoutPipeline()
     {
         var shell = CreateShell("acme", generation: 1, pathPrefix: null, ("Broken", typeof(ThrowingFeature)));
 
-        // Must not throw: the lifecycle fan-out would swallow it and leave the shell dark.
-        await _handler.OnStateChangedAsync(shell, ShellLifecycleState.Initializing, ShellLifecycleState.Active);
+        var exception = await Assert.ThrowsAsync<ShellGenerationActivationException>(() =>
+            _handler.OnStateChangedAsync(shell, ShellLifecycleState.Initializing, ShellLifecycleState.Active));
 
-        // Bind the tracking continuation on the FIRST Get — binding is first-wins.
-        var continuationCalled = false;
-        var pipeline = _pipelines.Get(new ShellId("acme"), 1, _ => { continuationCalled = true; return Task.CompletedTask; });
-        Assert.NotNull(pipeline);
-
-        var ctx = new DefaultHttpContext();
-        await pipeline!(ctx);
-
-        Assert.Equal(StatusCodes.Status503ServiceUnavailable, ctx.Response.StatusCode);
-        Assert.False(continuationCalled);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Null(GetPipeline("acme", 1));
     }
 
     [Fact(DisplayName = "Without a captured IApplicationBuilder no pipeline is registered and no exception is thrown")]
@@ -309,6 +331,23 @@ public class ShellEndpointRegistrationHandlerMiddlewareTests
     private sealed class AlphaFeature() : MarkerFeature("alpha", 0);
 
     private sealed class BravoFeature() : MarkerFeature("bravo", 0);
+
+    private sealed class EndpointAndMiddlewareFeature()
+        : MarkerFeature("endpoint-and-middleware", 0), IWebShellFeature
+    {
+        public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment) =>
+            endpoints.MapGet("/atomic-pipeline", () => Results.Ok());
+    }
+
+    private sealed class ConflictingEndpointAndMiddlewareFeature()
+        : MarkerFeature("conflicting-endpoint-and-middleware", 0), IWebShellFeature
+    {
+        public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment)
+        {
+            foreach (var parameterName in new[] { "id", "name" })
+                endpoints.MapGet($"/collision/{{{parameterName}}}", () => Results.Ok());
+        }
+    }
 
     /// <summary>Does not override <see cref="IMiddlewareShellFeature.Order"/> — exercises the interface default of 0.</summary>
     private sealed class DefaultOrderFeature : IMiddlewareShellFeature

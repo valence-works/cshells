@@ -70,7 +70,7 @@ public class ShellMiddleware(
         if (endpointMetadata is not null)
         {
             var matchedShell = _registry.GetAll(endpointMetadata.ShellId.Name)
-                .FirstOrDefault(candidate => candidate.Descriptor.Generation == endpointMetadata.Generation)!;
+                .FirstOrDefault(candidate => candidate.Descriptor.Generation == endpointMetadata.Generation);
             if (matchedShell is null)
             {
                 _logger.LogWarning(

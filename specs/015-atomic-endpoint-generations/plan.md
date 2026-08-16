@@ -6,14 +6,19 @@
 
 The dynamic endpoint data source is the candidate-publication seam. It owns route
 normalization, method-overlap checks, conflict diagnostics, immutable snapshot replacement,
-and generation-specific removal. `ShellEndpointRegistrationHandler` maps features into an
-unpublished candidate, composes the generation middleware pipeline, asks the data source to
-publish the candidate, and only then commits the pipeline entry. A failed map, pipeline
-composition, or validation leaves the prior snapshot and pipeline intact.
+generation-specific removal, and transactional rollback. `ShellEndpointRegistrationHandler`
+maps features into an unpublished candidate and composes the generation middleware pipeline. The
+handler stages that pipeline immediately before asking the data source to publish, so routing can
+never observe endpoints without their required middleware; failed publication removes the staged
+entry. Publication privately retains the retired snapshot until normal deactivation commits the
+replacement. If a later lifecycle subscriber rejects the candidate, candidate disposal atomically
+restores that snapshot. A failed map, pipeline composition, validation, or later activation
+subscriber leaves the prior snapshot and pipeline intact.
 
-Route ownership is represented by typed endpoint metadata. Shell endpoints identify the
-dynamic shell, generation, and owning feature; host endpoints retain standard metadata and
-use their display name as a deterministic diagnostic owner when no typed owner is present.
+Route ownership is represented by typed endpoint metadata and carried into the structured conflict
+result. Shell endpoints identify the dynamic shell, generation, and owning feature; host endpoints
+retain standard metadata and use their display name as a deterministic diagnostic owner when no
+typed owner is present.
 
 `ShellMiddleware` first checks matched endpoint metadata for an exact generation and uses
 `IShellRegistry.GetAll` to bind that request to the matching shell. Unmatched/cold requests
@@ -30,8 +35,10 @@ retain the existing lazy activation behavior.
 - Test coverage: focused routing, handler, and middleware tests cover each acceptance criterion;
   `CShells.DynamicFeatureFixture` supplies a real dynamically loaded endpoint feature for a
   five-cycle collectible `AssemblyLoadContext` test that proves endpoint retirement releases
-  feature code. The middleware suite also drives a real registry reload with an old matched
-  request and verifies drain waits for its response completion.
+  feature code. The middleware suite also drives a real registry reload after an old matched
+  request enters middleware and verifies drain waits for that response's `OnCompleted` callback.
+  Real-registry reload tests prove transactional endpoint rollback after a later subscriber
+  rejects a published candidate and preservation after middleware composition fails.
 
 ## Files
 

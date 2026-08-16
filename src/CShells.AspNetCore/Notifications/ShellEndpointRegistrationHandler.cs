@@ -76,20 +76,25 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
             return Task.CompletedTask;
         }
 
-        if (current == ShellLifecycleState.Deactivating ||
-            current == ShellLifecycleState.Draining ||
-            current == ShellLifecycleState.Disposed)
+        if (current == ShellLifecycleState.Deactivating || current == ShellLifecycleState.Draining)
         {
             _logger.LogInformation("Removing endpoints for shell '{Shell}' generation {Generation} ({State})",
                 shell.Descriptor, shell.Descriptor.Generation, current);
-            _endpointDataSource.RemoveEndpoints(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
+            _endpointDataSource.RetireGeneration(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
+        }
+
+        if (current == ShellLifecycleState.Disposed)
+        {
+            // Rejected candidates advance directly from Active to Disposed before the prior
+            // generation deactivates. Roll that provisionally published candidate back atomically.
+            // A normal drain committed the replacement above, so this degrades to generation removal.
+            _endpointDataSource.RollbackGeneration(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
 
             // The middleware pipeline is removed only on disposal: unlike endpoints (which must
             // stop matching as soon as the generation deactivates), the pipeline is only looked
             // up by requests that already hold this generation's scope — and drain's scope-wait
             // keeps the generation from reaching Disposed while any such request is in flight.
-            if (current == ShellLifecycleState.Disposed)
-                _pipelineRegistry.Remove(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
+            _pipelineRegistry.Remove(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
         }
 
         return Task.CompletedTask;
@@ -152,20 +157,11 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
         }
         catch (Exception ex)
         {
-            // Middleware composition is staged with the endpoint candidate. Preserve the existing
-            // fail-closed behavior without publishing a pipeline until route validation succeeds.
             _logger.LogError(ex,
-                "Failed to compose the middleware pipeline for shell '{Shell}' generation {Generation}. " +
-                "The shell will respond 503 to all requests until it is successfully reloaded.",
+                "Failed to compose the middleware pipeline for shell '{Shell}' generation {Generation}; " +
+                "rejecting the candidate generation.",
                 shell.Descriptor, shell.Descriptor.Generation);
-
-            pipelineRegistration = new PipelineRegistration(
-                context =>
-                {
-                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    return Task.CompletedTask;
-                },
-                new ShellPipelineContinuation());
+            throw;
         }
 
         var webFeatures = DiscoverWebFeatures(settings, allFeatureDescriptors);
@@ -203,15 +199,26 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
             }
         }
 
-        // Validate the complete candidate before replacing this shell's published snapshot.
-        // A conflict leaves the old generation available to both routing and in-flight calls.
-        _endpointDataSource.PublishGeneration(settings.Id, shell.Descriptor.Generation, shellEndpoints);
-
-        // Commit the staged middleware only after publication succeeds, avoiding a half-built
-        // pipeline when feature mapping or validation fails.
+        // Make the staged pipeline available before its endpoints can become visible. Routing
+        // change callbacks run synchronously during publication, so publishing first would allow
+        // a matched request to bypass required shell middleware in that window.
         if (pipelineRegistration is not null)
             _pipelineRegistry.Set(settings.Id, shell.Descriptor.Generation,
                 pipelineRegistration.Pipeline, pipelineRegistration.Continuation);
+
+        try
+        {
+            // Validate the complete candidate before replacing this shell's published snapshot.
+            // A conflict leaves the old generation available to both routing and in-flight calls.
+            _endpointDataSource.PublishGeneration(settings.Id, shell.Descriptor.Generation, shellEndpoints);
+        }
+        catch
+        {
+            // The staged pipeline has no visible endpoints if publication fails.
+            if (pipelineRegistration is not null)
+                _pipelineRegistry.Remove(settings.Id, shell.Descriptor.Generation);
+            throw;
+        }
 
         _logger.LogDebug("Registered {Count} endpoint(s) for shell '{Shell}'", shellEndpoints.Count, shell.Descriptor);
     }

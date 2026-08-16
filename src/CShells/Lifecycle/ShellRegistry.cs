@@ -433,7 +433,7 @@ internal sealed class ShellRegistry : IShellRegistry
         if (snapshot.IsEmpty)
             return;
 
-        ShellGenerationActivationException? activationFailure = null;
+        var activationFailure = (ShellGenerationActivationException?)null;
 
         foreach (var subscriber in snapshot)
         {
