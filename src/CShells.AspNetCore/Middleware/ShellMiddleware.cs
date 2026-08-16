@@ -105,6 +105,12 @@ public class ShellMiddleware(
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 return;
             }
+            catch (ShellGenerationActivationException ex)
+            {
+                _logger.LogWarning(ex, "Shell generation publication failed for '{ShellId}'; returning 503.", shellId.Value);
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                return;
+            }
 
             // Cold activation: UseRouting() ran before this middleware and either found no endpoint,
             // or selected a host fallback endpoint because shell endpoints had not been registered yet.

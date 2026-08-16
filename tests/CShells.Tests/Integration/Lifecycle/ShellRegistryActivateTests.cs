@@ -79,6 +79,22 @@ public class ShellRegistryActivateTests
         Assert.Empty(registry.GetAll("payments"));
     }
 
+    [Fact(DisplayName = "Endpoint publication failure aborts the candidate generation and preserves no partial entry")]
+    public async Task GenerationPublicationFailure_DisposesCandidate_NoPartialEntry()
+    {
+        await using var host = BuildHost(
+            cshells => cshells
+                .WithAssemblies()
+                .AddShell("payments", _ => { }),
+            services => services.AddSingleton<IShellLifecycleSubscriber, RejectingActivationSubscriber>());
+        var registry = host.GetRequiredService<IShellRegistry>();
+
+        await Assert.ThrowsAsync<ShellGenerationActivationException>(() => registry.ActivateAsync("payments"));
+
+        Assert.Null(registry.GetActive("payments"));
+        Assert.Empty(registry.GetAll("payments"));
+    }
+
     [Fact(DisplayName = "Blueprint name mismatch in composed settings throws")]
     public async Task Blueprint_NameMismatch_Throws()
     {
@@ -184,6 +200,18 @@ public class ShellRegistryActivateTests
             public static readonly NullScope Instance = new();
             public void Dispose() { }
         }
+    }
+
+    private sealed class RejectingActivationSubscriber : IShellLifecycleSubscriber
+    {
+        public Task OnStateChangedAsync(
+            IShell shell,
+            ShellLifecycleState previous,
+            ShellLifecycleState current,
+            CancellationToken cancellationToken = default) =>
+            current == ShellLifecycleState.Active
+                ? throw new ShellGenerationActivationException(shell.Descriptor, new InvalidOperationException("candidate rejected"))
+                : Task.CompletedTask;
     }
 }
 

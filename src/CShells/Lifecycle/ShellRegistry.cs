@@ -433,19 +433,34 @@ internal sealed class ShellRegistry : IShellRegistry
         if (snapshot.IsEmpty)
             return;
 
+        ShellGenerationActivationException? activationFailure = null;
+
         foreach (var subscriber in snapshot)
         {
             try
             {
                 await subscriber.OnStateChangedAsync(shell, previous, current, cancellationToken).ConfigureAwait(false);
             }
+            catch (ShellGenerationActivationException ex)
+            {
+                // Candidate publication is the one subscriber failure that must abort the
+                // generation. Continue notifying peers first so subscriber isolation remains
+                // intact, then let the transition owner dispose the rejected candidate.
+                activationFailure ??= ex;
+                _logger.LogError(ex,
+                    "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
+                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex,
                     "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
-                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                subscriber.GetType().FullName, previous, current, shell.Descriptor);
             }
         }
+
+        if (activationFailure is not null)
+            throw activationFailure;
     }
 
     // =========================================================================
@@ -537,8 +552,19 @@ internal sealed class ShellRegistry : IShellRegistry
             throw;
         }
 
-        if (!await shell.TryTransitionAsync(ShellLifecycleState.Initializing, ShellLifecycleState.Active).ConfigureAwait(false))
-            throw new InvalidOperationException("Shell failed to transition from Initializing to Active.");
+        try
+        {
+            if (!await shell.TryTransitionAsync(ShellLifecycleState.Initializing, ShellLifecycleState.Active).ConfigureAwait(false))
+                throw new InvalidOperationException("Shell failed to transition from Initializing to Active.");
+        }
+        catch
+        {
+            // A publication subscriber can reject the candidate after the state CAS has moved it
+            // to Active. Dispose that unpublished generation before surfacing the failure so its
+            // provider, middleware, and collectible feature assemblies are not leaked.
+            await shell.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
 
         slot.Active = shell;
         // Atomic add: paired with the lock-free removal in ReleaseGeneration, which runs off the

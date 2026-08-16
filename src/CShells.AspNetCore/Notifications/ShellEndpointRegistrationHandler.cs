@@ -62,7 +62,17 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
                 return Task.CompletedTask;
             }
 
-            RegisterActiveShell(shell);
+            try
+            {
+                RegisterActiveShell(shell);
+            }
+            catch (Exception ex)
+            {
+                // Endpoint publication is part of activation's candidate boundary. The registry
+                // treats this typed failure as a candidate rejection, disposes the new provider,
+                // and preserves the previous active generation.
+                throw new ShellGenerationActivationException(shell.Descriptor, ex);
+            }
             return Task.CompletedTask;
         }
 
