@@ -54,6 +54,9 @@ public class ShellMiddleware(
         // this request enters middleware, so resolving only by shell name would route the request
         // into the wrong provider. The endpoint generation is the binding authority.
         var endpointMetadata = context.GetEndpoint()?.Metadata.GetMetadata<ShellEndpointMetadata>();
+        var generationLease = context.Features.Get<ShellEndpointGenerationLease>();
+        if (endpointMetadata is null || generationLease?.Matches(endpointMetadata) != true)
+            generationLease = null;
         ShellId? shellId = endpointMetadata?.ShellId
             ?? await ResolveShellWithCacheAsync(context, resolutionContext, context.RequestAborted).ConfigureAwait(false);
 
@@ -69,8 +72,9 @@ public class ShellMiddleware(
         IShell shell;
         if (endpointMetadata is not null)
         {
-            var matchedShell = _registry.GetAll(endpointMetadata.ShellId.Name)
-                .FirstOrDefault(candidate => candidate.Descriptor.Generation == endpointMetadata.Generation);
+            var matchedShell = generationLease?.Scope.Shell
+                ?? _registry.GetAll(endpointMetadata.ShellId.Name)
+                    .FirstOrDefault(candidate => candidate.Descriptor.Generation == endpointMetadata.Generation);
             if (matchedShell is null)
             {
                 _logger.LogWarning(
@@ -135,9 +139,10 @@ public class ShellMiddleware(
         // `await using`) so upstream middleware can still read RequestServices during its
         // post-_next processing — releasing at InvokeAsync return could dispose the DI scope
         // out from under that post-processing and cause ObjectDisposedException.
-        var scope = shell.BeginScope();
+        var scope = generationLease?.Scope ?? shell.BeginScope();
         context.RequestServices = scope.ServiceProvider;
-        context.Response.OnCompleted(() => scope.DisposeAsync().AsTask());
+        if (generationLease is null)
+            context.Response.OnCompleted(() => scope.DisposeAsync().AsTask());
 
         await (pipeline ?? _next)(context);
     }

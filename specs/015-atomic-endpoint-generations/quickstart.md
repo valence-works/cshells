@@ -4,7 +4,10 @@
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~DynamicShellEndpointDataSource|FullyQualifiedName~ShellEndpointRegistrationHandler|FullyQualifiedName~ShellMiddleware"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~CollectibleFeatureGenerations_UnloadAfterReplacementAndRemoval"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~InvokeAsync_ReloadDrain_BindsInFlightRequestAndWaitsForCompletion"
+dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~InvokeAsync_MatchedBeforeReload_UsesRoutingLeaseAcrossMiddlewareGap|FullyQualifiedName~MatcherPolicy_ReenteredThenShortCircuited_ReleasesSingleScopeOnCompletion"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~Reload_LaterSubscriberRejectsCandidate_RestoresPriorGeneration|FullyQualifiedName~Reload_MiddlewareCompositionFails_PreservesPriorGeneration|FullyQualifiedName~MethodsConflict_MethodCaseDiffers_ReturnsTrue|FullyQualifiedName~CompositionFailure_RejectsActivationWithoutPipeline"
+dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~Reload_SlowLaterSubscriber_KeepsPriorGenerationRoutableUntilCommit|FullyQualifiedName~Reload_LaterParticipantRejectsCommit_RestoresPriorRoutesAndPipeline|FullyQualifiedName~Reload_CommitConflict_RestoresPriorActiveAndAllEntries|FullyQualifiedName~Reload_ParticipantCommitFailure_RestoresPriorRegistryStateAndRollsBackInReverse"
+dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~PrepareGeneration_OverlappingCommitAndRollback_DoesNotResurrectRoutes|FullyQualifiedName~PrepareGeneration_ConcurrentConflict_SecondCommitIsRejected|FullyQualifiedName~GetChangeToken_"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~ActiveTransition_PublishesPipelineBeforeEndpointsBecomeVisible|FullyQualifiedName~ActiveTransition_EndpointConflict_RemovesStagedPipeline|FullyQualifiedName~PublishGeneration_EquivalentTemplates_PreservesPreviousSnapshot"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj
 dotnet build CShells.sln
@@ -17,18 +20,28 @@ feature assembly. It runs five cycles; each cycle loads the fixture into a colle
 the lifecycle handler's draining removal, calls `Unload`, and forces bounded full-GC passes.
 The assertion is on the `AssemblyLoadContext` `WeakReference`, so a published or retired
 endpoint delegate that still roots the fixture assembly fails the test.
+This is production route-builder/data-source retention evidence; it does not claim to exercise an
+attached server's matcher cache.
 
-The reload/drain integration test activates a real registry generation and sends a matched
-old-generation request into `ShellMiddleware` before `ReloadAsync` promotes the replacement. It
-then sends a new-generation request and verifies that each uses its exact pipeline. The old
-request's own scope is the only in-flight scope: drain does not complete until that response's
-`OnCompleted` callback releases it.
+The reload/drain integration tests activate real registry generations. One sends an old-generation
+request into `ShellMiddleware` before replacement; another acquires the endpoint generation in the
+matcher policy, pauses before middleware, completes the reload attempt, and then enters middleware.
+They verify old and new requests use their exact pipelines and the old request's own lease is the
+only in-flight scope: drain does not complete until that response's `OnCompleted` callback releases
+it. Policy re-entry and downstream short-circuiting retain the same single-lease guarantee.
 
-The rollback integration tests use the real registry and lifecycle subscriber chain. One rejects
-generation two after its endpoints and pipeline have been provisionally published, proving the
-generation-one endpoint snapshot and pipeline are restored. The other fails generation-two
-middleware composition before publication, proving activation is rejected without disturbing the
-prior generation. A focused route test preserves ordinal case-insensitive method overlap semantics.
+The rollback integration tests use the real registry and two-phase activation chain. A slow later
+subscriber proves its provisional candidate remains invisible. A participant registered after the
+endpoint handler rejects after endpoints commit, proving reverse rollback restores generation-one
+registry identity, routes, and pipeline. Another participant introduces a late host conflict and
+proves failed endpoint commit restores `Active`/`All`. Independent participants record reverse
+rollback ordering. Middleware composition fails during prepare without disturbing the prior
+generation, and a focused route test preserves ordinal case-insensitive method overlap semantics.
+
+Overlapping-publication tests commit several prepared same-shell transactions in adversarial order
+and prove stale rollback cannot resurrect an intermediate generation. Change-token tests race
+acquisition and publication repeatedly, proving returned tokens are never backed by an eagerly
+disposed source.
 
 The endpoint/pipeline ordering tests subscribe to the routing change token, which fires at the
 first externally visible publication point, and assert the exact generation pipeline is already
@@ -46,7 +59,9 @@ On 2026-08-16:
 - Transactional rollback, middleware rejection, method-case overlap, endpoint/pipeline ordering,
   ownership diagnostics, combined drain, and collectible-context regressions: 9 passed per
   invocation, repeated across 3 invocations.
-- Focused routing, lifecycle-handler, middleware, and activation regressions: 74 passed.
-- `dotnet test tests/CShells.Tests/CShells.Tests.csproj`: 612 passed.
-- `dotnet test CShells.sln`: 612 CShells tests and 31 end-to-end tests passed.
+- Focused routing, lifecycle-handler, middleware, and activation regressions: 83 passed before the
+  final post-review additions.
+- `dotnet test tests/CShells.Tests/CShells.Tests.csproj`: 622 passed after the transaction and
+  routing-lease follow-up.
+- `dotnet test CShells.sln`: 622 CShells tests and 31 end-to-end tests passed.
 - `dotnet build CShells.sln`: succeeded with 0 warnings and 0 errors.

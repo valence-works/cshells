@@ -29,3 +29,10 @@
 - [x] T015 Close the endpoint/pipeline visibility window and add structured shell, generation,
   and feature conflict ownership.
 - [x] T016 Perform self-review/fix iterations and leave a clean committed worktree.
+- [x] T017 Introduce an externally invisible two-phase activation boundary and prove provisional
+  subscriber fan-out never exposes the candidate to routing.
+- [x] T018 Make committed publication rollback transaction-specific and prove reverse rollback
+  restores prior registry, routes, and pipeline after a later participant rejects activation.
+- [x] T019 Acquire an idempotent exact-generation routing lease before middleware handoff and prove
+  matched-before-reload requests hold drain until response completion.
+- [x] T020 Linearize overlapping publications and make change-token acquisition race-safe.

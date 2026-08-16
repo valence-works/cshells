@@ -4,45 +4,58 @@
 
 ## Design
 
-The dynamic endpoint data source is the candidate-publication seam. It owns route
-normalization, method-overlap checks, conflict diagnostics, immutable snapshot replacement,
-generation-specific removal, and transactional rollback. `ShellEndpointRegistrationHandler`
-maps features into an unpublished candidate and composes the generation middleware pipeline. The
-handler stages that pipeline immediately before asking the data source to publish, so routing can
-never observe endpoints without their required middleware; failed publication removes the staged
-entry. Publication privately retains the retired snapshot until normal deactivation commits the
-replacement. If a later lifecycle subscriber rejects the candidate, candidate disposal atomically
-restores that snapshot. A failed map, pipeline composition, validation, or later activation
-subscriber leaves the prior snapshot and pipeline intact.
+The dynamic endpoint data source is the candidate-publication seam. It owns route normalization,
+method-overlap checks, conflict diagnostics, immutable snapshot replacement, generation-specific
+removal, and a versioned prepare/commit/rollback transaction. Preparation is externally invisible.
+Commit revalidates against the latest route inventory under one lock, swaps the complete snapshot,
+and retains only the retired same-shell snapshot needed for rollback. Completion releases that
+evidence. A rollback restores it only while that exact transaction still owns the shell version,
+so overlapping publications cannot resurrect an intermediate generation. Change-token sources are
+atomically exchanged and cancelled without racing eager disposal.
+
+`IShellGenerationActivationParticipant` gives `ShellRegistry` a two-phase activation boundary.
+`ShellEndpointRegistrationHandler` prepares feature endpoints and the middleware pipeline before
+the Active notification. After subscribers accept the candidate, the registry first inserts the
+generation into `Active`/`All`, then commits participants in registration order. The handler stages
+the pipeline before committing endpoints, so the first route-change notification can resolve both
+the exact shell and its pipeline. A later commit failure rolls participants back in reverse order,
+restores the prior registry slot, and disposes the rejected provider. Only after every commit
+succeeds do participants discard rollback evidence.
 
 Route ownership is represented by typed endpoint metadata and carried into the structured conflict
 result. Shell endpoints identify the dynamic shell, generation, and owning feature; host endpoints
 retain standard metadata and use their display name as a deterministic diagnostic owner when no
 typed owner is present.
 
-`ShellMiddleware` first checks matched endpoint metadata for an exact generation and uses
-`IShellRegistry.GetAll` to bind that request to the matching shell. Unmatched/cold requests
-retain the existing lazy activation behavior.
+`ShellEndpointGenerationMatcherPolicy` runs after method and constraint policies and acquires at
+most one exact-generation `IShellScope` while matching still owns the endpoint generation. The
+request-local lease is idempotent across policy re-entry and is released through `OnCompleted`.
+`ShellMiddleware` reuses that lease; unmatched/cold requests retain the existing lazy activation
+behavior.
 
 ## Constitution check
 
-- Abstraction-first: no new public framework abstraction is required; route metadata remains
-  in the ASP.NET Core implementation package and existing lifecycle interfaces are reused.
+- Abstraction-first: the small lifecycle participant contract lives in the framework-neutral core;
+  ASP.NET Core route metadata and matching policy remain in the implementation package.
 - Lifecycle/concurrency: publication uses an async-safe lifecycle boundary already serialized
   by the registry; the endpoint snapshot is immutable and atomically replaced under the data
   source's short synchronization gate.
 - Explicit errors: conflicts carry both owners, route, and method set.
 - Test coverage: focused routing, handler, and middleware tests cover each acceptance criterion;
   `CShells.DynamicFeatureFixture` supplies a real dynamically loaded endpoint feature for a
-  five-cycle collectible `AssemblyLoadContext` test that proves endpoint retirement releases
-  feature code. The middleware suite also drives a real registry reload after an old matched
-  request enters middleware and verifies drain waits for that response's `OnCompleted` callback.
-  Real-registry reload tests prove transactional endpoint rollback after a later subscriber
-  rejects a published candidate and preservation after middleware composition fails.
+  five-cycle collectible `AssemblyLoadContext` test through the production route-builder and data
+  source seams, proving published and retired endpoint delegates release dynamically loaded feature
+  code. The middleware suite also drives a real registry reload after routing leases an old matched
+  request and verifies drain waits for that response's `OnCompleted` callback. Real-registry reload
+  tests prove invisible subscriber fan-out, reverse participant rollback, and registry/route/pipeline
+  restoration after a post-publication commit rejection.
 
 ## Files
 
 - `src/CShells.AspNetCore/Routing/DynamicShellEndpointDataSource.cs`
+- `src/CShells.AspNetCore/Routing/ShellEndpointGenerationMatcherPolicy.cs`
+- `src/CShells.Abstractions/Lifecycle/IShellGenerationActivationParticipant.cs`
+- `src/CShells/Lifecycle/ShellRegistry.cs`
 - `src/CShells.AspNetCore/Routing/ShellEndpointMetadata.cs`
 - `src/CShells.AspNetCore/Routing/ShellEndpointRouteBuilder.cs`
 - `src/CShells.AspNetCore/Notifications/ShellEndpointRegistrationHandler.cs`

@@ -18,19 +18,22 @@ endpoint snapshot, so a failed mapping or collision leaves the previous generati
 successful replacement never exposes an empty routing state. Collision diagnostics include both
 route owners and compare normalized parameter templates plus the full HTTP method sets.
 
-Endpoint replacement remains provisional until the prior generation starts normal deactivation.
-The endpoint data source privately retains the retired snapshot during that interval. If a later
-lifecycle subscriber rejects the candidate, disposal atomically restores the prior snapshot and
-removes the candidate pipeline. Normal deactivation commits the replacement and releases the
-retired snapshot. Middleware composition failures reject activation before publication rather than
-installing a degraded fallback pipeline. A composed candidate pipeline is staged immediately before
-endpoint publication, ensuring the pipeline exists when routing observes the new snapshot; failed
-publication removes that staged entry.
+Endpoint activation uses a prepare/commit boundary. Mapping and pipeline composition prepare an
+externally invisible candidate before lifecycle subscribers run. Once they accept it, the registry
+makes the generation exactly addressable and activation participants commit. The endpoint data
+source revalidates and swaps the complete snapshot atomically, retaining the retired same-shell
+snapshot only until every participant commits. If a later participant rejects the commit,
+participants roll back in reverse order and the prior registry entry, endpoint snapshot, and
+pipeline remain live. Middleware composition failures reject activation before publication rather
+than installing a degraded fallback pipeline. The candidate pipeline is available before the route
+change notification that first exposes its endpoints.
 
-Requests that have already matched an endpoint remain bound to the shell identifier and exact
-generation in that endpoint's metadata. The old generation is removed from routing when draining
-begins, while its middleware pipeline and scoped provider remain available until in-flight scopes
-finish.
+Routing acquires an exact-generation request lease after method and constraint matching but before
+the old generation can drain. `ShellMiddleware` reuses that lease, so even a request paused between
+endpoint matching and middleware entry remains bound to the endpoint's shell and generation. The
+lease is released at response completion, including when downstream middleware short-circuits. The
+old generation is removed from routing when draining begins, while its middleware pipeline and
+scoped provider remain available until those in-flight leases finish.
 
 ## Initializer Ordering
 

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
@@ -101,6 +102,62 @@ public class DynamicShellEndpointDataSourceTests
         dataSource.RemoveEndpoints(shellId, generation: 2);
 
         Assert.Equal(0, changes);
+        Assert.Single(dataSource.Endpoints);
+    }
+
+    [Fact(DisplayName = "A previously returned change token remains safe to register after publication")]
+    public void GetChangeToken_ConcurrentPublication_DoesNotDisposeReturnedToken()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellId = new ShellId("default");
+        var settings = new ShellSettings();
+        var token = dataSource.GetChangeToken();
+
+        dataSource.PublishGeneration(shellId, 1, [CreateEndpoint("api/items", shellId, 1, settings)]);
+
+        using var registration = token.RegisterChangeCallback(_ => { }, null);
+        Assert.True(token.HasChanged);
+    }
+
+    [Fact(DisplayName = "Change-token reads and registrations remain safe during repeated publication")]
+    public async Task GetChangeToken_ParallelPublication_DoesNotRaceTokenDisposal()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellId = new ShellId("tokens");
+        var settings = new ShellSettings(shellId);
+        var errors = new ConcurrentQueue<Exception>();
+
+        var writer = Task.Run(() =>
+        {
+            for (var generation = 1; generation <= 2_000; generation++)
+            {
+                dataSource.PublishGeneration(
+                    shellId,
+                    generation,
+                    [CreateEndpoint("api/token", shellId, generation, settings)]);
+            }
+        });
+        var readers = Enumerable.Range(0, 4).Select(readerIndex => Task.Run(() =>
+        {
+            for (var attempt = 0; attempt < 2_000; attempt++)
+            {
+                try
+                {
+                    var token = dataSource.GetChangeToken();
+                    using var registration = token.RegisterChangeCallback(_ => { }, null);
+                    _ = token.HasChanged;
+                    _ = dataSource.Endpoints.Count;
+                }
+                catch (Exception ex)
+                {
+                    errors.Enqueue(ex);
+                }
+            }
+        }));
+
+        await Task.WhenAll(readers.Append(writer));
+
+        Assert.Empty(errors);
         Assert.Single(dataSource.Endpoints);
     }
 
@@ -241,6 +298,66 @@ public class DynamicShellEndpointDataSourceTests
         Assert.All(observed, endpoint => Assert.Equal(2, endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation));
     }
 
+    [Fact(DisplayName = "Overlapping prepared publications are linearized and rollback cannot restore an intermediate generation")]
+    public void PrepareGeneration_OverlappingCommitAndRollback_DoesNotResurrectRoutes()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellId = new ShellId("linear");
+        var settings = new ShellSettings(shellId);
+        dataSource.PublishGeneration(shellId, 1, [CreateEndpoint("api/one", shellId, 1, settings)]);
+        using var generationTwo = dataSource.PrepareGeneration(
+            shellId,
+            2,
+            [CreateEndpoint("api/two", shellId, 2, settings)]);
+        using var rejectedGenerationThree = dataSource.PrepareGeneration(
+            shellId,
+            3,
+            [CreateEndpoint("api/three", shellId, 3, settings)]);
+
+        generationTwo.Commit();
+        rejectedGenerationThree.Dispose();
+
+        using var generationThree = dataSource.PrepareGeneration(
+            shellId,
+            3,
+            [CreateEndpoint("api/three", shellId, 3, settings)]);
+        using var generationFour = dataSource.PrepareGeneration(
+            shellId,
+            4,
+            [CreateEndpoint("api/four", shellId, 4, settings)]);
+        generationThree.Commit();
+        generationFour.Commit();
+        generationThree.Rollback();
+        generationFour.Complete();
+
+        AssertGeneration(dataSource, expectedGeneration: 4);
+        Assert.Equal("api/four", ((RouteEndpoint)dataSource.Endpoints.Single()).RoutePattern.RawText);
+    }
+
+    [Fact(DisplayName = "Prepared publications revalidate conflicts at commit")]
+    public void PrepareGeneration_ConcurrentConflict_SecondCommitIsRejected()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var settings = new ShellSettings();
+        var shellA = new ShellId("a");
+        var shellB = new ShellId("b");
+        using var publicationA = dataSource.PrepareGeneration(
+            shellA,
+            1,
+            [CreateEndpoint("api/shared", shellA, 1, settings, "FeatureA")]);
+        using var publicationB = dataSource.PrepareGeneration(
+            shellB,
+            1,
+            [CreateEndpoint("api/shared", shellB, 1, settings, "FeatureB")]);
+
+        publicationA.Commit();
+        var exception = Assert.Throws<ShellEndpointConflictException>(() => publicationB.Commit());
+
+        Assert.Equal("FeatureB", exception.Conflict.CandidateOwner.OwnerId);
+        Assert.Equal("FeatureA", exception.Conflict.ExistingOwner.OwnerId);
+        Assert.Equal(shellA, dataSource.Endpoints.Single().Metadata.GetMetadata<ShellEndpointMetadata>()!.ShellId);
+    }
+
     [Fact(DisplayName = "Failed feature mapping preserves the previously published generation")]
     public void RegisterActiveShell_MappingFailure_PreservesPreviousGeneration()
     {
@@ -261,7 +378,8 @@ public class DynamicShellEndpointDataSourceTests
             new ApplicationBuilderAccessor { ApplicationBuilder = new ApplicationBuilder(shell.ServiceProvider) },
             new ShellMiddlewarePipelineRegistry());
 
-        Assert.Throws<InvalidOperationException>(() => handler.RegisterActiveShell(shell));
+        var exception = Assert.Throws<ShellGenerationActivationException>(() => handler.RegisterActiveShell(shell));
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
         var remaining = Assert.Single(dataSource.Endpoints);
         Assert.Equal(1, remaining.Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation);
     }
@@ -326,6 +444,111 @@ public class DynamicShellEndpointDataSourceTests
         Assert.Same(generationOne, registry.GetActive(shellId.Name));
         AssertGeneration(dataSource, expectedGeneration: 1);
         await AssertPipelineMarkerAsync(pipelines, shellId, generation: 1, "composition");
+        Assert.Null(pipelines.Get(shellId, generation: 2, _ => Task.CompletedTask));
+    }
+
+    [Fact(DisplayName = "A provisional reload is not routing-visible while a later subscriber is still deciding")]
+    public async Task Reload_SlowLaterSubscriber_KeepsPriorGenerationRoutableUntilCommit()
+    {
+        var slowSubscriber = new SlowSecondGenerationSubscriber();
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<RollbackStableFeature>()
+            .AddShell("provisional", shell => shell.WithFeature<RollbackStableFeature>()));
+        services.AddSingleton<IShellLifecycleSubscriber>(slowSubscriber);
+
+        await using var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var pipelines = host.GetRequiredService<ShellMiddlewarePipelineRegistry>();
+        var shellId = new ShellId("provisional");
+        var generationOne = await registry.ActivateAsync(shellId.Name);
+        var reloadTask = registry.ReloadAsync(shellId.Name);
+
+        await slowSubscriber.Entered.WaitAsync(TimeSpan.FromSeconds(5));
+        var visibleEndpoint = Assert.Single(dataSource.Endpoints);
+        var visibleGeneration = visibleEndpoint.Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation;
+        var response = new ShellMiddlewareTests.FireableResponseFeature();
+        var context = new DefaultHttpContext();
+        context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpResponseFeature>(response);
+        context.SetEndpoint(visibleEndpoint);
+        var middleware = ShellMiddlewareTests.CreateMiddleware(
+            _ => Task.CompletedTask,
+            registry: registry,
+            endpointDataSource: dataSource,
+            pipelineRegistry: pipelines);
+
+        await middleware.InvokeAsync(context);
+        await response.FireOnCompletedAsync();
+        slowSubscriber.Release();
+        var reload = await reloadTask;
+
+        Assert.Equal(generationOne.Descriptor.Generation, visibleGeneration);
+        Assert.Equal("stable", context.Items["pipeline-marker"]);
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Null(reload.Error);
+        Assert.Equal(2, dataSource.Endpoints.Single().Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation);
+    }
+
+    [Fact(DisplayName = "Commit conflict restores the prior registry generation and discards the staged pipeline")]
+    public async Task Reload_CommitConflict_RestoresPriorActiveAndAllEntries()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton<HostConflictOnSecondCommitParticipant>();
+        services.AddSingleton<IShellGenerationActivationParticipant>(sp =>
+            sp.GetRequiredService<HostConflictOnSecondCommitParticipant>());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<RollbackStableFeature>()
+            .AddShell("commit-conflict", shell => shell.WithFeature<RollbackStableFeature>()));
+
+        await using var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var pipelines = host.GetRequiredService<ShellMiddlewarePipelineRegistry>();
+        var shellId = new ShellId("commit-conflict");
+        var generationOne = await registry.ActivateAsync(shellId.Name);
+
+        var reload = await registry.ReloadAsync(shellId.Name);
+
+        Assert.IsType<ShellGenerationActivationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.Same(generationOne, registry.GetActive(shellId.Name));
+        Assert.Equal([generationOne], registry.GetAll(shellId.Name));
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        await AssertPipelineMarkerAsync(pipelines, shellId, generation: 1, "stable");
+        Assert.Null(pipelines.Get(shellId, generation: 2, _ => Task.CompletedTask));
+    }
+
+    [Fact(DisplayName = "A later participant rejection rolls committed routes and pipeline back to the prior generation")]
+    public async Task Reload_LaterParticipantRejectsCommit_RestoresPriorRoutesAndPipeline()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<RollbackStableFeature>()
+            .AddShell("later-rejection", shell => shell.WithFeature<RollbackStableFeature>()));
+        services.AddSingleton<IShellGenerationActivationParticipant, RejectSecondGenerationCommitParticipant>();
+
+        await using var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var pipelines = host.GetRequiredService<ShellMiddlewarePipelineRegistry>();
+        var shellId = new ShellId("later-rejection");
+        var generationOne = await registry.ActivateAsync(shellId.Name);
+
+        var reload = await registry.ReloadAsync(shellId.Name);
+
+        Assert.IsType<ShellGenerationActivationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.Same(generationOne, registry.GetActive(shellId.Name));
+        Assert.Equal([generationOne], registry.GetAll(shellId.Name));
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        await AssertPipelineMarkerAsync(pipelines, shellId, generation: 1, "stable");
         Assert.Null(pipelines.Get(shellId, generation: 2, _ => Task.CompletedTask));
     }
 
@@ -415,7 +638,7 @@ public class DynamicShellEndpointDataSourceTests
 
     private static async Task AssertCollectibleAsync(WeakReference loadContext, int cycle)
     {
-        for (var attempt = 0; attempt < 40 && loadContext.IsAlive; attempt++)
+        for (var attempt = 0; attempt < 100 && loadContext.IsAlive; attempt++)
         {
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
             GC.WaitForPendingFinalizers();
@@ -603,4 +826,77 @@ public sealed class RejectSecondGenerationSubscriber : IShellLifecycleSubscriber
                 shell.Descriptor,
                 new InvalidOperationException("later subscriber rejected generation two"))
             : Task.CompletedTask;
+}
+
+public sealed class SlowSecondGenerationSubscriber : IShellLifecycleSubscriber
+{
+    private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Entered => entered.Task;
+
+    public void Release() => release.TrySetResult();
+
+    public async Task OnStateChangedAsync(
+        IShell shell,
+        ShellLifecycleState previous,
+        ShellLifecycleState current,
+        CancellationToken cancellationToken = default)
+    {
+        if (current != ShellLifecycleState.Active || shell.Descriptor.Generation != 2)
+            return;
+
+        entered.TrySetResult();
+        await release.Task.WaitAsync(cancellationToken);
+    }
+}
+
+public sealed class HostConflictOnSecondCommitParticipant(EndpointRouteBuilderAccessor routeBuilderAccessor) :
+    IShellGenerationActivationParticipant
+{
+    public Task PrepareAsync(IShell shell, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public void Commit(IShell shell)
+    {
+        if (shell.Descriptor.Generation != 2)
+            return;
+
+        var hostEndpoint = new RouteEndpoint(
+            _ => Task.CompletedTask,
+            RoutePatternFactory.Parse("/rollback"),
+            order: 0,
+            new EndpointMetadataCollection(new HttpMethodMetadata(["GET"])),
+            "Late host conflict");
+        routeBuilderAccessor.EndpointRouteBuilder!.DataSources.Add(
+            new DefaultEndpointDataSource(hostEndpoint));
+    }
+
+    public void Complete(IShell shell)
+    {
+    }
+
+    public void Rollback(IShell shell)
+    {
+    }
+}
+
+public sealed class RejectSecondGenerationCommitParticipant : IShellGenerationActivationParticipant
+{
+    public Task PrepareAsync(IShell shell, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public void Commit(IShell shell)
+    {
+        if (shell.Descriptor.Generation == 2)
+            throw new InvalidOperationException("later participant rejected generation two");
+    }
+
+    public void Complete(IShell shell)
+    {
+    }
+
+    public void Rollback(IShell shell)
+    {
+    }
 }

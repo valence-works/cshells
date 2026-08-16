@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Matching;
 using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -319,6 +320,96 @@ public class ShellMiddlewareTests
 
         var replacementDrain = await registry.DrainAsync(generationTwo);
         await replacementDrain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact(DisplayName = "A request matched before reload keeps the exact generation leased until response completion")]
+    public async Task InvokeAsync_MatchedBeforeReload_UsesRoutingLeaseAcrossMiddlewareGap()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblies()
+            .AddShell("leased", _ => { })
+            .ConfigureDrainPolicy(new FixedTimeoutDrainPolicy(TimeSpan.FromSeconds(5))));
+
+        await using var host = services.BuildServiceProvider();
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var pipelines = host.GetRequiredService<ShellMiddlewarePipelineRegistry>();
+        var policy = host.GetServices<MatcherPolicy>().OfType<ShellEndpointGenerationMatcherPolicy>().Single();
+        var shellId = new ShellId("leased");
+        var generationOne = await registry.ActivateAsync(shellId.Name);
+        var settings = new ShellSettings(shellId);
+        dataSource.PublishGeneration(
+            shellId,
+            generationOne.Descriptor.Generation,
+            [CreateEndpoint("/leased/old", shellId, generationOne.Descriptor.Generation, settings, "GenerationOne")]);
+        var oldEndpoint = dataSource.Endpoints.Single();
+        var oldPipelineInvoked = false;
+        pipelines.Set(
+            shellId,
+            generationOne.Descriptor.Generation,
+            _ =>
+            {
+                oldPipelineInvoked = true;
+                return Task.CompletedTask;
+            },
+            new ShellPipelineContinuation());
+        var response = new FireableResponseFeature();
+        var context = new DefaultHttpContext();
+        context.Features.Set<IHttpResponseFeature>(response);
+        var candidates = new CandidateSet([oldEndpoint], [new RouteValueDictionary()], [0]);
+
+        await policy.ApplyAsync(context, candidates);
+        await policy.ApplyAsync(context, candidates);
+        context.SetEndpoint(oldEndpoint);
+
+        Assert.Equal(int.MaxValue, policy.Order);
+        Assert.Equal(1, ((Shell)generationOne).ActiveScopeCount);
+        var reload = await registry.ReloadAsync(shellId.Name);
+        Assert.NotNull(reload.Drain);
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromMilliseconds(100)));
+
+        var middleware = CreateMiddleware(
+            _ => Task.CompletedTask,
+            registry: registry,
+            endpointDataSource: dataSource,
+            pipelineRegistry: pipelines);
+        await middleware.InvokeAsync(context);
+
+        Assert.True(oldPipelineInvoked);
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromMilliseconds(100)));
+
+        await response.FireOnCompletedAsync();
+        await reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(ShellLifecycleState.Disposed, generationOne.State);
+    }
+
+    [Fact(DisplayName = "Routing lease acquisition is idempotent and releases when middleware is short-circuited")]
+    public async Task MatcherPolicy_ReenteredThenShortCircuited_ReleasesSingleScopeOnCompletion()
+    {
+        var shell = FakeShell.WithServices(_ => { }, name: "leased", generation: 1);
+        var policy = new ShellEndpointGenerationMatcherPolicy(new FakeRegistry(shell));
+        var endpoint = CreateEndpoint(
+            "/leased",
+            new ShellId("leased"),
+            generation: 1,
+            new ShellSettings(new ShellId("leased")),
+            "LeasedFeature");
+        var response = new FireableResponseFeature();
+        var context = new DefaultHttpContext();
+        context.Features.Set<IHttpResponseFeature>(response);
+        var candidates = new CandidateSet([endpoint], [new RouteValueDictionary()], [0]);
+
+        await policy.ApplyAsync(context, candidates);
+        await policy.ApplyAsync(context, candidates);
+
+        Assert.Equal(1, shell.ActiveScopeCount);
+        await response.FireOnCompletedAsync();
+        Assert.Equal(0, shell.ActiveScopeCount);
     }
 
     [Fact(DisplayName = "Another shell's pipeline is not invoked for the resolved shell")]

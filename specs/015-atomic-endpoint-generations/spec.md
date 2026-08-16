@@ -32,18 +32,24 @@ owns the endpoint metadata.
 3. New requests see either the previous complete snapshot or the new complete snapshot;
    no intermediate empty state is published.
 4. A request with `ShellEndpointMetadata.Generation = N` uses generation N's shell scope
-   and middleware pipeline, even after generation N+1 is active; its scope remains held
-   until response completion.
+   and middleware pipeline, even when routing matched it before generation N+1 became active.
+   Routing acquires that exact-generation lease before the old generation can drain, and releases
+   it at response completion even if downstream middleware short-circuits.
 5. Old endpoint generations can be removed during drain without removing the replacement,
    and drain completion waits for an in-flight old-generation request to release its
    `OnCompleted` scope.
-6. Candidate publication remains provisional until the prior generation begins normal
-   deactivation. If a later lifecycle subscriber rejects the candidate, the previous endpoint
-   snapshot and middleware pipeline remain live and the candidate is removed atomically.
+6. Feature mapping, middleware composition, and route validation prepare an externally invisible
+   candidate. Lifecycle subscribers must accept it before the registry makes the candidate exactly
+   addressable and activation participants commit. A commit failure rolls participants back in
+   reverse order and atomically restores the prior registry, route, and pipeline state.
 7. Middleware composition failure rejects activation instead of publishing a degraded pipeline,
    and all HTTP method comparisons use ordinal, case-insensitive semantics.
 8. A generation's middleware pipeline is available before its endpoint snapshot becomes visible;
    rejected endpoint publication removes the staged candidate pipeline.
+9. Overlapping prepared publications are linearizable. Rollback is transaction-specific and cannot
+   resurrect an intermediate generation after a newer same-shell publication wins.
+10. Endpoint change-token acquisition is race-safe with publication and does not expose a disposed
+    token source or miss the snapshot change it is meant to observe.
 
 ## Non-goals
 

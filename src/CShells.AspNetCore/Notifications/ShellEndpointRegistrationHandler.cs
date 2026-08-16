@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using CShells.AspNetCore.Features;
 using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Routing;
@@ -19,8 +20,11 @@ namespace CShells.AspNetCore.Notifications;
 /// <see cref="ShellMiddlewarePipelineRegistry"/>. Subscribed to the registry via
 /// <see cref="IShellLifecycleSubscriber"/>.
 /// </summary>
-public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
+public sealed class ShellEndpointRegistrationHandler :
+    IShellLifecycleSubscriber,
+    IShellGenerationActivationParticipant
 {
+    private readonly ConcurrentDictionary<(ShellId ShellId, int Generation), PreparedShellRegistration> _prepared = new();
     private readonly DynamicShellEndpointDataSource _endpointDataSource;
     private readonly EndpointRouteBuilderAccessor _endpointRouteBuilderAccessor;
     private readonly ApplicationBuilderAccessor _applicationBuilderAccessor;
@@ -48,33 +52,100 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
     }
 
     /// <inheritdoc />
-    public Task OnStateChangedAsync(IShell shell, ShellLifecycleState previous, ShellLifecycleState current, CancellationToken cancellationToken = default)
+    public Task PrepareAsync(IShell shell, CancellationToken cancellationToken = default)
     {
-        // Register when a shell becomes Active, tear down when it starts deactivating or draining.
-        if (previous == ShellLifecycleState.Initializing && current == ShellLifecycleState.Active)
+        Guard.Against.Null(shell);
+        if (_endpointRouteBuilderAccessor.EndpointRouteBuilder is null)
         {
-            if (_endpointRouteBuilderAccessor.EndpointRouteBuilder is null)
-            {
-                _logger.LogWarning(
-                    "Cannot register endpoints or middleware for shell '{Shell}': MapShells() has not run yet. " +
-                    "Registration is replayed when MapShells() captures the routing infrastructure.",
-                    shell.Descriptor);
-                return Task.CompletedTask;
-            }
-
-            try
-            {
-                RegisterActiveShell(shell);
-            }
-            catch (Exception ex)
-            {
-                // Endpoint publication is part of activation's candidate boundary. The registry
-                // treats this typed failure as a candidate rejection, disposes the new provider,
-                // and preserves the previous active generation.
-                throw new ShellGenerationActivationException(shell.Descriptor, ex);
-            }
+            _logger.LogWarning(
+                "Cannot prepare endpoints or middleware for shell '{Shell}': MapShells() has not run yet. " +
+                "Registration is replayed when MapShells() captures the routing infrastructure.",
+                shell.Descriptor);
             return Task.CompletedTask;
         }
+
+        var key = GetGenerationKey(shell);
+        try
+        {
+            var registration = PrepareShellRegistration(shell);
+            if (!_prepared.TryAdd(key, registration))
+            {
+                registration.Publication.Dispose();
+                throw new InvalidOperationException(
+                    $"Shell endpoint generation '{shell.Descriptor}' already has a prepared publication.");
+            }
+        }
+        catch (Exception ex) when (ex is not ShellGenerationActivationException)
+        {
+            throw new ShellGenerationActivationException(shell.Descriptor, ex);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public void Commit(IShell shell)
+    {
+        Guard.Against.Null(shell);
+        var key = GetGenerationKey(shell);
+        if (!_prepared.TryGetValue(key, out var registration))
+            return;
+
+        try
+        {
+            // Pipeline publication precedes the endpoint swap. The endpoint data source change
+            // notification is the first point routing can observe this generation.
+            if (registration.Pipeline is not null)
+            {
+                _pipelineRegistry.Set(
+                    key.ShellId,
+                    key.Generation,
+                    registration.Pipeline.Pipeline,
+                    registration.Pipeline.Continuation);
+            }
+
+            RefreshHostEndpoints();
+            registration.Publication.Commit();
+        }
+        catch
+        {
+            _pipelineRegistry.Remove(key.ShellId, key.Generation);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public void Complete(IShell shell)
+    {
+        Guard.Against.Null(shell);
+        var key = GetGenerationKey(shell);
+        if (!_prepared.TryRemove(key, out var registration))
+            return;
+
+        registration.Publication.Complete();
+        registration.Publication.Dispose();
+    }
+
+    /// <inheritdoc />
+    public void Rollback(IShell shell)
+    {
+        Guard.Against.Null(shell);
+        var key = GetGenerationKey(shell);
+        if (_prepared.TryRemove(key, out var registration))
+        {
+            registration.Publication.Rollback();
+            registration.Publication.Dispose();
+        }
+        _pipelineRegistry.Remove(key.ShellId, key.Generation);
+    }
+
+    /// <inheritdoc />
+    public Task OnStateChangedAsync(IShell shell, ShellLifecycleState previous, ShellLifecycleState current, CancellationToken cancellationToken = default)
+    {
+        // Activation publication is coordinated through IShellGenerationActivationParticipant.
+        // Lifecycle notifications only own teardown.
+        if (previous == ShellLifecycleState.Initializing && current == ShellLifecycleState.Active)
+            return Task.CompletedTask;
 
         if (current == ShellLifecycleState.Deactivating || current == ShellLifecycleState.Draining)
         {
@@ -85,10 +156,8 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
 
         if (current == ShellLifecycleState.Disposed)
         {
-            // Rejected candidates advance directly from Active to Disposed before the prior
-            // generation deactivates. Roll that provisionally published candidate back atomically.
-            // A normal drain committed the replacement above, so this degrades to generation removal.
-            _endpointDataSource.RollbackGeneration(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
+            Rollback(shell);
+            _endpointDataSource.RemoveEndpoints(new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
 
             // The middleware pipeline is removed only on disposal: unlike endpoints (which must
             // stop matching as soon as the generation deactivates), the pipeline is only looked
@@ -109,21 +178,26 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
     {
         Guard.Against.Null(shell);
         _logger.LogInformation("Registering endpoints for active shell '{Shell}'", shell.Descriptor);
-        RegisterShellEndpoints(shell);
+        try
+        {
+            PrepareAsync(shell).GetAwaiter().GetResult();
+            Commit(shell);
+            Complete(shell);
+        }
+        catch
+        {
+            Rollback(shell);
+            throw;
+        }
     }
 
-    private void RegisterShellEndpoints(IShell shell)
+    private PreparedShellRegistration PrepareShellRegistration(IShell shell)
     {
         var endpointRouteBuilder = _endpointRouteBuilderAccessor.EndpointRouteBuilder;
         if (endpointRouteBuilder is null)
-            return;
+            throw new InvalidOperationException("Endpoint routing infrastructure is not available.");
 
-        // Refresh the standard host endpoint inventory immediately before mapping so candidate
-        // validation sees the same routes that ASP.NET Core will see after publication.
-        _endpointDataSource.SetHostEndpoints(
-            endpointRouteBuilder.DataSources
-                .SelectMany(dataSource => dataSource.Endpoints)
-                .Where(endpoint => endpoint.Metadata.GetMetadata<ShellEndpointMetadata>() is null));
+        RefreshHostEndpoints();
 
         var settings = shell.ServiceProvider.GetRequiredService<ShellSettings>();
         _logger.LogDebug("Registering endpoints for shell '{Shell}' ({FeatureCount} config entries)",
@@ -150,7 +224,7 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
         var allFeatureDescriptors = shell.ServiceProvider.GetRequiredService<IEnumerable<ShellFeatureDescriptor>>().ToList();
         var featureContext = new ShellFeatureContext(settings, allFeatureDescriptors.AsReadOnly());
 
-        PipelineRegistration? pipelineRegistration;
+        var pipelineRegistration = (PipelineRegistration?)null;
         try
         {
             pipelineRegistration = RegisterShellMiddleware(settings, shell, allFeatureDescriptors, featureContext, shellPathPrefix);
@@ -199,28 +273,11 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
             }
         }
 
-        // Make the staged pipeline available before its endpoints can become visible. Routing
-        // change callbacks run synchronously during publication, so publishing first would allow
-        // a matched request to bypass required shell middleware in that window.
-        if (pipelineRegistration is not null)
-            _pipelineRegistry.Set(settings.Id, shell.Descriptor.Generation,
-                pipelineRegistration.Pipeline, pipelineRegistration.Continuation);
-
-        try
-        {
-            // Validate the complete candidate before replacing this shell's published snapshot.
-            // A conflict leaves the old generation available to both routing and in-flight calls.
-            _endpointDataSource.PublishGeneration(settings.Id, shell.Descriptor.Generation, shellEndpoints);
-        }
-        catch
-        {
-            // The staged pipeline has no visible endpoints if publication fails.
-            if (pipelineRegistration is not null)
-                _pipelineRegistry.Remove(settings.Id, shell.Descriptor.Generation);
-            throw;
-        }
-
-        _logger.LogDebug("Registered {Count} endpoint(s) for shell '{Shell}'", shellEndpoints.Count, shell.Descriptor);
+        var publication = _endpointDataSource.PrepareGeneration(
+            settings.Id,
+            shell.Descriptor.Generation,
+            shellEndpoints);
+        return new PreparedShellRegistration(publication, pipelineRegistration);
     }
 
     private static IEnumerable<(string FeatureId, Type FeatureType)> DiscoverWebFeatures(
@@ -347,6 +404,25 @@ public sealed class ShellEndpointRegistrationHandler : IShellLifecycleSubscriber
 
         return new PipelineRegistration(builder.Build(), continuation);
     }
+
+    private void RefreshHostEndpoints()
+    {
+        var endpointRouteBuilder = _endpointRouteBuilderAccessor.EndpointRouteBuilder;
+        if (endpointRouteBuilder is null)
+            return;
+
+        _endpointDataSource.SetHostEndpoints(
+            endpointRouteBuilder.DataSources
+                .SelectMany(dataSource => dataSource.Endpoints)
+                .Where(endpoint => endpoint.Metadata.GetMetadata<ShellEndpointMetadata>() is null));
+    }
+
+    private static (ShellId ShellId, int Generation) GetGenerationKey(IShell shell) =>
+        (new ShellId(shell.Descriptor.Name), shell.Descriptor.Generation);
+
+    private sealed record PreparedShellRegistration(
+        DynamicShellEndpointDataSource.ShellEndpointGenerationPublication Publication,
+        PipelineRegistration? Pipeline);
 
     private sealed record PipelineRegistration(RequestDelegate Pipeline, ShellPipelineContinuation Continuation);
 

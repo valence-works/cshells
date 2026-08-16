@@ -17,6 +17,7 @@ internal sealed class ShellRegistry : IShellRegistry
     private readonly IServiceProvider? _rootProvider;
     private readonly IShellBlueprintProvider _blueprintProvider;
     private readonly ILogger<ShellRegistry> _logger;
+    private readonly IReadOnlyList<IShellGenerationActivationParticipant> _activationParticipants;
     private readonly ConcurrentDictionary<string, NameSlot> _slots = new(StringComparer.OrdinalIgnoreCase);
     private ImmutableList<IShellLifecycleSubscriber> _subscribers = [];
 
@@ -25,12 +26,14 @@ internal sealed class ShellRegistry : IShellRegistry
         ShellProviderBuilder? providerBuilder = null,
         IServiceProvider? rootProvider = null,
         ILogger<ShellRegistry>? logger = null,
-        IEnumerable<IShellLifecycleSubscriber>? subscribers = null)
+        IEnumerable<IShellLifecycleSubscriber>? subscribers = null,
+        IEnumerable<IShellGenerationActivationParticipant>? activationParticipants = null)
     {
         _blueprintProvider = Guard.Against.Null(blueprintProvider);
         _providerBuilder = providerBuilder;
         _rootProvider = rootProvider;
         _logger = logger ?? NullLogger<ShellRegistry>.Instance;
+        _activationParticipants = activationParticipants?.ToList() ?? [];
 
         // Subscribers registered in DI are subscribed at construction time so they observe
         // every transition — including the first activation kicked off by the startup hosted
@@ -46,7 +49,13 @@ internal sealed class ShellRegistry : IShellRegistry
 
     // Convenience ctor used by tests that don't need the provider-build pipeline.
     internal ShellRegistry(IShellBlueprintProvider blueprintProvider, ILogger<ShellRegistry>? logger)
-        : this(blueprintProvider, providerBuilder: null, rootProvider: null, logger, subscribers: null)
+        : this(
+            blueprintProvider,
+            providerBuilder: null,
+            rootProvider: null,
+            logger,
+            subscribers: null,
+            activationParticipants: null)
     {
     }
 
@@ -552,24 +561,76 @@ internal sealed class ShellRegistry : IShellRegistry
             throw;
         }
 
+        var previousActive = slot.Active;
+        var preparedParticipants = new List<IShellGenerationActivationParticipant>(_activationParticipants.Count);
+        var promoted = false;
         try
         {
+            foreach (var participant in _activationParticipants)
+            {
+                preparedParticipants.Add(participant);
+                await participant.PrepareAsync(shell, cancellationToken).ConfigureAwait(false);
+            }
+
             if (!await shell.TryTransitionAsync(ShellLifecycleState.Initializing, ShellLifecycleState.Active).ConfigureAwait(false))
                 throw new InvalidOperationException("Shell failed to transition from Initializing to Active.");
+
+            // Publish registry identity before committing participant state. Endpoint routing can
+            // observe a committed generation immediately, so exact-generation lookup must already
+            // resolve it at that first external visibility point.
+            slot.Active = shell;
+            ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Add(s), shell);
+            promoted = true;
+
+            foreach (var participant in preparedParticipants)
+                participant.Commit(shell);
         }
-        catch
+        catch (Exception ex)
         {
-            // A publication subscriber can reject the candidate after the state CAS has moved it
-            // to Active. Dispose that unpublished generation before surfacing the failure so its
-            // provider, middleware, and collectible feature assemblies are not leaked.
+            for (var i = preparedParticipants.Count - 1; i >= 0; i--)
+            {
+                try
+                {
+                    preparedParticipants[i].Rollback(shell);
+                }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Activation participant rollback failed for shell {Shell}", shell.Descriptor);
+                }
+            }
+
+            // Keep the candidate registry-resolvable until participant rollback removes every
+            // externally visible contribution. Once rollback completes, restore the prior slot.
+            if (promoted)
+            {
+                slot.Active = previousActive;
+                ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Remove(s), shell);
+            }
+
+            // Dispose the rejected generation only after restoring the prior registry identity.
+            // Its Disposed lifecycle notification may perform idempotent participant cleanup.
             await shell.DisposeAsync().ConfigureAwait(false);
-            throw;
+            if (ex is ShellGenerationActivationException)
+                throw;
+            throw new ShellGenerationActivationException(descriptor, ex);
         }
 
-        slot.Active = shell;
-        // Atomic add: paired with the lock-free removal in ReleaseGeneration, which runs off the
-        // drain background thread (outside this name's semaphore) when a generation reaches Disposed.
-        ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Add(s), shell);
+        // Completion only releases rollback evidence after every commit succeeded. It is not an
+        // acceptance phase: rolling back here would be unsafe because an earlier participant may
+        // already have discarded the state needed to restore the prior generation.
+        foreach (var participant in preparedParticipants)
+        {
+            try
+            {
+                participant.Complete(shell);
+            }
+            catch (Exception completionException)
+            {
+                _logger.LogError(completionException,
+                    "Activation participant completion failed for shell {Shell}", shell.Descriptor);
+            }
+        }
 
         // Safe-by-construction guard against an add-after-release: if this generation somehow already
         // reached Disposed before the add above (unreachable today — a drained initializer fails the

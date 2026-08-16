@@ -7,6 +7,8 @@ using CShells.Lifecycle;
 using CShells.Resolution;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Matching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -210,6 +212,11 @@ public static class CShellsBuilderExtensions
             // and dispatched per request by ShellMiddleware
             builder.Services.TryAddSingleton<Middleware.ShellMiddlewarePipelineRegistry>();
 
+            // Acquire an exact-generation request scope inside endpoint matching, before a
+            // concurrent reload can dispose the generation selected by routing.
+            builder.Services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<MatcherPolicy, ShellEndpointGenerationMatcherPolicy>());
+
             // Register the endpoint registration handler as a lifecycle subscriber. It
             // self-subscribes to IShellRegistry in its constructor and rebuilds endpoints on
             // Initializing → Active / tears them down on Deactivating.
@@ -217,6 +224,8 @@ public static class CShellsBuilderExtensions
             {
                 builder.Services.AddSingleton<Notifications.ShellEndpointRegistrationHandler>();
                 builder.Services.AddSingleton<IShellLifecycleSubscriber>(
+                    sp => sp.GetRequiredService<Notifications.ShellEndpointRegistrationHandler>());
+                builder.Services.AddSingleton<IShellGenerationActivationParticipant>(
                     sp => sp.GetRequiredService<Notifications.ShellEndpointRegistrationHandler>());
             }
 

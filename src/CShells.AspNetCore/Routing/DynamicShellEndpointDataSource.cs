@@ -15,8 +15,8 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
 {
     private IReadOnlyList<Endpoint> _publishedEndpoints = [];
     private IReadOnlyList<Endpoint> _hostEndpoints = [];
-    private readonly Dictionary<ShellId, PendingGenerationReplacement> _pendingReplacements = [];
     private readonly object _publicationLock = new();
+    private readonly Dictionary<ShellId, long> _shellVersions = [];
     private CancellationTokenSource _cts = new();
     private readonly ILogger<DynamicShellEndpointDataSource> _logger = logger ?? NullLogger<DynamicShellEndpointDataSource>.Instance;
 
@@ -27,7 +27,8 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     }
 
     /// <inheritdoc />
-    public override IChangeToken GetChangeToken() => new CancellationChangeToken(_cts.Token);
+    public override IChangeToken GetChangeToken() =>
+        new CancellationChangeToken(Volatile.Read(ref _cts).Token);
 
     /// <summary>
     /// Adds endpoints for a shell.
@@ -43,7 +44,8 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
         {
             ValidateCandidate(additions, existingShellId: null, allowSameShellGenerations: true);
             var published = Volatile.Read(ref _publishedEndpoints);
-            Volatile.Write(ref _publishedEndpoints, [..published, ..additions]);
+            Volatile.Write(ref _publishedEndpoints, [.. published, .. additions]);
+            AdvanceVersions(additions);
             NotifyChanged();
         }
     }
@@ -63,76 +65,50 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
         IEnumerable<Endpoint> endpoints,
         IEnumerable<Endpoint>? hostEndpoints = null)
     {
-        Guard.Against.Null(endpoints);
-        var candidate = endpoints.ToArray();
-
-        lock (_publicationLock)
-        {
-            if (hostEndpoints is not null)
-                _hostEndpoints = hostEndpoints.Where(IsHostEndpoint).ToArray();
-
-            ValidateGenerationIdentity(shellId, generation, candidate);
-            ValidateCandidate(candidate, shellId, allowSameShellGenerations: false);
-
-            var published = Volatile.Read(ref _publishedEndpoints);
-            var retired = published.Where(endpoint =>
-            {
-                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
-                return metadata is not null && metadata.ShellId.Equals(shellId);
-            }).ToArray();
-            var retained = published.Where(endpoint =>
-            {
-                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
-                return metadata is null || !metadata.ShellId.Equals(shellId);
-            });
-
-            _pendingReplacements[shellId] = new PendingGenerationReplacement(generation, retired);
-            Volatile.Write(ref _publishedEndpoints, [..retained, ..candidate]);
-            NotifyChanged();
-        }
+        using var publication = PrepareGeneration(shellId, generation, endpoints, hostEndpoints);
+        publication.Commit();
+        publication.Complete();
     }
 
     /// <summary>
-    /// Retires a generation during normal deactivation. This commits any pending replacement
-    /// transaction involving that generation and removes its published endpoints.
+    /// Prepares an endpoint generation without changing the routing-visible snapshot. Commit
+    /// revalidates and performs the complete replacement under the publication lock.
     /// </summary>
+    internal ShellEndpointGenerationPublication PrepareGeneration(
+        ShellId shellId,
+        int generation,
+        IEnumerable<Endpoint> endpoints,
+        IEnumerable<Endpoint>? hostEndpoints = null)
+    {
+        Guard.Against.Null(endpoints);
+        var candidate = endpoints.ToArray();
+        var candidateHostEndpoints = hostEndpoints?.Where(IsHostEndpoint).ToArray();
+
+        lock (_publicationLock)
+        {
+            if (candidateHostEndpoints is not null)
+                _hostEndpoints = candidateHostEndpoints;
+
+            ValidateGenerationIdentity(shellId, generation, candidate);
+            ValidateCandidate(
+                candidate,
+                shellId,
+                allowSameShellGenerations: false,
+                Volatile.Read(ref _hostEndpoints));
+        }
+
+        return new ShellEndpointGenerationPublication(
+            this,
+            shellId,
+            generation,
+            candidate);
+    }
+
+    /// <summary>Retires a generation during normal deactivation.</summary>
     internal void RetireGeneration(ShellId shellId, int generation)
     {
         lock (_publicationLock)
-        {
-            CommitPendingReplacement(shellId, generation);
             RemoveGeneration(shellId, generation, Volatile.Read(ref _publishedEndpoints));
-        }
-    }
-
-    /// <summary>
-    /// Rejects a candidate generation. When the generation still owns a pending replacement,
-    /// its retired endpoint snapshot is restored atomically; otherwise only that generation is removed.
-    /// </summary>
-    internal void RollbackGeneration(ShellId shellId, int generation)
-    {
-        lock (_publicationLock)
-        {
-            var published = Volatile.Read(ref _publishedEndpoints);
-            if (_pendingReplacements.TryGetValue(shellId, out var pending) && pending.CandidateGeneration == generation)
-            {
-                var retained = published.Where(endpoint =>
-                {
-                    var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
-                    return metadata is null || !metadata.ShellId.Equals(shellId);
-                });
-                var changed = pending.RetiredEndpoints.Count > 0 || published.Any(endpoint =>
-                    endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(shellId) == true);
-
-                _pendingReplacements.Remove(shellId);
-                Volatile.Write(ref _publishedEndpoints, [..retained, ..pending.RetiredEndpoints]);
-                if (changed)
-                    NotifyChanged();
-                return;
-            }
-
-            RemoveGeneration(shellId, generation, published);
-        }
     }
 
     /// <summary>
@@ -154,7 +130,6 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
-            _pendingReplacements.Remove(shellId);
             var published = Volatile.Read(ref _publishedEndpoints);
             var retained = published.Where(endpoint =>
             {
@@ -164,6 +139,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
             if (retained.Length != published.Count)
             {
                 Volatile.Write(ref _publishedEndpoints, retained);
+                AdvanceVersion(shellId);
                 NotifyChanged();
             }
         }
@@ -176,7 +152,6 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
-            CommitPendingReplacement(shellId, generation);
             var published = Volatile.Read(ref _publishedEndpoints);
             RemoveGeneration(shellId, generation, published);
         }
@@ -189,12 +164,12 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
-            _pendingReplacements.Clear();
             var published = Volatile.Read(ref _publishedEndpoints);
             if (published.Count == 0)
                 return;
 
             Volatile.Write(ref _publishedEndpoints, []);
+            AdvanceVersions(published);
             NotifyChanged();
         }
     }
@@ -202,7 +177,8 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     private void ValidateCandidate(
         IReadOnlyList<Endpoint> candidate,
         ShellId? existingShellId,
-        bool allowSameShellGenerations)
+        bool allowSameShellGenerations,
+        IReadOnlyList<Endpoint>? hostEndpoints = null)
     {
         var published = Volatile.Read(ref _publishedEndpoints);
         var candidateShellIds = candidate
@@ -215,7 +191,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
             .GroupBy(metadata => metadata!.ShellId)
             .ToDictionary(group => group.Key, group => group.Select(metadata => metadata!.Generation).ToHashSet());
         var existing = published
-            .Concat(Volatile.Read(ref _hostEndpoints))
+            .Concat(hostEndpoints ?? Volatile.Read(ref _hostEndpoints))
             .Where(endpoint =>
             {
                 if (existingShellId is null && allowSameShellGenerations)
@@ -330,15 +306,57 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     private static bool IsHostEndpoint(Endpoint endpoint) =>
         endpoint.Metadata.GetMetadata<ShellEndpointMetadata>() is null;
 
-    private void CommitPendingReplacement(ShellId shellId, int generation)
+    private CommittedGeneration CommitGeneration(
+        ShellId shellId,
+        int generation,
+        IReadOnlyList<Endpoint> candidate)
     {
-        if (!_pendingReplacements.TryGetValue(shellId, out var pending))
-            return;
+        lock (_publicationLock)
+        {
+            // Preparation can be arbitrarily delayed. Revalidate against the latest endpoint
+            // inventory at commit so concurrent publications are serialized deterministically.
+            ValidateGenerationIdentity(shellId, generation, candidate);
+            ValidateCandidate(candidate, shellId, allowSameShellGenerations: false);
 
-        var retiresGeneration = pending.RetiredEndpoints.Any(endpoint =>
-            endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()?.Generation == generation);
-        if (pending.CandidateGeneration == generation || retiresGeneration)
-            _pendingReplacements.Remove(shellId);
+            var published = Volatile.Read(ref _publishedEndpoints);
+            var retired = published.Where(endpoint =>
+            {
+                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return metadata is not null && metadata.ShellId.Equals(shellId);
+            }).ToArray();
+            var retained = published.Where(endpoint =>
+            {
+                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return metadata is null || !metadata.ShellId.Equals(shellId);
+            });
+
+            Volatile.Write(ref _publishedEndpoints, [.. retained, .. candidate]);
+            var version = AdvanceVersion(shellId);
+            NotifyChanged();
+            return new CommittedGeneration(version, retired);
+        }
+    }
+
+    private void RollbackGeneration(
+        ShellId shellId,
+        long committedVersion,
+        IReadOnlyList<Endpoint> retired)
+    {
+        lock (_publicationLock)
+        {
+            if (GetVersion(shellId) != committedVersion)
+                return;
+
+            var published = Volatile.Read(ref _publishedEndpoints);
+            var retained = published.Where(endpoint =>
+            {
+                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return metadata is null || !metadata.ShellId.Equals(shellId);
+            });
+            Volatile.Write(ref _publishedEndpoints, [.. retained, .. retired]);
+            AdvanceVersion(shellId);
+            NotifyChanged();
+        }
     }
 
     private void RemoveGeneration(ShellId shellId, int generation, IReadOnlyList<Endpoint> published)
@@ -352,18 +370,144 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
             return;
 
         Volatile.Write(ref _publishedEndpoints, retained);
+        AdvanceVersion(shellId);
         NotifyChanged();
     }
 
-    private void NotifyChanged()
+    private long AdvanceVersion(ShellId shellId)
     {
-        var oldCts = _cts;
-        _cts = new();
-        oldCts.Cancel();
-        oldCts.Dispose();
+        var version = GetVersion(shellId) + 1;
+        _shellVersions[shellId] = version;
+        return version;
     }
 
-    private sealed record PendingGenerationReplacement(
-        int CandidateGeneration,
-        IReadOnlyList<Endpoint> RetiredEndpoints);
+    private void AdvanceVersions(IEnumerable<Endpoint> endpoints)
+    {
+        foreach (var shellId in endpoints
+                     .Select(endpoint => endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId)
+                     .OfType<ShellId>()
+                     .Distinct())
+            AdvanceVersion(shellId);
+    }
+
+    private long GetVersion(ShellId shellId) =>
+        _shellVersions.GetValueOrDefault(shellId);
+
+    private void NotifyChanged()
+    {
+        var previous = Interlocked.Exchange(ref _cts, new CancellationTokenSource());
+        try
+        {
+            previous.Cancel();
+        }
+        catch (AggregateException ex)
+        {
+            // Change observers must not be able to turn an already-visible atomic publication
+            // into a failed commit. Routing will observe the new snapshot on its next read.
+            _logger.LogError(ex, "An endpoint change observer threw while processing publication.");
+        }
+    }
+
+    internal sealed class ShellEndpointGenerationPublication : IDisposable
+    {
+        private readonly DynamicShellEndpointDataSource owner;
+        private readonly ShellId shellId;
+        private readonly int generation;
+        private readonly object gate = new();
+        private IReadOnlyList<Endpoint> candidate;
+        private IReadOnlyList<Endpoint> retired = [];
+        private long committedVersion;
+        private PublicationState state;
+
+        internal ShellEndpointGenerationPublication(
+            DynamicShellEndpointDataSource owner,
+            ShellId shellId,
+            int generation,
+            IReadOnlyList<Endpoint> candidate)
+        {
+            this.owner = owner;
+            this.shellId = shellId;
+            this.generation = generation;
+            this.candidate = candidate;
+        }
+
+        internal void Commit()
+        {
+            lock (gate)
+            {
+                if (state != PublicationState.Prepared)
+                    throw new InvalidOperationException($"Endpoint generation publication is already {state}.");
+
+                var committed = owner.CommitGeneration(shellId, generation, candidate);
+                retired = committed.Retired;
+                committedVersion = committed.Version;
+                state = PublicationState.Committed;
+                ReleaseCandidate();
+            }
+        }
+
+        internal void Complete()
+        {
+            lock (gate)
+            {
+                if (state != PublicationState.Committed)
+                    throw new InvalidOperationException($"Endpoint generation publication is already {state}.");
+
+                state = PublicationState.Completed;
+                ReleaseRollback();
+            }
+        }
+
+        internal void Rollback()
+        {
+            lock (gate)
+            {
+                if (state == PublicationState.Prepared)
+                {
+                    state = PublicationState.RolledBack;
+                    ReleaseCandidate();
+                    return;
+                }
+
+                if (state != PublicationState.Committed)
+                    return;
+
+                owner.RollbackGeneration(shellId, committedVersion, retired);
+                state = PublicationState.RolledBack;
+                ReleaseRollback();
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (gate)
+            {
+                if (state == PublicationState.Prepared)
+                    Rollback();
+                else if (state == PublicationState.Committed)
+                    Complete();
+            }
+        }
+
+        private void ReleaseCandidate()
+        {
+            candidate = [];
+        }
+
+        private void ReleaseRollback()
+        {
+            retired = [];
+            committedVersion = 0;
+        }
+
+        private enum PublicationState
+        {
+            Prepared,
+            Committed,
+            Completed,
+            RolledBack,
+        }
+    }
+
+    private sealed record CommittedGeneration(long Version, IReadOnlyList<Endpoint> Retired);
 }

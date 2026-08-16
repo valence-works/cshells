@@ -95,6 +95,36 @@ public class ShellRegistryActivateTests
         Assert.Empty(registry.GetAll("payments"));
     }
 
+    [Fact(DisplayName = "A later participant commit failure rolls every participant back in reverse order")]
+    public async Task Reload_ParticipantCommitFailure_RestoresPriorRegistryStateAndRollsBackInReverse()
+    {
+        var events = new List<string>();
+        var first = new RecordingActivationParticipant("first", events);
+        var second = new RecordingActivationParticipant("second", events, failCommitGeneration: 2);
+        await using var host = BuildHost(
+            cshells => cshells
+                .WithAssemblies()
+                .AddShell("payments", _ => { }),
+            services =>
+            {
+                services.AddSingleton<IShellGenerationActivationParticipant>(first);
+                services.AddSingleton<IShellGenerationActivationParticipant>(second);
+            });
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var generationOne = await registry.ActivateAsync("payments");
+        events.Clear();
+
+        var reload = await registry.ReloadAsync("payments");
+
+        Assert.IsType<ShellGenerationActivationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.Same(generationOne, registry.GetActive("payments"));
+        Assert.Equal([generationOne], registry.GetAll("payments"));
+        Assert.Equal(
+            ["prepare:first", "prepare:second", "commit:first", "commit:second", "rollback:second", "rollback:first"],
+            events);
+    }
+
     [Fact(DisplayName = "Blueprint name mismatch in composed settings throws")]
     public async Task Blueprint_NameMismatch_Throws()
     {
@@ -212,6 +242,29 @@ public class ShellRegistryActivateTests
             current == ShellLifecycleState.Active
                 ? throw new ShellGenerationActivationException(shell.Descriptor, new InvalidOperationException("candidate rejected"))
                 : Task.CompletedTask;
+    }
+
+    private sealed class RecordingActivationParticipant(
+        string name,
+        List<string> events,
+        int? failCommitGeneration = null) : IShellGenerationActivationParticipant
+    {
+        public Task PrepareAsync(IShell shell, CancellationToken cancellationToken = default)
+        {
+            events.Add($"prepare:{name}");
+            return Task.CompletedTask;
+        }
+
+        public void Commit(IShell shell)
+        {
+            events.Add($"commit:{name}");
+            if (shell.Descriptor.Generation == failCommitGeneration)
+                throw new InvalidOperationException($"{name} rejected commit");
+        }
+
+        public void Complete(IShell shell) => events.Add($"complete:{name}");
+
+        public void Rollback(IShell shell) => events.Add($"rollback:{name}");
     }
 }
 
