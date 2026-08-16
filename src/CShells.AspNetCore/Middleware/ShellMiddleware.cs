@@ -49,12 +49,12 @@ public class ShellMiddleware(
     {
         var resolutionContext = context.ToShellResolutionContext();
 
-        // Prefer the shell that owns the matched endpoint (set by UseRouting before this middleware).
-        // This guarantees that a shell-owned endpoint always executes inside the shell's scope,
-        // even when the general resolver pipeline would have picked a different default.
-        var endpointShellId = context.GetEndpoint()?.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId;
-
-        ShellId? shellId = endpointShellId
+        // Prefer the shell generation that owns the matched endpoint (set by UseRouting before
+        // this middleware). A reload may already have promoted a newer generation by the time
+        // this request enters middleware, so resolving only by shell name would route the request
+        // into the wrong provider. The endpoint generation is the binding authority.
+        var endpointMetadata = context.GetEndpoint()?.Metadata.GetMetadata<ShellEndpointMetadata>();
+        ShellId? shellId = endpointMetadata?.ShellId
             ?? await ResolveShellWithCacheAsync(context, resolutionContext, context.RequestAborted).ConfigureAwait(false);
 
         if (shellId is null)
@@ -66,37 +66,54 @@ public class ShellMiddleware(
 
         _logger.LogInformation("Resolved shell '{ShellId}' for request path '{Path}'", shellId.Value, context.Request.Path);
 
-        // Check whether the shell is already active so we can detect cold activation below.
-        var wasCold = _registry.GetActive(shellId.Value.Name) is null;
-
         IShell shell;
-        try
+        if (endpointMetadata is not null)
         {
-            // Lazy activation: GetOrActivateAsync returns the active generation if already live,
-            // otherwise looks up the blueprint via the provider, builds the shell, and publishes it.
-            // Stampede-safe — the per-name semaphore serializes concurrent cold-shell requests.
-            shell = await _registry.GetOrActivateAsync(shellId.Value.Name, context.RequestAborted);
-        }
-        catch (ShellBlueprintNotFoundException)
-        {
-            _logger.LogInformation("No blueprint registered for shell '{ShellId}'; returning 404.", shellId.Value);
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            return;
-        }
-        catch (ShellBlueprintUnavailableException ex)
-        {
-            _logger.LogWarning(ex, "Blueprint provider unavailable for shell '{ShellId}'; returning 503.", shellId.Value);
-            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            return;
-        }
+            var matchedShell = _registry.GetAll(endpointMetadata.ShellId.Name)
+                .FirstOrDefault(candidate => candidate.Descriptor.Generation == endpointMetadata.Generation)!;
+            if (matchedShell is null)
+            {
+                _logger.LogWarning(
+                    "Matched endpoint for shell '{ShellId}' generation {Generation}, but that exact generation is no longer available.",
+                    endpointMetadata.ShellId, endpointMetadata.Generation);
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                return;
+            }
 
-        // Cold activation: UseRouting() ran before this middleware and either found no endpoint,
-        // or selected a host fallback endpoint because shell endpoints had not been registered yet.
-        // Now that activation has completed and the ShellEndpointRegistrationHandler has published
-        // the shell's endpoints, re-match the request so downstream endpoint middleware can execute
-        // the shell handler instead of a preselected fallback.
-        if (wasCold && ShouldTryMatchEndpointAfterColdActivation(context.GetEndpoint()))
-            TryMatchEndpointAfterColdActivation(context, shellId.Value);
+            shell = matchedShell;
+        }
+        else
+        {
+            // Check whether the shell is already active so we can detect cold activation below.
+            var wasCold = _registry.GetActive(shellId.Value.Name) is null;
+            try
+            {
+                // Lazy activation: GetOrActivateAsync returns the active generation if already live,
+                // otherwise looks up the blueprint via the provider, builds the shell, and publishes it.
+                // Stampede-safe — the per-name semaphore serializes concurrent cold-shell requests.
+                shell = await _registry.GetOrActivateAsync(shellId.Value.Name, context.RequestAborted);
+            }
+            catch (ShellBlueprintNotFoundException)
+            {
+                _logger.LogInformation("No blueprint registered for shell '{ShellId}'; returning 404.", shellId.Value);
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+            catch (ShellBlueprintUnavailableException ex)
+            {
+                _logger.LogWarning(ex, "Blueprint provider unavailable for shell '{ShellId}'; returning 503.", shellId.Value);
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                return;
+            }
+
+            // Cold activation: UseRouting() ran before this middleware and either found no endpoint,
+            // or selected a host fallback endpoint because shell endpoints had not been registered yet.
+            // Now that activation has completed and the ShellEndpointRegistrationHandler has published
+            // the shell's endpoints, re-match the request so downstream endpoint middleware can execute
+            // the shell handler instead of a preselected fallback.
+            if (wasCold && ShouldTryMatchEndpointAfterColdActivation(context.GetEndpoint()))
+                TryMatchEndpointAfterColdActivation(context, shellId.Value);
+        }
 
         // Resolve the shell's composed middleware pipeline BEFORE taking the scope. Ordering
         // matters: pipeline entries are removed when a generation reaches Disposed (bounded or

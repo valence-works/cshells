@@ -4,6 +4,8 @@ using CShells.Lifecycle;
 using CShells.Resolution;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -165,6 +167,49 @@ public class ShellMiddlewareTests
         Assert.NotNull(servicesInsidePipeline?.GetService<ITestService>()); // shell scope was already set
     }
 
+    [Fact(DisplayName = "InvokeAsync binds a matched endpoint to its exact generation after reload")]
+    public async Task InvokeAsync_MatchedOlderGeneration_UsesExactGeneration()
+    {
+        var generationOne = FakeShell.WithServices(_ => { }, name: "TestShell", generation: 1);
+        var generationTwo = FakeShell.WithServices(_ => { }, name: "TestShell", generation: 2);
+        var pipelineRegistry = new ShellMiddlewarePipelineRegistry();
+        var generationOneInvoked = false;
+        var generationTwoInvoked = false;
+
+        pipelineRegistry.Set(new ShellId("TestShell"), 1, context =>
+        {
+            generationOneInvoked = true;
+            return Task.CompletedTask;
+        }, new ShellPipelineContinuation());
+        pipelineRegistry.Set(new ShellId("TestShell"), 2, context =>
+        {
+            generationTwoInvoked = true;
+            return Task.CompletedTask;
+        }, new ShellPipelineContinuation());
+
+        var middleware = CreateMiddleware(
+            _ => Task.CompletedTask,
+            resolver: new FixedShellResolver("TestShell"),
+            registry: new FakeRegistry(generationOne, generationTwo),
+            pipelineRegistry: pipelineRegistry);
+
+        var (httpContext, _) = CreateHttpContextWithFireableResponse();
+        var settings = new ShellSettings(new ShellId("TestShell"));
+        var endpoint = new RouteEndpoint(
+            _ => Task.CompletedTask,
+            RoutePatternFactory.Parse("api/items"),
+            order: 0,
+            new EndpointMetadataCollection(
+                new ShellEndpointMetadata(new ShellId("TestShell"), 1, settings)),
+            "generation-one");
+        httpContext.SetEndpoint(endpoint);
+
+        await middleware.InvokeAsync(httpContext);
+
+        Assert.True(generationOneInvoked);
+        Assert.False(generationTwoInvoked);
+    }
+
     [Fact(DisplayName = "Another shell's pipeline is not invoked for the resolved shell")]
     public async Task InvokeAsync_PipelineForDifferentShell_FallsBackToNext()
     {
@@ -292,9 +337,9 @@ public class ShellMiddlewareTests
             Task.FromResult<ShellId?>(shellId);
     }
 
-    internal sealed class FakeRegistry(FakeShell? shell = null) : IShellRegistry
+    internal sealed class FakeRegistry(params FakeShell[] shells) : IShellRegistry
     {
-        private readonly FakeShell? _shell = shell;
+        private readonly FakeShell[] _shells = shells;
 
         public Task<IShell> GetOrActivateAsync(string name, CancellationToken ct = default)
             => GetActive(name) is { } active
@@ -309,9 +354,13 @@ public class ShellMiddlewareTests
         public Task<IShellBlueprintManager?> GetManagerAsync(string name, CancellationToken ct = default) => Task.FromResult<IShellBlueprintManager?>(null);
         public Task<ShellPage> ListAsync(ShellListQuery query, CancellationToken ct = default) => Task.FromResult(new ShellPage([], null));
         public IShell? GetActive(string name)
-            => _shell is not null && string.Equals(_shell.Descriptor.Name, name, StringComparison.OrdinalIgnoreCase) ? _shell : null;
-        public IReadOnlyCollection<IShell> GetAll(string name) => _shell is null ? [] : [_shell];
-        public IReadOnlyCollection<IShell> GetActiveShells() => _shell is null ? [] : [_shell];
+            => _shells
+                .Where(shell => string.Equals(shell.Descriptor.Name, name, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(shell => shell.Descriptor.Generation)
+                .FirstOrDefault();
+        public IReadOnlyCollection<IShell> GetAll(string name) =>
+            _shells.Where(shell => string.Equals(shell.Descriptor.Name, name, StringComparison.OrdinalIgnoreCase)).ToArray();
+        public IReadOnlyCollection<IShell> GetActiveShells() => _shells;
         public void Subscribe(IShellLifecycleSubscriber subscriber) { }
         public void Unsubscribe(IShellLifecycleSubscriber subscriber) { }
     }
@@ -333,11 +382,11 @@ public class ShellMiddlewareTests
             return new FakeScope(this, scope);
         }
 
-        public static FakeShell WithServices(Action<IServiceCollection> configure, string name = "TestShell")
+        public static FakeShell WithServices(Action<IServiceCollection> configure, string name = "TestShell", int generation = 1)
         {
             var services = new ServiceCollection();
             configure(services);
-            return new FakeShell(ShellDescriptor.Create(name, 1), services.BuildServiceProvider());
+            return new FakeShell(ShellDescriptor.Create(name, generation), services.BuildServiceProvider());
         }
 
         private sealed class FakeScope(FakeShell owner, AsyncServiceScope inner) : IShellScope

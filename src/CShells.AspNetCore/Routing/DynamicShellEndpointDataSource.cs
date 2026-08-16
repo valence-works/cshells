@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
@@ -12,19 +13,16 @@ namespace CShells.AspNetCore.Routing;
 /// </summary>
 public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSource>? logger = null) : EndpointDataSource
 {
-    private readonly List<Endpoint> _endpoints = [];
-    private readonly object _lock = new();
+    private IReadOnlyList<Endpoint> _publishedEndpoints = [];
+    private IReadOnlyList<Endpoint> _hostEndpoints = [];
+    private readonly object _publicationLock = new();
     private CancellationTokenSource _cts = new();
     private readonly ILogger<DynamicShellEndpointDataSource> _logger = logger ?? NullLogger<DynamicShellEndpointDataSource>.Instance;
 
     /// <inheritdoc />
     public override IReadOnlyList<Endpoint> Endpoints
     {
-        get
-        {
-            lock (_lock)
-                return [.._endpoints];
-        }
+        get => Volatile.Read(ref _publishedEndpoints);
     }
 
     /// <inheritdoc />
@@ -35,16 +33,68 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     /// </summary>
     public void AddEndpoints(IEnumerable<Endpoint> endpoints)
     {
-        lock (_lock)
-        {
-            var newEndpoints = endpoints.ToList();
-            if (newEndpoints.Count == 0)
-                return;
+        Guard.Against.Null(endpoints);
+        var additions = endpoints.ToArray();
+        if (additions.Length == 0)
+            return;
 
-            DetectPathConflicts(newEndpoints);
-            _endpoints.AddRange(newEndpoints);
+        lock (_publicationLock)
+        {
+            ValidateCandidate(additions, existingShellId: null, allowSameShellGenerations: true);
+            var published = Volatile.Read(ref _publishedEndpoints);
+            Volatile.Write(ref _publishedEndpoints, [..published, ..additions]);
             NotifyChanged();
         }
+    }
+
+    /// <summary>
+    /// Replaces every published generation for a shell with one validated candidate snapshot.
+    /// Validation completes before the snapshot changes, so a rejected candidate leaves the
+    /// previous generation available and a successful replacement never publishes an empty state.
+    /// </summary>
+    /// <param name="shellId">The shell whose generation is being replaced.</param>
+    /// <param name="generation">The candidate generation number.</param>
+    /// <param name="endpoints">The complete mapped endpoint candidate.</param>
+    /// <param name="hostEndpoints">Optional current host endpoint snapshot for collision checks.</param>
+    public void PublishGeneration(
+        ShellId shellId,
+        int generation,
+        IEnumerable<Endpoint> endpoints,
+        IEnumerable<Endpoint>? hostEndpoints = null)
+    {
+        Guard.Against.Null(endpoints);
+        var candidate = endpoints.ToArray();
+
+        lock (_publicationLock)
+        {
+            if (hostEndpoints is not null)
+                _hostEndpoints = hostEndpoints.Where(IsHostEndpoint).ToArray();
+
+            ValidateGenerationIdentity(shellId, generation, candidate);
+            ValidateCandidate(candidate, shellId, allowSameShellGenerations: false);
+
+            var published = Volatile.Read(ref _publishedEndpoints);
+            var retained = published.Where(endpoint =>
+            {
+                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return metadata is null || !metadata.ShellId.Equals(shellId);
+            });
+
+            Volatile.Write(ref _publishedEndpoints, [..retained, ..candidate]);
+            NotifyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Updates the host endpoint snapshot used by candidate collision validation.
+    /// Shell-owned endpoints are ignored automatically.
+    /// </summary>
+    /// <param name="endpoints">The standard ASP.NET Core host endpoint inventory.</param>
+    public void SetHostEndpoints(IEnumerable<Endpoint> endpoints)
+    {
+        Guard.Against.Null(endpoints);
+        lock (_publicationLock)
+            _hostEndpoints = endpoints.Where(IsHostEndpoint).ToArray();
     }
 
     /// <summary>
@@ -52,11 +102,19 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     /// </summary>
     public void RemoveEndpoints(ShellId shellId)
     {
-        lock (_lock)
+        lock (_publicationLock)
         {
-            var removed = _endpoints.RemoveAll(e => e.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(shellId) ?? false);
-            if (removed > 0)
+            var published = Volatile.Read(ref _publishedEndpoints);
+            var retained = published.Where(endpoint =>
+            {
+                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return metadata is null || !metadata.ShellId.Equals(shellId);
+            }).ToArray();
+            if (retained.Length != published.Count)
+            {
+                Volatile.Write(ref _publishedEndpoints, retained);
                 NotifyChanged();
+            }
         }
     }
 
@@ -65,15 +123,19 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     /// </summary>
     public void RemoveEndpoints(ShellId shellId, int generation)
     {
-        lock (_lock)
+        lock (_publicationLock)
         {
-            var removed = _endpoints.RemoveAll(e =>
+            var published = Volatile.Read(ref _publishedEndpoints);
+            var retained = published.Where(endpoint =>
             {
-                var meta = e.Metadata.GetMetadata<ShellEndpointMetadata>();
-                return meta is not null && meta.ShellId.Equals(shellId) && meta.Generation == generation;
-            });
-            if (removed > 0)
+                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return metadata is null || !metadata.ShellId.Equals(shellId) || metadata.Generation != generation;
+            }).ToArray();
+            if (retained.Length != published.Count)
+            {
+                Volatile.Write(ref _publishedEndpoints, retained);
                 NotifyChanged();
+            }
         }
     }
 
@@ -82,56 +144,145 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     /// </summary>
     public void Clear()
     {
-        lock (_lock)
+        lock (_publicationLock)
         {
-            if (_endpoints.Count == 0)
+            var published = Volatile.Read(ref _publishedEndpoints);
+            if (published.Count == 0)
                 return;
 
-            _endpoints.Clear();
+            Volatile.Write(ref _publishedEndpoints, []);
             NotifyChanged();
         }
     }
 
-    private void DetectPathConflicts(List<Endpoint> newEndpoints)
+    private void ValidateCandidate(
+        IReadOnlyList<Endpoint> candidate,
+        ShellId? existingShellId,
+        bool allowSameShellGenerations)
     {
-        foreach (var newEndpoint in newEndpoints.OfType<RouteEndpoint>())
-        {
-            var newPattern = newEndpoint.RoutePattern.RawText ?? "";
-            var newMethod = newEndpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.FirstOrDefault() ?? "ANY";
-            var newShellMetadata = newEndpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
-
-            foreach (var existingEndpoint in _endpoints.OfType<RouteEndpoint>())
+        var published = Volatile.Read(ref _publishedEndpoints);
+        var candidateShellIds = candidate
+            .Select(endpoint => endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId)
+            .OfType<ShellId>()
+            .ToHashSet();
+        var candidateGenerations = candidate
+            .Select(endpoint => endpoint.Metadata.GetMetadata<ShellEndpointMetadata>())
+            .Where(metadata => metadata is not null)
+            .GroupBy(metadata => metadata!.ShellId)
+            .ToDictionary(group => group.Key, group => group.Select(metadata => metadata!.Generation).ToHashSet());
+        var existing = published
+            .Concat(Volatile.Read(ref _hostEndpoints))
+            .Where(endpoint =>
             {
-                var existingPattern = existingEndpoint.RoutePattern.RawText ?? "";
-                var existingMethod = existingEndpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.FirstOrDefault() ?? "ANY";
-                var existingShellMetadata = existingEndpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                if (existingShellId is null && allowSameShellGenerations)
+                {
+                    var existingMetadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                    return existingMetadata is null
+                           || !candidateShellIds.Contains(existingMetadata.ShellId)
+                           || candidateGenerations[existingMetadata.ShellId].Contains(existingMetadata.Generation);
+                }
 
-                if (!PatternsConflict(newPattern, existingPattern) || !MethodsConflict(newMethod, existingMethod))
+                if (existingShellId is null)
+                    return true;
+
+                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return metadata is null || !metadata.ShellId.Equals(existingShellId);
+            })
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        var candidateRoutes = candidate.OfType<RouteEndpoint>().ToArray();
+        for (var i = 0; i < candidateRoutes.Length; i++)
+        {
+            var candidateEndpoint = candidateRoutes[i];
+            foreach (var existingEndpoint in existing.Concat(candidateRoutes.Take(i)))
+            {
+                if (!RoutesConflict(candidateEndpoint, existingEndpoint))
                     continue;
 
-                if (newShellMetadata != null && existingShellMetadata != null)
-                {
-                    _logger.LogWarning(
-                        "Path conflict detected: Shell '{NewShell}' endpoint '{NewMethod} {NewPattern}' conflicts with shell '{ExistingShell}' endpoint '{ExistingMethod} {ExistingPattern}'.",
-                        newShellMetadata.ShellId, newMethod, newPattern,
-                        existingShellMetadata.ShellId, existingMethod, existingPattern);
-                }
-                else if (newShellMetadata != null)
-                {
-                    _logger.LogWarning(
-                        "Path conflict detected: Shell '{NewShell}' endpoint '{NewMethod} {NewPattern}' conflicts with host application endpoint '{ExistingMethod} {ExistingPattern}'.",
-                        newShellMetadata.ShellId, newMethod, newPattern, existingMethod, existingPattern);
-                }
+                var conflict = BuildConflict(candidateEndpoint, existingEndpoint);
+                _logger.LogError("{Message}", new ShellEndpointConflictException(conflict).Message);
+                throw new ShellEndpointConflictException(conflict);
             }
         }
     }
 
-    private static bool PatternsConflict(string pattern1, string pattern2) =>
-        string.Equals(pattern1, pattern2, StringComparison.OrdinalIgnoreCase) ||
-        (string.IsNullOrEmpty(pattern1) && string.IsNullOrEmpty(pattern2));
+    private static void ValidateGenerationIdentity(ShellId shellId, int generation, IEnumerable<Endpoint> candidate)
+    {
+        foreach (var endpoint in candidate)
+        {
+            var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+            if (metadata is null)
+                continue;
 
-    private static bool MethodsConflict(string method1, string method2) =>
-        method1 == "ANY" || method2 == "ANY" || string.Equals(method1, method2, StringComparison.OrdinalIgnoreCase);
+            if (!metadata.ShellId.Equals(shellId) || metadata.Generation != generation)
+            {
+                throw new InvalidOperationException(
+                    $"Endpoint candidate metadata identifies shell '{metadata.ShellId}' generation {metadata.Generation}, " +
+                    $"but publication targets shell '{shellId}' generation {generation}.");
+            }
+        }
+    }
+
+    private static bool RoutesConflict(RouteEndpoint candidate, RouteEndpoint existing) =>
+        string.Equals(NormalizePattern(candidate.RoutePattern), NormalizePattern(existing.RoutePattern), StringComparison.OrdinalIgnoreCase)
+        && MethodsConflict(GetMethods(candidate), GetMethods(existing));
+
+    private static bool MethodsConflict(IReadOnlyCollection<string> candidate, IReadOnlyCollection<string> existing) =>
+        candidate.Contains("*", StringComparer.OrdinalIgnoreCase)
+        || existing.Contains("*", StringComparer.OrdinalIgnoreCase)
+        || candidate.Any(existing.Contains);
+
+    private static IReadOnlyList<string> GetMethods(RouteEndpoint endpoint)
+    {
+        var methods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods;
+        return methods is null || methods.Count == 0 ? ["*"] : methods.OrderBy(method => method, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static string NormalizePattern(RoutePattern pattern)
+    {
+        var segments = pattern.PathSegments.Select(segment => string.Concat(segment.Parts.Select(NormalizePart)));
+        return "/" + string.Join("/", segments);
+    }
+
+    private static string NormalizePart(RoutePatternPart part) => part switch
+    {
+        RoutePatternLiteralPart literal => literal.Content.ToLowerInvariant(),
+        RoutePatternParameterPart parameter => "{" +
+                                               (parameter.IsCatchAll ? "**" : parameter.IsOptional ? "?" : "") +
+                                               string.Join(",", parameter.ParameterPolicies.Select(policy => policy.Content?.ToLowerInvariant() ?? string.Empty)) +
+                                               "}",
+        _ => part.ToString()?.ToLowerInvariant() ?? string.Empty,
+    };
+
+    private static ShellEndpointConflict BuildConflict(RouteEndpoint candidate, RouteEndpoint existing)
+    {
+        var candidateOwner = DescribeOwner(candidate);
+        var existingOwner = DescribeOwner(existing);
+        return new ShellEndpointConflict(
+            candidateOwner,
+            existingOwner,
+            GetMethods(candidate),
+            GetMethods(existing),
+            candidate.RoutePattern.RawText ?? string.Empty,
+            existing.RoutePattern.RawText ?? string.Empty);
+    }
+
+    private static string DescribeOwner(Endpoint endpoint)
+    {
+        var ownership = endpoint.Metadata.GetMetadata<EndpointOwnershipMetadata>();
+        if (ownership is not null)
+            return $"{ownership.OwnerKind}:{ownership.OwnerId}";
+
+        var shell = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+        if (shell is not null)
+            return $"{shell.OwnerKind}:{shell.OwnerId}";
+
+        return $"Host:{endpoint.DisplayName ?? "(unnamed endpoint)"}";
+    }
+
+    private static bool IsHostEndpoint(Endpoint endpoint) =>
+        endpoint.Metadata.GetMetadata<ShellEndpointMetadata>() is null;
 
     private void NotifyChanged()
     {

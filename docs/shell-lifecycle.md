@@ -12,6 +12,17 @@ Initializing -> Active -> Deactivating -> Draining -> Drained -> Disposed
 
 `IShellInitializer` instances run while the shell is `Initializing`, before the generation is published as `Active`. `IDrainHandler` instances run while the shell is `Draining`, after outstanding `IShellScope` handles finish or the drain deadline is reached. `IShellTerminator` instances run while the shell is `Drained`, after all drain handlers complete and before the shell's service provider is disposed.
 
+Dynamic shell endpoint generations are prepared as complete candidates. Feature mapping,
+middleware composition, and route validation finish before the candidate replaces the published
+endpoint snapshot, so a failed mapping or collision leaves the previous generation available and a
+successful replacement never exposes an empty routing state. Collision diagnostics include both
+route owners and compare normalized parameter templates plus the full HTTP method sets.
+
+Requests that have already matched an endpoint remain bound to the shell identifier and exact
+generation in that endpoint's metadata. The old generation is removed from routing when draining
+begins, while its middleware pipeline and scoped provider remain available until in-flight scopes
+finish.
+
 ## Initializer Ordering
 
 Feature dependencies and initializer order are separate concepts:

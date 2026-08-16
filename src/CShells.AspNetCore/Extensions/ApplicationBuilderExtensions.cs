@@ -70,6 +70,13 @@ public static class ApplicationBuilderExtensions
         // This makes all shell endpoints available to the routing system
         endpoints.DataSources.Add(endpointDataSource);
 
+        // Keep a host-only inventory for candidate collision validation. The dynamic source is
+        // intentionally excluded; its own immutable snapshot is validated separately.
+        endpointDataSource.SetHostEndpoints(
+            endpoints.DataSources
+                .Where(dataSource => !ReferenceEquals(dataSource, endpointDataSource))
+                .SelectMany(dataSource => dataSource.Endpoints));
+
         // Step 7: Replay registration for shells that activated before this call captured the
         // accessors (e.g. explicit warm-up activation in Program.cs before MapShells). Without
         // the replay those generations would permanently lack endpoints and middleware.
