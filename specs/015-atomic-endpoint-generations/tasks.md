@@ -36,3 +36,7 @@
 - [x] T019 Acquire an idempotent exact-generation routing lease before middleware handoff and prove
   matched-before-reload requests hold drain until response completion.
 - [x] T020 Linearize overlapping publications and make change-token acquisition race-safe.
+- [x] T021 Enforce one global rollback-capable publication, guard route/host mutations, and prove
+  same-shell, cross-shell, completion, and rollback transaction ordering.
+- [x] T022 Lease cold-activation manual rematches before endpoint exposure and prove a concurrent
+  real-registry reload drains only after response completion.

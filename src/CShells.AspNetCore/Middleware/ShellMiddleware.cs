@@ -57,7 +57,7 @@ public class ShellMiddleware(
         var generationLease = context.Features.Get<ShellEndpointGenerationLease>();
         if (endpointMetadata is null || generationLease?.Matches(endpointMetadata) != true)
             generationLease = null;
-        ShellId? shellId = endpointMetadata?.ShellId
+        var shellId = endpointMetadata?.ShellId
             ?? await ResolveShellWithCacheAsync(context, resolutionContext, context.RequestAborted).ConfigureAwait(false);
 
         if (shellId is null)
@@ -122,7 +122,22 @@ public class ShellMiddleware(
             // the shell's endpoints, re-match the request so downstream endpoint middleware can execute
             // the shell handler instead of a preselected fallback.
             if (wasCold && ShouldTryMatchEndpointAfterColdActivation(context.GetEndpoint()))
-                TryMatchEndpointAfterColdActivation(context, shellId.Value);
+            {
+                generationLease = TryMatchEndpointAfterColdActivation(
+                    context,
+                    shellId.Value,
+                    shell,
+                    out var endpointMatched);
+                if (endpointMatched && generationLease is null)
+                {
+                    _logger.LogWarning(
+                        "Cold-start endpoint matched shell '{ShellId}' generation {Generation}, but that generation drained before the request could lease it.",
+                        shellId.Value,
+                        shell.Descriptor.Generation);
+                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    return;
+                }
+            }
         }
 
         // Resolve the shell's composed middleware pipeline BEFORE taking the scope. Ordering
@@ -203,15 +218,22 @@ public class ShellMiddleware(
     /// <see cref="DynamicShellEndpointDataSource"/>. Walk the data source and set the first
     /// matching endpoint on the context so the downstream endpoint middleware can execute it.
     /// </summary>
-    private void TryMatchEndpointAfterColdActivation(HttpContext context, ShellId shellId)
+    private ShellEndpointGenerationLease? TryMatchEndpointAfterColdActivation(
+        HttpContext context,
+        ShellId shellId,
+        IShell shell,
+        out bool endpointMatched)
     {
+        endpointMatched = false;
         foreach (var endpoint in _endpointDataSource.Endpoints)
         {
             if (endpoint is not RouteEndpoint routeEndpoint)
                 continue;
 
             var metadata = routeEndpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
-            if (metadata is null || !metadata.ShellId.Equals(shellId))
+            if (metadata is null
+                || !metadata.ShellId.Equals(shellId)
+                || metadata.Generation != shell.Descriptor.Generation)
                 continue;
 
             // Check HTTP method constraint first (cheap).
@@ -239,13 +261,19 @@ public class ShellMiddleware(
             if (!ApplyInlineConstraints(routeEndpoint.RoutePattern, routeValues, context))
                 continue;
 
+            endpointMatched = true;
+            if (!ShellEndpointGenerationLease.TryAcquire(context, metadata, shell, out var lease))
+                return null;
+
             context.SetEndpoint(routeEndpoint);
             context.Request.RouteValues = routeValues;
             _logger.LogDebug(
                 "Cold-start re-matched endpoint '{Pattern}' for shell '{Shell}'",
                 routeEndpoint.RoutePattern.RawText, shellId);
-            return;
+            return lease;
         }
+
+        return null;
     }
 
     private static bool ApplyInlineConstraints(

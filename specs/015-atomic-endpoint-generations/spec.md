@@ -46,10 +46,14 @@ owns the endpoint metadata.
    and all HTTP method comparisons use ordinal, case-insensitive semantics.
 8. A generation's middleware pipeline is available before its endpoint snapshot becomes visible;
    rejected endpoint publication removes the staged candidate pipeline.
-9. Overlapping prepared publications are linearizable. Rollback is transaction-specific and cannot
-   resurrect an intermediate generation after a newer same-shell publication wins.
+9. Overlapping preparation is allowed, but only one rollback-capable commit may be pending in the
+   route inventory. A second commit or any route/host inventory mutation is rejected until the
+   owner completes or rolls back the transaction. Rollback is transaction-specific and cannot
+   resurrect an intermediate generation or conflict with a cross-shell/host mutation.
 10. Endpoint change-token acquisition is race-safe with publication and does not expose a disposed
     token source or miss the snapshot change it is meant to observe.
+11. Cold-activation manual re-matching acquires the exact generation lease before exposing the
+    rematched endpoint, so a concurrent reload cannot dispose it in the handoff to middleware.
 
 ## Non-goals
 

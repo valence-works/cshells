@@ -17,6 +17,10 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     private IReadOnlyList<Endpoint> _hostEndpoints = [];
     private readonly object _publicationLock = new();
     private readonly Dictionary<ShellId, long> _shellVersions = [];
+    // Route collision validity is global: a rollback can restore routes that overlap a newer
+    // shell or host mutation. Keep exactly one rollback-capable commit until its owner finalizes.
+    private PendingTransaction? _pendingTransaction;
+    private long _nextTransactionId;
     private CancellationTokenSource _cts = new();
     private readonly ILogger<DynamicShellEndpointDataSource> _logger = logger ?? NullLogger<DynamicShellEndpointDataSource>.Instance;
 
@@ -42,6 +46,8 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
 
         lock (_publicationLock)
         {
+            EnsureNoPendingTransaction("add endpoints");
+
             ValidateCandidate(additions, existingShellId: null, allowSameShellGenerations: true);
             var published = Volatile.Read(ref _publishedEndpoints);
             Volatile.Write(ref _publishedEndpoints, [.. published, .. additions]);
@@ -71,8 +77,9 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     }
 
     /// <summary>
-    /// Prepares an endpoint generation without changing the routing-visible snapshot. Commit
-    /// revalidates and performs the complete replacement under the publication lock.
+    /// Prepares an endpoint generation without changing the routing-visible snapshot. Preparation
+    /// may overlap; commit revalidates under the publication lock and is rejected while another
+    /// rollback-capable commit owns the global route inventory.
     /// </summary>
     internal ShellEndpointGenerationPublication PrepareGeneration(
         ShellId shellId,
@@ -87,7 +94,10 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
         lock (_publicationLock)
         {
             if (candidateHostEndpoints is not null)
+            {
+                EnsureNoPendingTransaction("replace the host endpoint inventory");
                 _hostEndpoints = candidateHostEndpoints;
+            }
 
             ValidateGenerationIdentity(shellId, generation, candidate);
             ValidateCandidate(
@@ -99,6 +109,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
 
         return new ShellEndpointGenerationPublication(
             this,
+            Interlocked.Increment(ref _nextTransactionId),
             shellId,
             generation,
             candidate);
@@ -108,7 +119,10 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     internal void RetireGeneration(ShellId shellId, int generation)
     {
         lock (_publicationLock)
+        {
+            EnsureNoPendingTransaction("retire a generation");
             RemoveGeneration(shellId, generation, Volatile.Read(ref _publishedEndpoints));
+        }
     }
 
     /// <summary>
@@ -120,7 +134,10 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         Guard.Against.Null(endpoints);
         lock (_publicationLock)
+        {
+            EnsureNoPendingTransaction("replace the host endpoint inventory");
             _hostEndpoints = endpoints.Where(IsHostEndpoint).ToArray();
+        }
     }
 
     /// <summary>
@@ -130,6 +147,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
+            EnsureNoPendingTransaction("remove endpoints");
             var published = Volatile.Read(ref _publishedEndpoints);
             var retained = published.Where(endpoint =>
             {
@@ -152,6 +170,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
+            EnsureNoPendingTransaction("remove a generation");
             var published = Volatile.Read(ref _publishedEndpoints);
             RemoveGeneration(shellId, generation, published);
         }
@@ -164,6 +183,8 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
+            EnsureNoPendingTransaction("clear endpoints");
+
             var published = Volatile.Read(ref _publishedEndpoints);
             if (published.Count == 0)
                 return;
@@ -307,12 +328,15 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
         endpoint.Metadata.GetMetadata<ShellEndpointMetadata>() is null;
 
     private CommittedGeneration CommitGeneration(
+        long transactionId,
         ShellId shellId,
         int generation,
         IReadOnlyList<Endpoint> candidate)
     {
         lock (_publicationLock)
         {
+            EnsureNoPendingTransaction("commit another generation");
+
             // Preparation can be arbitrarily delayed. Revalidate against the latest endpoint
             // inventory at commit so concurrent publications are serialized deterministically.
             ValidateGenerationIdentity(shellId, generation, candidate);
@@ -330,6 +354,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
                 return metadata is null || !metadata.ShellId.Equals(shellId);
             });
 
+            _pendingTransaction = new PendingTransaction(transactionId, shellId);
             Volatile.Write(ref _publishedEndpoints, [.. retained, .. candidate]);
             var version = AdvanceVersion(shellId);
             NotifyChanged();
@@ -338,14 +363,23 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     }
 
     private void RollbackGeneration(
+        long transactionId,
         ShellId shellId,
         long committedVersion,
         IReadOnlyList<Endpoint> retired)
     {
         lock (_publicationLock)
         {
-            if (GetVersion(shellId) != committedVersion)
+            if (_pendingTransaction is not { } pending
+                || pending.TransactionId != transactionId
+                || !pending.ShellId.Equals(shellId))
                 return;
+
+            if (GetVersion(shellId) != committedVersion)
+            {
+                throw new InvalidOperationException(
+                    $"Shell endpoint publication transaction {transactionId} for '{shellId}' lost ownership of its committed snapshot.");
+            }
 
             var published = Volatile.Read(ref _publishedEndpoints);
             var retained = published.Where(endpoint =>
@@ -355,7 +389,34 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
             });
             Volatile.Write(ref _publishedEndpoints, [.. retained, .. retired]);
             AdvanceVersion(shellId);
+            _pendingTransaction = null;
             NotifyChanged();
+        }
+    }
+
+    private void CompleteGeneration(long transactionId, ShellId shellId)
+    {
+        lock (_publicationLock)
+        {
+            if (_pendingTransaction is not { } pending
+                || pending.TransactionId != transactionId
+                || !pending.ShellId.Equals(shellId))
+            {
+                throw new InvalidOperationException(
+                    $"Shell endpoint publication transaction {transactionId} for '{shellId}' is not the pending committed transaction.");
+            }
+
+            _pendingTransaction = null;
+        }
+    }
+
+    private void EnsureNoPendingTransaction(string operation)
+    {
+        if (_pendingTransaction is { } pending)
+        {
+            throw new InvalidOperationException(
+                $"Cannot {operation} while endpoint publication transaction {pending.TransactionId} " +
+                $"for shell '{pending.ShellId}' is awaiting completion or rollback.");
         }
     }
 
@@ -411,6 +472,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     internal sealed class ShellEndpointGenerationPublication : IDisposable
     {
         private readonly DynamicShellEndpointDataSource owner;
+        private readonly long transactionId;
         private readonly ShellId shellId;
         private readonly int generation;
         private readonly object gate = new();
@@ -421,11 +483,13 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
 
         internal ShellEndpointGenerationPublication(
             DynamicShellEndpointDataSource owner,
+            long transactionId,
             ShellId shellId,
             int generation,
             IReadOnlyList<Endpoint> candidate)
         {
             this.owner = owner;
+            this.transactionId = transactionId;
             this.shellId = shellId;
             this.generation = generation;
             this.candidate = candidate;
@@ -438,7 +502,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
                 if (state != PublicationState.Prepared)
                     throw new InvalidOperationException($"Endpoint generation publication is already {state}.");
 
-                var committed = owner.CommitGeneration(shellId, generation, candidate);
+                var committed = owner.CommitGeneration(transactionId, shellId, generation, candidate);
                 retired = committed.Retired;
                 committedVersion = committed.Version;
                 state = PublicationState.Committed;
@@ -453,6 +517,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
                 if (state != PublicationState.Committed)
                     throw new InvalidOperationException($"Endpoint generation publication is already {state}.");
 
+                owner.CompleteGeneration(transactionId, shellId);
                 state = PublicationState.Completed;
                 ReleaseRollback();
             }
@@ -472,7 +537,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
                 if (state != PublicationState.Committed)
                     return;
 
-                owner.RollbackGeneration(shellId, committedVersion, retired);
+                owner.RollbackGeneration(transactionId, shellId, committedVersion, retired);
                 state = PublicationState.RolledBack;
                 ReleaseRollback();
             }
@@ -510,4 +575,5 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     }
 
     private sealed record CommittedGeneration(long Version, IReadOnlyList<Endpoint> Retired);
+    private sealed record PendingTransaction(long TransactionId, ShellId ShellId);
 }

@@ -315,23 +315,94 @@ public class DynamicShellEndpointDataSourceTests
             [CreateEndpoint("api/three", shellId, 3, settings)]);
 
         generationTwo.Commit();
-        rejectedGenerationThree.Dispose();
+        Assert.Throws<InvalidOperationException>(() => rejectedGenerationThree.Commit());
+        generationTwo.Rollback();
 
+        rejectedGenerationThree.Commit();
+        rejectedGenerationThree.Rollback();
+
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        Assert.Equal("api/one", ((RouteEndpoint)dataSource.Endpoints.Single()).RoutePattern.RawText);
+    }
+
+    [Fact(DisplayName = "Completing a committed publication allows the next prepared generation to commit")]
+    public void PrepareGeneration_Complete_AllowsNextCommit()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellId = new ShellId("complete");
+        var settings = new ShellSettings(shellId);
+        dataSource.PublishGeneration(shellId, 1, [CreateEndpoint("api/one", shellId, 1, settings)]);
+        using var generationTwo = dataSource.PrepareGeneration(
+            shellId,
+            2,
+            [CreateEndpoint("api/two", shellId, 2, settings)]);
         using var generationThree = dataSource.PrepareGeneration(
             shellId,
             3,
             [CreateEndpoint("api/three", shellId, 3, settings)]);
-        using var generationFour = dataSource.PrepareGeneration(
-            shellId,
-            4,
-            [CreateEndpoint("api/four", shellId, 4, settings)]);
-        generationThree.Commit();
-        generationFour.Commit();
-        generationThree.Rollback();
-        generationFour.Complete();
 
-        AssertGeneration(dataSource, expectedGeneration: 4);
-        Assert.Equal("api/four", ((RouteEndpoint)dataSource.Endpoints.Single()).RoutePattern.RawText);
+        generationTwo.Commit();
+        generationTwo.Complete();
+        generationThree.Commit();
+        generationThree.Complete();
+
+        AssertGeneration(dataSource, expectedGeneration: 3);
+    }
+
+    [Fact(DisplayName = "Same-shell mutations are rejected while a committed publication retains rollback evidence")]
+    public void PrepareGeneration_PendingCommit_GuardsSameShellMutations()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellId = new ShellId("guarded");
+        var settings = new ShellSettings(shellId);
+        dataSource.PublishGeneration(shellId, 1, [CreateEndpoint("api/one", shellId, 1, settings)]);
+        using var generationTwo = dataSource.PrepareGeneration(
+            shellId,
+            2,
+            [CreateEndpoint("api/two", shellId, 2, settings)]);
+        generationTwo.Commit();
+
+        Assert.Throws<InvalidOperationException>(() => dataSource.AddEndpoints(
+            [CreateEndpoint("api/add", shellId, 2, settings)]));
+        Assert.Throws<InvalidOperationException>(() => dataSource.AddEndpoints(
+            [CreateHostEndpoint("api/one", "conflicting host endpoint", ["GET"])]));
+        Assert.Throws<InvalidOperationException>(() => dataSource.SetHostEndpoints(
+            [CreateHostEndpoint("api/one", "conflicting host inventory", ["GET"])]));
+        Assert.Throws<InvalidOperationException>(() => dataSource.RemoveEndpoints(shellId));
+        Assert.Throws<InvalidOperationException>(() => dataSource.RemoveEndpoints(shellId, 2));
+        Assert.Throws<InvalidOperationException>(() => dataSource.RetireGeneration(shellId, 2));
+        Assert.Throws<InvalidOperationException>(dataSource.Clear);
+
+        generationTwo.Rollback();
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        dataSource.RemoveEndpoints(shellId);
+        Assert.Empty(dataSource.Endpoints);
+    }
+
+    [Fact(DisplayName = "A pending commit blocks cross-shell publication until rollback evidence is released")]
+    public void PrepareGeneration_PendingCommit_GuardsCrossShellPublication()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellA = new ShellId("a");
+        var shellB = new ShellId("b");
+        var settingsA = new ShellSettings(shellA);
+        var settingsB = new ShellSettings(shellB);
+        dataSource.PublishGeneration(shellA, 1, [CreateEndpoint("api/retired", shellA, 1, settingsA)]);
+        using var publicationA = dataSource.PrepareGeneration(
+            shellA,
+            2,
+            [CreateEndpoint("api/current", shellA, 2, settingsA)]);
+        publicationA.Commit();
+        using var publicationB = dataSource.PrepareGeneration(
+            shellB,
+            1,
+            [CreateEndpoint("api/retired", shellB, 1, settingsB)]);
+
+        Assert.Throws<InvalidOperationException>(() => publicationB.Commit());
+
+        publicationA.Rollback();
+        Assert.Throws<ShellEndpointConflictException>(() => publicationB.Commit());
+        Assert.Equal(shellA, dataSource.Endpoints.Single().Metadata.GetMetadata<ShellEndpointMetadata>()!.ShellId);
     }
 
     [Fact(DisplayName = "Prepared publications revalidate conflicts at commit")]
@@ -351,6 +422,7 @@ public class DynamicShellEndpointDataSourceTests
             [CreateEndpoint("api/shared", shellB, 1, settings, "FeatureB")]);
 
         publicationA.Commit();
+        publicationA.Complete();
         var exception = Assert.Throws<ShellEndpointConflictException>(() => publicationB.Commit());
 
         Assert.Equal("FeatureB", exception.Conflict.CandidateOwner.OwnerId);

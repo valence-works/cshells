@@ -48,20 +48,13 @@ internal sealed class ShellEndpointGenerationMatcherPolicy(IShellRegistry regist
                 continue;
             }
 
-            try
+            if (ShellEndpointGenerationLease.TryAcquire(httpContext, metadata, shell, out _))
             {
-                var lease = new ShellEndpointGenerationLease(metadata.ShellId, metadata.Generation, shell.BeginScope());
-                httpContext.Features.Set(lease);
-                httpContext.Response.OnCompleted(
-                    static state => ((ShellEndpointGenerationLease)state).DisposeAsync().AsTask(),
-                    lease);
                 return Task.CompletedTask;
             }
-            catch (InvalidOperationException)
-            {
-                // Drain disposal won the race before this candidate became a successful match.
-                candidates.SetValidity(i, false);
-            }
+
+            // Drain disposal won the race before this candidate became a successful match.
+            candidates.SetValidity(i, false);
         }
 
         return Task.CompletedTask;
@@ -83,6 +76,55 @@ internal sealed class ShellEndpointGenerationLease(
 
     internal bool Matches(ShellEndpointMetadata metadata) =>
         ShellId.Equals(metadata.ShellId) && Generation == metadata.Generation;
+
+    internal static bool TryAcquire(
+        HttpContext context,
+        ShellEndpointMetadata metadata,
+        IShell shell,
+        out ShellEndpointGenerationLease? lease)
+    {
+        var existing = context.Features.Get<ShellEndpointGenerationLease>();
+        if (existing is not null)
+        {
+            lease = existing.Matches(metadata) ? existing : null;
+            return lease is not null;
+        }
+
+        if (!string.Equals(shell.Descriptor.Name, metadata.ShellId.Name, StringComparison.OrdinalIgnoreCase)
+            || shell.Descriptor.Generation != metadata.Generation)
+        {
+            lease = null;
+            return false;
+        }
+
+        IShellScope scope;
+        try
+        {
+            scope = shell.BeginScope();
+        }
+        catch (InvalidOperationException)
+        {
+            lease = null;
+            return false;
+        }
+
+        var acquired = new ShellEndpointGenerationLease(metadata.ShellId, metadata.Generation, scope);
+        try
+        {
+            context.Response.OnCompleted(
+                static state => ((ShellEndpointGenerationLease)state).DisposeAsync().AsTask(),
+                acquired);
+            context.Features.Set(acquired);
+            lease = acquired;
+            return true;
+        }
+        catch
+        {
+            acquired.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            lease = null;
+            throw;
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {

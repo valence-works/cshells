@@ -8,6 +8,7 @@ dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedNam
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~Reload_LaterSubscriberRejectsCandidate_RestoresPriorGeneration|FullyQualifiedName~Reload_MiddlewareCompositionFails_PreservesPriorGeneration|FullyQualifiedName~MethodsConflict_MethodCaseDiffers_ReturnsTrue|FullyQualifiedName~CompositionFailure_RejectsActivationWithoutPipeline"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~Reload_SlowLaterSubscriber_KeepsPriorGenerationRoutableUntilCommit|FullyQualifiedName~Reload_LaterParticipantRejectsCommit_RestoresPriorRoutesAndPipeline|FullyQualifiedName~Reload_CommitConflict_RestoresPriorActiveAndAllEntries|FullyQualifiedName~Reload_ParticipantCommitFailure_RestoresPriorRegistryStateAndRollsBackInReverse"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~PrepareGeneration_OverlappingCommitAndRollback_DoesNotResurrectRoutes|FullyQualifiedName~PrepareGeneration_ConcurrentConflict_SecondCommitIsRejected|FullyQualifiedName~GetChangeToken_"
+dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~PrepareGeneration_Complete_AllowsNextCommit|FullyQualifiedName~PrepareGeneration_PendingCommit_GuardsSameShellMutations|FullyQualifiedName~PrepareGeneration_PendingCommit_GuardsCrossShellPublication|FullyQualifiedName~ColdStart_ReMatch_ConcurrentReload_KeepsMatchedGenerationLeased"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~ActiveTransition_PublishesPipelineBeforeEndpointsBecomeVisible|FullyQualifiedName~ActiveTransition_EndpointConflict_RemovesStagedPipeline|FullyQualifiedName~PublishGeneration_EquivalentTemplates_PreservesPreviousSnapshot"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj
 dotnet build CShells.sln
@@ -39,9 +40,13 @@ rollback ordering. Middleware composition fails during prepare without disturbin
 generation, and a focused route test preserves ordinal case-insensitive method overlap semantics.
 
 Overlapping-publication tests commit several prepared same-shell transactions in adversarial order
-and prove stale rollback cannot resurrect an intermediate generation. Change-token tests race
+and prove stale rollback cannot resurrect an intermediate generation. Cross-shell and host-route
+tests prove the global collision inventory cannot mutate while rollback evidence is live, while
+explicit completion and rollback both release the next prepared commit. Change-token tests race
 acquisition and publication repeatedly, proving returned tokens are never backed by an eagerly
-disposed source.
+disposed source. A blocking endpoint-feature fixture pauses cold rematch exactly at endpoint
+exposure, performs a real concurrent reload, and proves the exact-generation lease holds drain until
+response completion.
 
 The endpoint/pipeline ordering tests subscribe to the routing change token, which fires at the
 first externally visible publication point, and assert the exact generation pipeline is already
@@ -59,9 +64,10 @@ On 2026-08-16:
 - Transactional rollback, middleware rejection, method-case overlap, endpoint/pipeline ordering,
   ownership diagnostics, combined drain, and collectible-context regressions: 9 passed per
   invocation, repeated across 3 invocations.
-- Focused routing, lifecycle-handler, middleware, and activation regressions: 83 passed before the
-  final post-review additions.
-- `dotnet test tests/CShells.Tests/CShells.Tests.csproj`: 622 passed after the transaction and
-  routing-lease follow-up.
-- `dotnet test CShells.sln`: 622 CShells tests and 31 end-to-end tests passed.
+- Global transaction, cold-rematch, matched-before-middleware, and collectible-context regressions:
+  7 passed per invocation across 5 consecutive invocations.
+- Focused routing, lifecycle-handler, middleware, and activation regressions: 88 passed.
+- `dotnet test tests/CShells.Tests/CShells.Tests.csproj`: 626 passed after the global transaction
+  and cold-rematch follow-up.
+- `dotnet test CShells.sln`: 626 CShells tests and 31 end-to-end tests passed.
 - `dotnet build CShells.sln`: succeeded with 0 warnings and 0 errors.

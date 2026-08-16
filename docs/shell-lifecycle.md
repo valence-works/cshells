@@ -28,12 +28,22 @@ pipeline remain live. Middleware composition failures reject activation before p
 than installing a degraded fallback pipeline. The candidate pipeline is available before the route
 change notification that first exposes its endpoints.
 
+Because collision validity spans the entire route inventory, only one committed publication may
+retain rollback evidence at a time. Other candidates may prepare concurrently, but another commit
+or any route/host inventory mutation fails deterministically until the pending owner completes or
+rolls back. This prevents rollback from restoring routes that conflict with a newer shell or host
+mutation.
+
 Routing acquires an exact-generation request lease after method and constraint matching but before
 the old generation can drain. `ShellMiddleware` reuses that lease, so even a request paused between
 endpoint matching and middleware entry remains bound to the endpoint's shell and generation. The
 lease is released at response completion, including when downstream middleware short-circuits. The
 old generation is removed from routing when draining begins, while its middleware pipeline and
 scoped provider remain available until those in-flight leases finish.
+
+Cold activation can publish endpoints after the normal routing pass, so its manual rematch uses the
+same lease seam. It acquires the exact generation before setting the rematched endpoint on the
+request; if drain wins first, no shell endpoint is exposed and the request returns 503.
 
 ## Initializer Ordering
 

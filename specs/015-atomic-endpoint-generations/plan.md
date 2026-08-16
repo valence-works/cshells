@@ -6,12 +6,13 @@
 
 The dynamic endpoint data source is the candidate-publication seam. It owns route normalization,
 method-overlap checks, conflict diagnostics, immutable snapshot replacement, generation-specific
-removal, and a versioned prepare/commit/rollback transaction. Preparation is externally invisible.
-Commit revalidates against the latest route inventory under one lock, swaps the complete snapshot,
-and retains only the retired same-shell snapshot needed for rollback. Completion releases that
-evidence. A rollback restores it only while that exact transaction still owns the shell version,
-so overlapping publications cannot resurrect an intermediate generation. Change-token sources are
-atomically exchanged and cancelled without racing eager disposal.
+removal, and an identity-bound prepare/commit/rollback transaction. Preparation is externally
+invisible and may overlap. Commit revalidates against the latest route inventory under one lock,
+swaps the complete snapshot, and retains only the retired snapshot needed for rollback. Because
+route collisions are global, the data source permits one rollback-capable commit at a time and
+rejects every route or host-inventory mutation until its owner completes or rolls it back. This
+makes rollback infallible and prevents both same-shell resurrection and cross-shell/host conflicts.
+Change-token sources are atomically exchanged and cancelled without racing eager disposal.
 
 `IShellGenerationActivationParticipant` gives `ShellRegistry` a two-phase activation boundary.
 `ShellEndpointRegistrationHandler` prepares feature endpoints and the middleware pipeline before
@@ -30,8 +31,9 @@ typed owner is present.
 `ShellEndpointGenerationMatcherPolicy` runs after method and constraint policies and acquires at
 most one exact-generation `IShellScope` while matching still owns the endpoint generation. The
 request-local lease is idempotent across policy re-entry and is released through `OnCompleted`.
-`ShellMiddleware` reuses that lease; unmatched/cold requests retain the existing lazy activation
-behavior.
+`ShellMiddleware` reuses that lease. When cold activation requires its manual endpoint rematch, it
+uses the same lease seam before calling `SetEndpoint`; a failed handoff exposes no shell endpoint
+and returns 503. Unmatched requests retain the existing lazy activation behavior.
 
 ## Constitution check
 
