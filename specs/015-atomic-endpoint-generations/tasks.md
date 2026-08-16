@@ -19,5 +19,5 @@
 ## Phase 3 — validation
 
 - [x] T011 Run focused ASP.NET Core tests.
-- [ ] T012 Run full CShells tests/build and diff review.
-- [ ] T013 Perform self-review/fix iterations and leave a clean committed worktree.
+- [x] T012 Run full CShells tests/build and diff review.
+- [x] T013 Perform self-review/fix iterations and leave a clean committed worktree.
