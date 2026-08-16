@@ -27,7 +27,11 @@ retain the existing lazy activation behavior.
   by the registry; the endpoint snapshot is immutable and atomically replaced under the data
   source's short synchronization gate.
 - Explicit errors: conflicts carry both owners, route, and method set.
-- Test coverage: focused routing, handler, and middleware tests cover each acceptance criterion.
+- Test coverage: focused routing, handler, and middleware tests cover each acceptance criterion;
+  `CShells.DynamicFeatureFixture` supplies a real dynamically loaded endpoint feature for a
+  five-cycle collectible `AssemblyLoadContext` test that proves endpoint retirement releases
+  feature code. The middleware suite also drives a real registry reload with an old matched
+  request and verifies drain waits for its response completion.
 
 ## Files
 

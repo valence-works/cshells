@@ -1,3 +1,6 @@
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
 using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Routing;
 using CShells.AspNetCore.Notifications;
@@ -235,6 +238,116 @@ public class DynamicShellEndpointDataSourceTests
         Assert.Throws<InvalidOperationException>(() => handler.RegisterActiveShell(shell));
         var remaining = Assert.Single(dataSource.Endpoints);
         Assert.Equal(1, remaining.Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation);
+    }
+
+    [Fact(DisplayName = "Repeated collectible feature generations unload after replacement and removal")]
+    public async Task CollectibleFeatureGenerations_UnloadAfterReplacementAndRemoval()
+    {
+        var dataSource = new DynamicShellEndpointDataSource();
+        var shellId = new ShellId("collectible");
+        var fixtureAssemblyPath = Path.Combine(AppContext.BaseDirectory, "CShells.DynamicFeatureFixture.dll");
+
+        Assert.True(File.Exists(fixtureAssemblyPath), $"Dynamic feature fixture was not copied to '{fixtureAssemblyPath}'.");
+
+        for (var cycle = 1; cycle <= 5; cycle++)
+        {
+            var loadContext = MapReplaceAndRemoveCollectibleGeneration(
+                dataSource,
+                shellId,
+                generation: cycle * 2 - 1,
+                fixtureAssemblyPath);
+
+            Assert.Empty(dataSource.Endpoints);
+            await AssertCollectibleAsync(loadContext, cycle);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference MapReplaceAndRemoveCollectibleGeneration(
+        DynamicShellEndpointDataSource dataSource,
+        ShellId shellId,
+        int generation,
+        string fixtureAssemblyPath)
+    {
+        var loadContext = new CollectibleFeatureLoadContext();
+        var loadContextWeakReference = new WeakReference(loadContext);
+        var fixtureAssembly = loadContext.LoadFromAssemblyPath(fixtureAssemblyPath);
+        var featureType = fixtureAssembly.GetType(
+            "CShells.DynamicFeatureFixture.DynamicFeature",
+            throwOnError: true)!;
+
+        Assert.Same(loadContext, AssemblyLoadContext.GetLoadContext(featureType.Assembly));
+
+        var feature = (IWebShellFeature)Activator.CreateInstance(featureType)!;
+        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var innerBuilder = new TestEndpointRouteBuilder(serviceProvider);
+        var shellSettings = new ShellSettings(shellId);
+        var shellBuilder = new ShellEndpointRouteBuilder(
+            innerBuilder,
+            shellId,
+            generation,
+            shellSettings,
+            serviceProvider,
+            pathPrefix: null);
+
+        // Use the same route-builder seam used by ShellEndpointRegistrationHandler: feature code
+        // maps into ShellEndpointRouteBuilder, which materializes the complete candidate before
+        // DynamicShellEndpointDataSource publishes it.
+        feature.MapEndpoints(shellBuilder, environment: null);
+        var collectibleCandidate = shellBuilder.GetEndpoints().ToArray();
+        Assert.Single(collectibleCandidate);
+        dataSource.PublishGeneration(shellId, generation, collectibleCandidate);
+
+        // Replacing the candidate retires its endpoint while publishing the next complete
+        // snapshot. Drive the replacement through the lifecycle handler's Draining transition
+        // so the test exercises the same removal seam used by a real shell drain.
+        var replacementSettings = new ShellSettings(shellId);
+        dataSource.PublishGeneration(
+            shellId,
+            generation + 1,
+            [CreateEndpoint("/replacement", shellId, generation + 1, replacementSettings, "Replacement")]);
+
+        var handler = new ShellEndpointRegistrationHandler(
+            dataSource,
+            new NoopFeatureFactory(),
+            new EndpointRouteBuilderAccessor(),
+            new ApplicationBuilderAccessor(),
+            new ShellMiddlewarePipelineRegistry());
+        var replacementShell = new FakeShell(
+            ShellDescriptor.Create(shellId.Name, generation + 1),
+            ShellLifecycleState.Draining);
+        handler.OnStateChangedAsync(replacementShell, ShellLifecycleState.Deactivating, ShellLifecycleState.Draining)
+            .GetAwaiter()
+            .GetResult();
+
+        loadContext.Unload();
+        return loadContextWeakReference;
+    }
+
+    private static async Task AssertCollectibleAsync(WeakReference loadContext, int cycle)
+    {
+        for (var attempt = 0; attempt < 40 && loadContext.IsAlive; attempt++)
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            await Task.Yield();
+        }
+
+        Assert.False(loadContext.IsAlive,
+            $"Collectible feature load context remained rooted after cycle {cycle}; " +
+            "published or retired endpoint state still retains feature assembly code.");
+    }
+
+    private sealed class CollectibleFeatureLoadContext : AssemblyLoadContext
+    {
+        public CollectibleFeatureLoadContext()
+            : base($"CShells.DynamicFeatureFixture-{Guid.NewGuid():N}", isCollectible: true)
+        {
+        }
+
+        protected override Assembly? Load(AssemblyName assemblyName) =>
+            AssemblyLoadContext.Default.LoadFromAssemblyName(assemblyName);
     }
 
     private static RouteEndpoint CreateEndpoint(

@@ -1,7 +1,11 @@
 using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Routing;
+using CShells.AspNetCore.Extensions;
+using CShells.DependencyInjection;
 using CShells.Lifecycle;
+using CShells.Lifecycle.Policies;
 using CShells.Resolution;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
@@ -210,6 +214,115 @@ public class ShellMiddlewareTests
         Assert.False(generationTwoInvoked);
     }
 
+    [Fact(DisplayName = "Reload drain holds an old matched request while replacement requests use the new generation")]
+    public async Task InvokeAsync_ReloadDrain_BindsInFlightRequestAndWaitsForCompletion()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblies()
+            .AddShell("payments", _ => { })
+            .ConfigureDrainPolicy(new FixedTimeoutDrainPolicy(TimeSpan.FromSeconds(5))));
+
+        await using var host = services.BuildServiceProvider();
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var endpointDataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var pipelineRegistry = host.GetRequiredService<ShellMiddlewarePipelineRegistry>();
+        var shellId = new ShellId("payments");
+        var generationOne = await registry.ActivateAsync(shellId.Name);
+        var settings = new ShellSettings(shellId);
+
+        endpointDataSource.PublishGeneration(
+            shellId,
+            generationOne.Descriptor.Generation,
+            [CreateEndpoint("/payments/old", shellId, generationOne.Descriptor.Generation, settings, "GenerationOne")]);
+        var oldEndpoint = endpointDataSource.Endpoints.Single();
+        var guardScope = generationOne.BeginScope();
+
+        var oldRequestEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseOldRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var oldPipelineInvoked = false;
+        pipelineRegistry.Set(
+            shellId,
+            generationOne.Descriptor.Generation,
+            async _ =>
+            {
+                oldPipelineInvoked = true;
+                oldRequestEntered.SetResult();
+                await releaseOldRequest.Task;
+            },
+            new ShellPipelineContinuation());
+
+        var middleware = CreateMiddleware(
+            _ => Task.CompletedTask,
+            resolver: new FixedShellResolver(shellId),
+            registry: registry,
+            endpointDataSource: endpointDataSource,
+            pipelineRegistry: pipelineRegistry);
+
+        var oldResponse = new FireableResponseFeature();
+        var oldContext = new DefaultHttpContext();
+        oldContext.Features.Set<IHttpResponseFeature>(oldResponse);
+        oldContext.SetEndpoint(oldEndpoint);
+
+        var reload = await registry.ReloadAsync(shellId.Name);
+        Assert.Null(reload.Error);
+        Assert.NotNull(reload.NewShell);
+        Assert.NotNull(reload.Drain);
+        var generationTwo = reload.NewShell!;
+        var oldDrain = reload.Drain!;
+        Assert.Same(generationTwo, registry.GetActive(shellId.Name));
+
+        endpointDataSource.PublishGeneration(
+            shellId,
+            generationTwo.Descriptor.Generation,
+            [CreateEndpoint("/payments/new", shellId, generationTwo.Descriptor.Generation, settings, "GenerationTwo")]);
+
+        var newRequestInvoked = false;
+        pipelineRegistry.Set(
+            shellId,
+            generationTwo.Descriptor.Generation,
+            _ =>
+            {
+                newRequestInvoked = true;
+                return Task.CompletedTask;
+            },
+            new ShellPipelineContinuation());
+
+        // Start the old matched request only after reload has promoted generation two. Its
+        // endpoint metadata must still select generation one's draining shell and pipeline.
+        var oldRequest = middleware.InvokeAsync(oldContext);
+        await oldRequestEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(oldPipelineInvoked);
+
+        var newResponse = new FireableResponseFeature();
+        var newContext = new DefaultHttpContext();
+        newContext.Features.Set<IHttpResponseFeature>(newResponse);
+        newContext.SetEndpoint(endpointDataSource.Endpoints.Single());
+
+        await middleware.InvokeAsync(newContext);
+        Assert.True(newRequestInvoked, "The replacement request must use generation two's pipeline.");
+        await newResponse.FireOnCompletedAsync();
+
+        // The old pipeline has returned, but its scope is deliberately retained by OnCompleted.
+        releaseOldRequest.SetResult();
+        await oldRequest;
+        await Assert.ThrowsAsync<TimeoutException>(() => oldDrain.WaitAsync().WaitAsync(TimeSpan.FromMilliseconds(100)));
+
+        await oldResponse.FireOnCompletedAsync();
+        await guardScope.DisposeAsync();
+        await oldDrain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ShellLifecycleState.Disposed, generationOne.State);
+        Assert.Equal(generationTwo.Descriptor.Generation, endpointDataSource.Endpoints
+            .Single()
+            .Metadata.GetMetadata<ShellEndpointMetadata>()!
+            .Generation);
+
+        var replacementDrain = await registry.DrainAsync(generationTwo);
+        await replacementDrain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     [Fact(DisplayName = "Another shell's pipeline is not invoked for the resolved shell")]
     public async Task InvokeAsync_PipelineForDifferentShell_FallsBackToNext()
     {
@@ -309,6 +422,22 @@ public class ShellMiddlewareTests
             pipelineRegistry ?? new ShellMiddlewarePipelineRegistry(),
             cache ?? new MemoryCache(new MemoryCacheOptions()),
             options ?? Options.Create(new ShellMiddlewareOptions()));
+
+    private static RouteEndpoint CreateEndpoint(
+        string pattern,
+        ShellId shellId,
+        int generation,
+        ShellSettings settings,
+        string featureName) =>
+        new(
+            _ => Task.CompletedTask,
+            RoutePatternFactory.Parse(pattern),
+            order: 0,
+            new EndpointMetadataCollection(
+                new ShellEndpointMetadata(shellId, generation, settings, featureName),
+                new EndpointOwnershipMetadata(EndpointOwnerKind.DynamicShell, featureName, shellId, generation),
+                new HttpMethodMetadata(["GET"])),
+            displayName: $"{pattern} (generation {generation})");
 
     private static (DefaultHttpContext Context, FireableResponseFeature Response) CreateHttpContextWithFireableResponse(
         IServiceProvider? requestServices = null)

@@ -5,8 +5,10 @@
 - [x] T001 Add route-owner metadata and conflict exception tests.
 - [x] T002 Add exact/equivalent/multi-method/same-batch/host conflict tests.
 - [x] T003 Add failed-candidate preservation and atomic replacement tests.
-- [x] T004 Add exact-generation middleware binding and drain coexistence tests.
-- [x] T005 Add repeated generation disposal/collectibility evidence test where supported.
+- [x] T004 Add a combined reload/drain test for exact-generation binding, replacement routing,
+  and `OnCompleted` scope release.
+- [x] T005 Add five-cycle collectible `AssemblyLoadContext` evidence through the production
+  route-builder/data-source publication and replacement/removal path.
 
 ## Phase 2 — implementation
 

@@ -18,8 +18,9 @@ owns the endpoint metadata.
 - Preserve the previous snapshot if mapping or validation fails.
 - Resolve matched requests by shell identifier and exact generation metadata.
 - Keep standard ASP.NET Core endpoint data sources and framework coexistence intact.
-- Exercise repeated reload/drain/unload behavior with collectible-context evidence where
-  the test fixture can load a feature assembly into a collectible `AssemblyLoadContext`.
+- Exercise repeated replacement/removal/unload behavior with a real feature assembly loaded
+  into a collectible `AssemblyLoadContext`; the test must prove that published and retired
+  endpoint delegates do not retain that context.
 
 ## Functional requirements
 
@@ -29,8 +30,11 @@ owns the endpoint metadata.
 3. New requests see either the previous complete snapshot or the new complete snapshot;
    no intermediate empty state is published.
 4. A request with `ShellEndpointMetadata.Generation = N` uses generation N's shell scope
-   and middleware pipeline, even after generation N+1 is active.
-5. Old endpoint generations can be removed during drain without removing the replacement.
+   and middleware pipeline, even after generation N+1 is active; its scope remains held
+   until response completion.
+5. Old endpoint generations can be removed during drain without removing the replacement,
+   and drain completion waits for an in-flight old-generation request to release its
+   `OnCompleted` scope.
 
 ## Non-goals
 
