@@ -12,6 +12,41 @@ Initializing -> Active -> Deactivating -> Draining -> Drained -> Disposed
 
 `IShellInitializer` instances run while the shell is `Initializing`, before the generation is published as `Active`. `IDrainHandler` instances run while the shell is `Draining`, after outstanding `IShellScope` handles finish or the drain deadline is reached. `IShellTerminator` instances run while the shell is `Drained`, after all drain handlers complete and before the shell's service provider is disposed.
 
+Dynamic shell endpoint generations are prepared as complete candidates. Feature mapping,
+middleware composition, and route validation finish before the candidate replaces the published
+endpoint snapshot, so a failed mapping or collision leaves the previous generation available and a
+successful replacement never exposes an empty routing state. Collision diagnostics include both
+route owners and compare normalized parameter templates plus the full HTTP method sets.
+
+Endpoint activation uses a prepare/commit boundary. Mapping and pipeline composition prepare an
+externally invisible candidate before lifecycle subscribers run. Once they accept it, the registry
+makes the generation exactly addressable and activation participants commit. The endpoint data
+source revalidates and swaps the complete snapshot atomically, retaining the retired same-shell
+snapshot only until every participant commits. If a later participant rejects the commit,
+participants roll back in reverse order and the prior registry entry, endpoint snapshot, and
+pipeline remain live. Middleware composition failures reject activation before publication rather
+than installing a degraded fallback pipeline. The candidate pipeline is available before the route
+change notification that first exposes its endpoints.
+
+Because collision validity spans the entire route inventory, only one committed publication may
+retain rollback evidence at a time. Other candidates may prepare concurrently, but another commit
+or an additive route/host inventory mutation fails deterministically until the pending owner
+completes or rolls back. Removal remains available so a slow activation cannot pin another shell's
+disposed endpoints: other-shell cleanup applies immediately, while generation cleanup for the
+pending shell is deferred and replayed idempotently as the transaction finalizes. This prevents
+rollback conflicts without retaining drained feature code.
+
+Routing acquires an exact-generation request lease after method and constraint matching but before
+the old generation can drain. `ShellMiddleware` reuses that lease, so even a request paused between
+endpoint matching and middleware entry remains bound to the endpoint's shell and generation. The
+lease is released at response completion, including when downstream middleware short-circuits. The
+old generation is removed from routing when draining begins, while its middleware pipeline and
+scoped provider remain available until those in-flight leases finish.
+
+Cold activation can publish endpoints after the normal routing pass, so its manual rematch uses the
+same lease seam. It acquires the exact generation before setting the rematched endpoint on the
+request; if drain wins first, no shell endpoint is exposed and the request returns 503.
+
 ## Initializer Ordering
 
 Feature dependencies and initializer order are separate concepts:

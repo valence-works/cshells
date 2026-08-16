@@ -1,12 +1,17 @@
+using CShells.AspNetCore.Extensions;
 using CShells.AspNetCore.Middleware;
 using CShells.AspNetCore.Routing;
+using CShells.DependencyInjection;
 using CShells.Lifecycle;
+using CShells.Lifecycle.Policies;
 using CShells.Resolution;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -178,6 +183,74 @@ public class ShellMiddlewareLazyActivationTests
         Assert.False(fallbackInvoked);
     }
 
+    [Fact(DisplayName = "Cold re-match leases the generation before exposing its endpoint to a concurrent reload")]
+    public async Task ColdStart_ReMatch_ConcurrentReload_KeepsMatchedGenerationLeased()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<RollbackStableFeature>()
+            .AddShell("cold-race", shell => shell.WithFeature<RollbackStableFeature>())
+            .ConfigureDrainPolicy(new FixedTimeoutDrainPolicy(TimeSpan.FromSeconds(5))));
+
+        await using var host = services.BuildServiceProvider();
+        host.GetRequiredService<EndpointRouteBuilderAccessor>().EndpointRouteBuilder =
+            new TestEndpointRouteBuilder(host);
+        host.GetRequiredService<ApplicationBuilderAccessor>().ApplicationBuilder =
+            new ApplicationBuilder(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var response = new ShellMiddlewareTests.FireableResponseFeature();
+        var endpointFeature = new BlockingShellEndpointFeature();
+        var context = new DefaultHttpContext();
+        context.Features.Set<IHttpResponseFeature>(response);
+        context.Features.Set<IEndpointFeature>(endpointFeature);
+        context.Request.Method = "GET";
+        context.Request.Path = "/rollback";
+        var endpointInvoked = false;
+        var middleware = CreateMiddleware(
+            _ =>
+            {
+                endpointInvoked = true;
+                return Task.CompletedTask;
+            },
+            new FixedShellResolver("cold-race"),
+            registry,
+            host.GetRequiredService<DynamicShellEndpointDataSource>());
+
+        var request = Task.Run(() => middleware.InvokeAsync(context));
+        await endpointFeature.ShellEndpointAssigned.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            var generationOne = registry.GetActive("cold-race")!;
+            var reload = await registry.ReloadAsync("cold-race");
+
+            Assert.NotNull(reload.Drain);
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromMilliseconds(100)));
+            Assert.Equal(1, ((Shell)generationOne).ActiveScopeCount);
+
+            endpointFeature.Release();
+            await request;
+            Assert.True(endpointInvoked);
+            await response.FireOnCompletedAsync();
+            await reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(ShellLifecycleState.Disposed, generationOne.State);
+        }
+        finally
+        {
+            endpointFeature.Release();
+            try
+            {
+                await request.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch
+            {
+                // Preserve the primary assertion failure while ensuring the blocked worker exits.
+            }
+            await response.FireOnCompletedAsync();
+        }
+    }
+
     [Fact(DisplayName = "Cold-start re-match preserves fallback endpoint when no shell endpoint matches")]
     public async Task ColdStart_ReMatch_PreservesFallbackEndpoint_WhenNoShellEndpointMatches()
     {
@@ -285,6 +358,38 @@ public class ShellMiddlewareLazyActivationTests
     {
         public Task<ShellId?> ResolveAsync(ShellResolutionContext context, CancellationToken cancellationToken = default) =>
             Task.FromResult<ShellId?>(new ShellId(name));
+    }
+
+    private sealed class BlockingShellEndpointFeature : IEndpointFeature
+    {
+        private readonly TaskCompletionSource assigned = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Endpoint? endpoint;
+
+        public Task ShellEndpointAssigned => assigned.Task;
+
+        public Endpoint? Endpoint
+        {
+            get => endpoint;
+            set
+            {
+                endpoint = value;
+                if (value?.Metadata.GetMetadata<ShellEndpointMetadata>() is null)
+                    return;
+
+                assigned.TrySetResult();
+                release.Task.GetAwaiter().GetResult();
+            }
+        }
+
+        public void Release() => release.TrySetResult();
+    }
+
+    private sealed class TestEndpointRouteBuilder(IServiceProvider serviceProvider) : IEndpointRouteBuilder
+    {
+        public IServiceProvider ServiceProvider { get; } = serviceProvider;
+        public ICollection<EndpointDataSource> DataSources { get; } = [];
+        public IApplicationBuilder CreateApplicationBuilder() => new ApplicationBuilder(ServiceProvider);
     }
 
     /// <summary>

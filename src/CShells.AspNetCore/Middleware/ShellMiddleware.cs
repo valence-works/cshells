@@ -49,12 +49,15 @@ public class ShellMiddleware(
     {
         var resolutionContext = context.ToShellResolutionContext();
 
-        // Prefer the shell that owns the matched endpoint (set by UseRouting before this middleware).
-        // This guarantees that a shell-owned endpoint always executes inside the shell's scope,
-        // even when the general resolver pipeline would have picked a different default.
-        var endpointShellId = context.GetEndpoint()?.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId;
-
-        ShellId? shellId = endpointShellId
+        // Prefer the shell generation that owns the matched endpoint (set by UseRouting before
+        // this middleware). A reload may already have promoted a newer generation by the time
+        // this request enters middleware, so resolving only by shell name would route the request
+        // into the wrong provider. The endpoint generation is the binding authority.
+        var endpointMetadata = context.GetEndpoint()?.Metadata.GetMetadata<ShellEndpointMetadata>();
+        var generationLease = context.Features.Get<ShellEndpointGenerationLease>();
+        if (endpointMetadata is null || generationLease?.Matches(endpointMetadata) != true)
+            generationLease = null;
+        var shellId = endpointMetadata?.ShellId
             ?? await ResolveShellWithCacheAsync(context, resolutionContext, context.RequestAborted).ConfigureAwait(false);
 
         if (shellId is null)
@@ -66,37 +69,76 @@ public class ShellMiddleware(
 
         _logger.LogInformation("Resolved shell '{ShellId}' for request path '{Path}'", shellId.Value, context.Request.Path);
 
-        // Check whether the shell is already active so we can detect cold activation below.
-        var wasCold = _registry.GetActive(shellId.Value.Name) is null;
-
         IShell shell;
-        try
+        if (endpointMetadata is not null)
         {
-            // Lazy activation: GetOrActivateAsync returns the active generation if already live,
-            // otherwise looks up the blueprint via the provider, builds the shell, and publishes it.
-            // Stampede-safe — the per-name semaphore serializes concurrent cold-shell requests.
-            shell = await _registry.GetOrActivateAsync(shellId.Value.Name, context.RequestAborted);
-        }
-        catch (ShellBlueprintNotFoundException)
-        {
-            _logger.LogInformation("No blueprint registered for shell '{ShellId}'; returning 404.", shellId.Value);
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            return;
-        }
-        catch (ShellBlueprintUnavailableException ex)
-        {
-            _logger.LogWarning(ex, "Blueprint provider unavailable for shell '{ShellId}'; returning 503.", shellId.Value);
-            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            return;
-        }
+            var matchedShell = generationLease?.Scope.Shell
+                ?? _registry.GetAll(endpointMetadata.ShellId.Name)
+                    .FirstOrDefault(candidate => candidate.Descriptor.Generation == endpointMetadata.Generation);
+            if (matchedShell is null)
+            {
+                _logger.LogWarning(
+                    "Matched endpoint for shell '{ShellId}' generation {Generation}, but that exact generation is no longer available.",
+                    endpointMetadata.ShellId, endpointMetadata.Generation);
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                return;
+            }
 
-        // Cold activation: UseRouting() ran before this middleware and either found no endpoint,
-        // or selected a host fallback endpoint because shell endpoints had not been registered yet.
-        // Now that activation has completed and the ShellEndpointRegistrationHandler has published
-        // the shell's endpoints, re-match the request so downstream endpoint middleware can execute
-        // the shell handler instead of a preselected fallback.
-        if (wasCold && ShouldTryMatchEndpointAfterColdActivation(context.GetEndpoint()))
-            TryMatchEndpointAfterColdActivation(context, shellId.Value);
+            shell = matchedShell;
+        }
+        else
+        {
+            // Check whether the shell is already active so we can detect cold activation below.
+            var wasCold = _registry.GetActive(shellId.Value.Name) is null;
+            try
+            {
+                // Lazy activation: GetOrActivateAsync returns the active generation if already live,
+                // otherwise looks up the blueprint via the provider, builds the shell, and publishes it.
+                // Stampede-safe — the per-name semaphore serializes concurrent cold-shell requests.
+                shell = await _registry.GetOrActivateAsync(shellId.Value.Name, context.RequestAborted);
+            }
+            catch (ShellBlueprintNotFoundException)
+            {
+                _logger.LogInformation("No blueprint registered for shell '{ShellId}'; returning 404.", shellId.Value);
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+            catch (ShellBlueprintUnavailableException ex)
+            {
+                _logger.LogWarning(ex, "Blueprint provider unavailable for shell '{ShellId}'; returning 503.", shellId.Value);
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                return;
+            }
+            catch (ShellGenerationActivationException ex)
+            {
+                _logger.LogWarning(ex, "Shell generation publication failed for '{ShellId}'; returning 503.", shellId.Value);
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                return;
+            }
+
+            // Cold activation: UseRouting() ran before this middleware and either found no endpoint,
+            // or selected a host fallback endpoint because shell endpoints had not been registered yet.
+            // Now that activation has completed and the ShellEndpointRegistrationHandler has published
+            // the shell's endpoints, re-match the request so downstream endpoint middleware can execute
+            // the shell handler instead of a preselected fallback.
+            if (wasCold && ShouldTryMatchEndpointAfterColdActivation(context.GetEndpoint()))
+            {
+                generationLease = TryMatchEndpointAfterColdActivation(
+                    context,
+                    shellId.Value,
+                    shell,
+                    out var endpointMatched);
+                if (endpointMatched && generationLease is null)
+                {
+                    _logger.LogWarning(
+                        "Cold-start endpoint matched shell '{ShellId}' generation {Generation}, but that generation drained before the request could lease it.",
+                        shellId.Value,
+                        shell.Descriptor.Generation);
+                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    return;
+                }
+            }
+        }
 
         // Resolve the shell's composed middleware pipeline BEFORE taking the scope. Ordering
         // matters: pipeline entries are removed when a generation reaches Disposed (bounded or
@@ -112,9 +154,10 @@ public class ShellMiddleware(
         // `await using`) so upstream middleware can still read RequestServices during its
         // post-_next processing — releasing at InvokeAsync return could dispose the DI scope
         // out from under that post-processing and cause ObjectDisposedException.
-        var scope = shell.BeginScope();
+        var scope = generationLease?.Scope ?? shell.BeginScope();
         context.RequestServices = scope.ServiceProvider;
-        context.Response.OnCompleted(() => scope.DisposeAsync().AsTask());
+        if (generationLease is null)
+            context.Response.OnCompleted(() => scope.DisposeAsync().AsTask());
 
         await (pipeline ?? _next)(context);
     }
@@ -175,15 +218,22 @@ public class ShellMiddleware(
     /// <see cref="DynamicShellEndpointDataSource"/>. Walk the data source and set the first
     /// matching endpoint on the context so the downstream endpoint middleware can execute it.
     /// </summary>
-    private void TryMatchEndpointAfterColdActivation(HttpContext context, ShellId shellId)
+    private ShellEndpointGenerationLease? TryMatchEndpointAfterColdActivation(
+        HttpContext context,
+        ShellId shellId,
+        IShell shell,
+        out bool endpointMatched)
     {
+        endpointMatched = false;
         foreach (var endpoint in _endpointDataSource.Endpoints)
         {
             if (endpoint is not RouteEndpoint routeEndpoint)
                 continue;
 
             var metadata = routeEndpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
-            if (metadata is null || !metadata.ShellId.Equals(shellId))
+            if (metadata is null
+                || !metadata.ShellId.Equals(shellId)
+                || metadata.Generation != shell.Descriptor.Generation)
                 continue;
 
             // Check HTTP method constraint first (cheap).
@@ -211,13 +261,19 @@ public class ShellMiddleware(
             if (!ApplyInlineConstraints(routeEndpoint.RoutePattern, routeValues, context))
                 continue;
 
+            endpointMatched = true;
+            if (!ShellEndpointGenerationLease.TryAcquire(context, metadata, shell, out var lease))
+                return null;
+
             context.SetEndpoint(routeEndpoint);
             context.Request.RouteValues = routeValues;
             _logger.LogDebug(
                 "Cold-start re-matched endpoint '{Pattern}' for shell '{Shell}'",
                 routeEndpoint.RoutePattern.RawText, shellId);
-            return;
+            return lease;
         }
+
+        return null;
     }
 
     private static bool ApplyInlineConstraints(

@@ -17,6 +17,7 @@ internal sealed class ShellRegistry : IShellRegistry
     private readonly IServiceProvider? _rootProvider;
     private readonly IShellBlueprintProvider _blueprintProvider;
     private readonly ILogger<ShellRegistry> _logger;
+    private readonly IReadOnlyList<IShellGenerationActivationParticipant> _activationParticipants;
     private readonly ConcurrentDictionary<string, NameSlot> _slots = new(StringComparer.OrdinalIgnoreCase);
     private ImmutableList<IShellLifecycleSubscriber> _subscribers = [];
 
@@ -25,12 +26,14 @@ internal sealed class ShellRegistry : IShellRegistry
         ShellProviderBuilder? providerBuilder = null,
         IServiceProvider? rootProvider = null,
         ILogger<ShellRegistry>? logger = null,
-        IEnumerable<IShellLifecycleSubscriber>? subscribers = null)
+        IEnumerable<IShellLifecycleSubscriber>? subscribers = null,
+        IEnumerable<IShellGenerationActivationParticipant>? activationParticipants = null)
     {
         _blueprintProvider = Guard.Against.Null(blueprintProvider);
         _providerBuilder = providerBuilder;
         _rootProvider = rootProvider;
         _logger = logger ?? NullLogger<ShellRegistry>.Instance;
+        _activationParticipants = activationParticipants?.ToList() ?? [];
 
         // Subscribers registered in DI are subscribed at construction time so they observe
         // every transition — including the first activation kicked off by the startup hosted
@@ -46,7 +49,13 @@ internal sealed class ShellRegistry : IShellRegistry
 
     // Convenience ctor used by tests that don't need the provider-build pipeline.
     internal ShellRegistry(IShellBlueprintProvider blueprintProvider, ILogger<ShellRegistry>? logger)
-        : this(blueprintProvider, providerBuilder: null, rootProvider: null, logger, subscribers: null)
+        : this(
+            blueprintProvider,
+            providerBuilder: null,
+            rootProvider: null,
+            logger,
+            subscribers: null,
+            activationParticipants: null)
     {
     }
 
@@ -433,19 +442,34 @@ internal sealed class ShellRegistry : IShellRegistry
         if (snapshot.IsEmpty)
             return;
 
+        var activationFailure = (ShellGenerationActivationException?)null;
+
         foreach (var subscriber in snapshot)
         {
             try
             {
                 await subscriber.OnStateChangedAsync(shell, previous, current, cancellationToken).ConfigureAwait(false);
             }
+            catch (ShellGenerationActivationException ex)
+            {
+                // Candidate publication is the one subscriber failure that must abort the
+                // generation. Continue notifying peers first so subscriber isolation remains
+                // intact, then let the transition owner dispose the rejected candidate.
+                activationFailure ??= ex;
+                _logger.LogError(ex,
+                    "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
+                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex,
                     "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
-                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                subscriber.GetType().FullName, previous, current, shell.Descriptor);
             }
         }
+
+        if (activationFailure is not null)
+            throw activationFailure;
     }
 
     // =========================================================================
@@ -537,21 +561,112 @@ internal sealed class ShellRegistry : IShellRegistry
             throw;
         }
 
-        if (!await shell.TryTransitionAsync(ShellLifecycleState.Initializing, ShellLifecycleState.Active).ConfigureAwait(false))
-            throw new InvalidOperationException("Shell failed to transition from Initializing to Active.");
+        var previousActive = slot.Active;
+        var preparedParticipants = new List<IShellGenerationActivationParticipant>(_activationParticipants.Count);
+        var promoted = false;
+        try
+        {
+            foreach (var participant in _activationParticipants)
+            {
+                preparedParticipants.Add(participant);
+                await participant.PrepareAsync(shell, cancellationToken).ConfigureAwait(false);
+            }
 
-        slot.Active = shell;
-        // Atomic add: paired with the lock-free removal in ReleaseGeneration, which runs off the
-        // drain background thread (outside this name's semaphore) when a generation reaches Disposed.
-        ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Add(s), shell);
+            if (!await shell.TryTransitionAsync(ShellLifecycleState.Initializing, ShellLifecycleState.Active).ConfigureAwait(false))
+                throw new InvalidOperationException("Shell failed to transition from Initializing to Active.");
 
-        // Safe-by-construction guard against an add-after-release: if this generation somehow already
-        // reached Disposed before the add above (unreachable today — a drained initializer fails the
-        // Initializing→Active CAS at TryTransitionAsync and throws before we get here), its Disposed
-        // callback's Remove ran against a list that did not yet contain it and was a no-op, so the add
-        // just re-inserted a disposed shell. Re-run the release now rather than leak it back in.
-        if (shell.State == ShellLifecycleState.Disposed)
-            ReleaseGeneration(slot, shell);
+            // Publish registry identity before committing participant state. Endpoint routing can
+            // observe a committed generation immediately, so exact-generation lookup must already
+            // resolve it at that first external visibility point.
+            slot.Active = shell;
+            ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Add(s), shell);
+            promoted = true;
+
+            foreach (var participant in preparedParticipants)
+                participant.Commit(shell);
+
+            // Drain/disposal remains public and may race a slow later activation participant.
+            // A candidate removed from the slot while participant fan-out was blocked did not
+            // survive activation and must follow the rollback path rather than being reported as
+            // a successful (already disposed) generation.
+            if (!IsPublishedActiveGeneration(slot, shell))
+            {
+                throw new InvalidOperationException(
+                    $"Shell generation '{descriptor}' stopped being active before activation commit completed.");
+            }
+        }
+        catch (Exception ex)
+        {
+            for (var i = preparedParticipants.Count - 1; i >= 0; i--)
+            {
+                try
+                {
+                    preparedParticipants[i].Rollback(shell);
+                }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogError(rollbackException,
+                        "Activation participant rollback failed for shell {Shell}", shell.Descriptor);
+                }
+            }
+
+            // Keep the candidate registry-resolvable until participant rollback removes every
+            // externally visible contribution. Once rollback completes, restore the prior slot.
+            if (promoted)
+            {
+                ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Remove(s), shell);
+                RestorePreviousActive(slot, previousActive);
+            }
+
+            // Dispose the rejected generation only after restoring the prior registry identity.
+            // Its Disposed lifecycle notification may perform idempotent participant cleanup.
+            await shell.DisposeAsync().ConfigureAwait(false);
+            if (ex is ShellGenerationActivationException)
+                throw;
+            throw new ShellGenerationActivationException(descriptor, ex);
+        }
+
+        // Completion only releases rollback evidence after every commit succeeded. It is not an
+        // acceptance phase: rolling back here would be unsafe because an earlier participant may
+        // already have discarded the state needed to restore the prior generation.
+        foreach (var participant in preparedParticipants)
+        {
+            try
+            {
+                participant.Complete(shell);
+            }
+            catch (Exception completionException)
+            {
+                _logger.LogError(completionException,
+                    "Activation participant completion failed for shell {Shell}", shell.Descriptor);
+            }
+        }
+
+        // Completion is synchronous, but lifecycle cleanup can run concurrently between the commit
+        // eligibility check above and this return boundary. Never return a generation that has already
+        // been removed or disposed. This is a defensive backstop; cleanup that wins before commit
+        // completion takes the transactional catch path above, where participant rollback is available.
+        if (!IsPublishedActiveGeneration(slot, shell))
+        {
+            ImmutableInterlocked.Update(ref slot.All, static (list, s) => list.Remove(s), shell);
+            // Participants have already discarded rollback evidence, so prior route/pipeline
+            // availability cannot be inferred here. Leave the slot empty for safe reactivation.
+            ClearActiveIf(slot, shell);
+            if (previousActive is not null
+                && previousActive.State == ShellLifecycleState.Active
+                && slot.All.Contains(previousActive))
+            {
+                // The prior generation cannot be restored without participant rollback evidence.
+                // Drain it instead of leaving an unaddressable Active generation beside the next
+                // recovery activation.
+                _ = await DrainAsync(previousActive, CancellationToken.None).ConfigureAwait(false);
+            }
+            await shell.DisposeAsync().ConfigureAwait(false);
+            throw new ShellGenerationActivationException(
+                descriptor,
+                new InvalidOperationException(
+                    $"Shell generation '{descriptor}' stopped being active before activation completed."));
+        }
 
         _logger.LogInformation("Activated shell {Descriptor} with {FeatureCount} feature(s)",
             descriptor, buildResult.EnabledFeatures.Count);
@@ -605,8 +720,36 @@ internal sealed class ShellRegistry : IShellRegistry
         // on host shutdown — clear Active too, so GetActive never returns a Disposed shell that GetAll no
         // longer holds. Atomic CAS: a concurrent reload that already promoted a newer generation into
         // Active leaves it untouched (the stored reference no longer matches `typed`).
+        ClearActiveIf(slot, typed);
+    }
+
+    private static bool IsPublishedActiveGeneration(NameSlot slot, Shell shell) =>
+        shell.State == ShellLifecycleState.Active
+        && ReferenceEquals(slot.Active, shell)
+        && slot.All.Contains(shell);
+
+    private static void RestorePreviousActive(NameSlot slot, Shell? previousActive)
+    {
+        if (previousActive is null
+            || previousActive.State != ShellLifecycleState.Active
+            || !slot.All.Contains(previousActive))
+        {
+            slot.Active = null;
+            return;
+        }
+
+        slot.Active = previousActive;
+
+        // ReleaseGeneration can remove the prior generation without the name semaphore. Close the
+        // check/publish race: if cleanup won while it was being restored, clear only that stale value.
+        if (previousActive.State != ShellLifecycleState.Active || !slot.All.Contains(previousActive))
+            ClearActiveIf(slot, previousActive);
+    }
+
+    private static void ClearActiveIf(NameSlot slot, Shell shell)
+    {
 #pragma warning disable 420 // Interlocked provides the fence; other volatile reads/writes of Active are unaffected.
-        Interlocked.CompareExchange(ref slot.Active, null, typed);
+        Interlocked.CompareExchange(ref slot.Active, null, shell);
 #pragma warning restore 420
     }
 

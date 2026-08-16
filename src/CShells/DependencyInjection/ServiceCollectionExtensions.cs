@@ -116,7 +116,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ShellProviderBuilder>(),
             sp,
             sp.GetService<ILogger<ShellRegistry>>(),
-            sp.GetServices<IShellLifecycleSubscriber>()));
+            sp.GetServices<IShellLifecycleSubscriber>(),
+            sp.GetServices<IShellGenerationActivationParticipant>()));
         services.TryAddSingleton<IShellRegistry>(sp => sp.GetRequiredService<ShellRegistry>());
 
         services.TryAddSingleton<IDrainPolicy>(_ => new Lifecycle.Policies.FixedTimeoutDrainPolicy(TimeSpan.FromSeconds(30)));
