@@ -97,12 +97,8 @@ internal sealed class ShellEndpointGenerationLease(
             return false;
         }
 
-        IShellScope scope;
-        try
-        {
-            scope = shell.BeginScope();
-        }
-        catch (InvalidOperationException)
+        var scope = TryBeginScope(shell);
+        if (scope is null)
         {
             lease = null;
             return false;
@@ -123,6 +119,18 @@ internal sealed class ShellEndpointGenerationLease(
             acquired.DisposeAsync().AsTask().GetAwaiter().GetResult();
             lease = null;
             throw;
+        }
+    }
+
+    private static IShellScope? TryBeginScope(IShell shell)
+    {
+        try
+        {
+            return shell.BeginScope();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
         }
     }
 

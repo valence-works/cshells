@@ -342,7 +342,10 @@ public class DynamicShellEndpointDataSourceTests
             [CreateEndpoint("api/three", shellId, 3, settings)]);
 
         generationTwo.Commit();
+        dataSource.RemoveEndpoints(shellId, 2);
+        AssertGeneration(dataSource, expectedGeneration: 2);
         generationTwo.Complete();
+        Assert.Empty(dataSource.Endpoints);
         generationThree.Commit();
         generationThree.Complete();
 
@@ -369,8 +372,9 @@ public class DynamicShellEndpointDataSourceTests
         Assert.Throws<InvalidOperationException>(() => dataSource.SetHostEndpoints(
             [CreateHostEndpoint("api/one", "conflicting host inventory", ["GET"])]));
         Assert.Throws<InvalidOperationException>(() => dataSource.RemoveEndpoints(shellId));
-        Assert.Throws<InvalidOperationException>(() => dataSource.RemoveEndpoints(shellId, 2));
-        Assert.Throws<InvalidOperationException>(() => dataSource.RetireGeneration(shellId, 2));
+        dataSource.RemoveEndpoints(shellId, 2);
+        dataSource.RetireGeneration(shellId, 2);
+        AssertGeneration(dataSource, expectedGeneration: 2);
         Assert.Throws<InvalidOperationException>(dataSource.Clear);
 
         generationTwo.Rollback();
@@ -624,6 +628,85 @@ public class DynamicShellEndpointDataSourceTests
         Assert.Null(pipelines.Get(shellId, generation: 2, _ => Task.CompletedTask));
     }
 
+    [Fact(DisplayName = "Another shell can drain and release endpoints while a publication transaction is pending")]
+    public async Task PendingCommit_OtherShellDrain_RemovesEndpointsAndReleasesReferences()
+    {
+        var blocker = new BlockingActivationParticipant("cleanup-b", generation: 1);
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<CleanupFeatureA>()
+            .AddShell("cleanup-a", shell => shell.WithFeature<CleanupFeatureA>())
+            .AddShell("cleanup-b", shell => shell.WithFeature<CleanupFeatureB>()));
+        services.AddSingleton<IShellGenerationActivationParticipant>(blocker);
+
+        await using var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var shellA = await registry.ActivateAsync("cleanup-a");
+        var endpointReference = CaptureEndpointReference(dataSource, new ShellId("cleanup-a"));
+        var activateB = Task.Run(() => registry.ActivateAsync("cleanup-b"));
+
+        await blocker.Entered.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            var drain = await registry.DrainAsync(shellA);
+            await drain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.DoesNotContain(dataSource.Endpoints, endpoint =>
+                endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(new ShellId("cleanup-a")) == true);
+            Assert.Contains(dataSource.Endpoints, endpoint =>
+                endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(new ShellId("cleanup-b")) == true);
+            await AssertReferenceCollectedAsync(endpointReference, "drained cleanup-a endpoint");
+        }
+        finally
+        {
+            blocker.Release();
+        }
+
+        await activateB.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact(DisplayName = "A pending candidate can drain and dispose without breaking rollback restoration")]
+    public async Task PendingCommit_SameShellCandidateDrain_RestoresPriorGenerationWithoutStaleRoutes()
+    {
+        var blocker = new BlockingActivationParticipant("cleanup-same", generation: 2, rejectAfterRelease: true);
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<CleanupFeatureA>()
+            .AddShell("cleanup-same", shell => shell.WithFeature<CleanupFeatureA>()));
+        services.AddSingleton<IShellGenerationActivationParticipant>(blocker);
+
+        await using var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var generationOne = await registry.ActivateAsync("cleanup-same");
+        var reloadTask = Task.Run(() => registry.ReloadAsync("cleanup-same"));
+
+        await blocker.Entered.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            var candidate = registry.GetActive("cleanup-same")!;
+            Assert.Equal(2, candidate.Descriptor.Generation);
+            var drain = await registry.DrainAsync(candidate);
+            await drain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(ShellLifecycleState.Disposed, candidate.State);
+        }
+        finally
+        {
+            blocker.Release();
+        }
+
+        var reload = await reloadTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsType<ShellGenerationActivationException>(reload.Error);
+        Assert.Same(generationOne, registry.GetActive("cleanup-same"));
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        Assert.Single(dataSource.Endpoints);
+    }
+
     [Fact(DisplayName = "Repeated collectible feature generations unload after replacement and removal")]
     public async Task CollectibleFeatureGenerations_UnloadAfterReplacementAndRemoval()
     {
@@ -721,6 +804,26 @@ public class DynamicShellEndpointDataSourceTests
         Assert.False(loadContext.IsAlive,
             $"Collectible feature load context remained rooted after cycle {cycle}; " +
             "published or retired endpoint state still retains feature assembly code.");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference CaptureEndpointReference(
+        DynamicShellEndpointDataSource dataSource,
+        ShellId shellId) =>
+        new(dataSource.Endpoints.Single(endpoint =>
+            endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()?.ShellId.Equals(shellId) == true));
+
+    private static async Task AssertReferenceCollectedAsync(WeakReference reference, string description)
+    {
+        for (var attempt = 0; attempt < 100 && reference.IsAlive; attempt++)
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            await Task.Yield();
+        }
+
+        Assert.False(reference.IsAlive, $"The {description} remained rooted after lifecycle cleanup.");
     }
 
     private static void CaptureRoutingInfrastructure(IServiceProvider services)
@@ -971,4 +1074,62 @@ public sealed class RejectSecondGenerationCommitParticipant : IShellGenerationAc
     public void Rollback(IShell shell)
     {
     }
+}
+
+[ShellFeature("CleanupFeatureA")]
+public sealed class CleanupFeatureA : IWebShellFeature
+{
+    public void ConfigureServices(IServiceCollection services)
+    {
+    }
+
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment) =>
+        endpoints.MapGet("/cleanup/a", () => Results.Ok());
+}
+
+[ShellFeature("CleanupFeatureB")]
+public sealed class CleanupFeatureB : IWebShellFeature
+{
+    public void ConfigureServices(IServiceCollection services)
+    {
+    }
+
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IHostEnvironment? environment) =>
+        endpoints.MapGet("/cleanup/b", () => Results.Ok());
+}
+
+public sealed class BlockingActivationParticipant(
+    string shellName,
+    int generation,
+    bool rejectAfterRelease = false) : IShellGenerationActivationParticipant
+{
+    private readonly TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Entered => entered.Task;
+
+    public Task PrepareAsync(IShell shell, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public void Commit(IShell shell)
+    {
+        if (!string.Equals(shell.Descriptor.Name, shellName, StringComparison.OrdinalIgnoreCase)
+            || shell.Descriptor.Generation != generation)
+            return;
+
+        entered.TrySetResult();
+        release.Task.GetAwaiter().GetResult();
+        if (rejectAfterRelease)
+            throw new InvalidOperationException("blocked candidate rejected after cleanup");
+    }
+
+    public void Complete(IShell shell)
+    {
+    }
+
+    public void Rollback(IShell shell)
+    {
+    }
+
+    public void Release() => release.TrySetResult();
 }

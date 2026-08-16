@@ -30,9 +30,11 @@ change notification that first exposes its endpoints.
 
 Because collision validity spans the entire route inventory, only one committed publication may
 retain rollback evidence at a time. Other candidates may prepare concurrently, but another commit
-or any route/host inventory mutation fails deterministically until the pending owner completes or
-rolls back. This prevents rollback from restoring routes that conflict with a newer shell or host
-mutation.
+or an additive route/host inventory mutation fails deterministically until the pending owner
+completes or rolls back. Removal remains available so a slow activation cannot pin another shell's
+disposed endpoints: other-shell cleanup applies immediately, while generation cleanup for the
+pending shell is deferred and replayed idempotently as the transaction finalizes. This prevents
+rollback conflicts without retaining drained feature code.
 
 Routing acquires an exact-generation request lease after method and constraint matching but before
 the old generation can drain. `ShellMiddleware` reuses that lease, so even a request paused between

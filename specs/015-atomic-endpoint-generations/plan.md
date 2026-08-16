@@ -10,8 +10,11 @@ removal, and an identity-bound prepare/commit/rollback transaction. Preparation 
 invisible and may overlap. Commit revalidates against the latest route inventory under one lock,
 swaps the complete snapshot, and retains only the retired snapshot needed for rollback. Because
 route collisions are global, the data source permits one rollback-capable commit at a time and
-rejects every route or host-inventory mutation until its owner completes or rolls it back. This
-makes rollback infallible and prevents both same-shell resurrection and cross-shell/host conflicts.
+rejects competing commits plus additive route or host-inventory mutations until its owner completes
+or rolls it back. Removals are monotonic: other-shell cleanup applies immediately, while cleanup for
+the pending shell generation is deduplicated and replayed before completion or after rollback
+restoration. This keeps rollback infallible without allowing one slow activation to retain another
+shell's disposed routes or collectible feature code.
 Change-token sources are atomically exchanged and cancelled without racing eager disposal.
 
 `IShellGenerationActivationParticipant` gives `ShellRegistry` a two-phase activation boundary.

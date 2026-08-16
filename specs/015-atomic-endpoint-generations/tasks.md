@@ -40,3 +40,5 @@
   same-shell, cross-shell, completion, and rollback transaction ordering.
 - [x] T022 Lease cold-activation manual rematches before endpoint exposure and prove a concurrent
   real-registry reload drains only after response completion.
+- [x] T023 Allow monotonic lifecycle cleanup during a pending global transaction, defer cleanup for
+  its own generation, and prove cross-shell collection plus same-shell rollback under real drains.

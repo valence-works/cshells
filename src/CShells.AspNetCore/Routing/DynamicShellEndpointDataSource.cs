@@ -120,7 +120,9 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
-            EnsureNoPendingTransaction("retire a generation");
+            if (DeferPendingGenerationRemoval(shellId, generation))
+                return;
+
             RemoveGeneration(shellId, generation, Volatile.Read(ref _publishedEndpoints));
         }
     }
@@ -147,7 +149,7 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
-            EnsureNoPendingTransaction("remove endpoints");
+            EnsurePendingTransactionDoesNotOwn(shellId, "remove every generation");
             var published = Volatile.Read(ref _publishedEndpoints);
             var retained = published.Where(endpoint =>
             {
@@ -170,7 +172,9 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     {
         lock (_publicationLock)
         {
-            EnsureNoPendingTransaction("remove a generation");
+            if (DeferPendingGenerationRemoval(shellId, generation))
+                return;
+
             var published = Volatile.Read(ref _publishedEndpoints);
             RemoveGeneration(shellId, generation, published);
         }
@@ -389,8 +393,9 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
             });
             Volatile.Write(ref _publishedEndpoints, [.. retained, .. retired]);
             AdvanceVersion(shellId);
-            _pendingTransaction = null;
             NotifyChanged();
+            ApplyDeferredGenerationRemovals(pending);
+            _pendingTransaction = null;
         }
     }
 
@@ -406,7 +411,33 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
                     $"Shell endpoint publication transaction {transactionId} for '{shellId}' is not the pending committed transaction.");
             }
 
+            ApplyDeferredGenerationRemovals(pending);
             _pendingTransaction = null;
+        }
+    }
+
+    private bool DeferPendingGenerationRemoval(ShellId shellId, int generation)
+    {
+        if (_pendingTransaction is not { } pending || !pending.ShellId.Equals(shellId))
+            return false;
+
+        pending.DeferredGenerationRemovals.Add(generation);
+        return true;
+    }
+
+    private void ApplyDeferredGenerationRemovals(PendingTransaction pending)
+    {
+        foreach (var generation in pending.DeferredGenerationRemovals)
+            RemoveGeneration(pending.ShellId, generation, Volatile.Read(ref _publishedEndpoints));
+    }
+
+    private void EnsurePendingTransactionDoesNotOwn(ShellId shellId, string operation)
+    {
+        if (_pendingTransaction is { } pending && pending.ShellId.Equals(shellId))
+        {
+            throw new InvalidOperationException(
+                $"Cannot {operation} for shell '{shellId}' while endpoint publication transaction " +
+                $"{pending.TransactionId} owns its rollback snapshot.");
         }
     }
 
@@ -575,5 +606,10 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
     }
 
     private sealed record CommittedGeneration(long Version, IReadOnlyList<Endpoint> Retired);
-    private sealed record PendingTransaction(long TransactionId, ShellId ShellId);
+    private sealed class PendingTransaction(long transactionId, ShellId shellId)
+    {
+        internal long TransactionId { get; } = transactionId;
+        internal ShellId ShellId { get; } = shellId;
+        internal HashSet<int> DeferredGenerationRemovals { get; } = [];
+    }
 }

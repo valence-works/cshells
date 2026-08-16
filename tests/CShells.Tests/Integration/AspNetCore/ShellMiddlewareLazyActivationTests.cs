@@ -219,20 +219,36 @@ public class ShellMiddlewareLazyActivationTests
 
         var request = Task.Run(() => middleware.InvokeAsync(context));
         await endpointFeature.ShellEndpointAssigned.WaitAsync(TimeSpan.FromSeconds(5));
-        var generationOne = registry.GetActive("cold-race")!;
-        var reload = await registry.ReloadAsync("cold-race");
+        try
+        {
+            var generationOne = registry.GetActive("cold-race")!;
+            var reload = await registry.ReloadAsync("cold-race");
 
-        Assert.NotNull(reload.Drain);
-        await Assert.ThrowsAsync<TimeoutException>(() =>
-            reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromMilliseconds(100)));
-        Assert.Equal(1, ((Shell)generationOne).ActiveScopeCount);
+            Assert.NotNull(reload.Drain);
+            await Assert.ThrowsAsync<TimeoutException>(() =>
+                reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromMilliseconds(100)));
+            Assert.Equal(1, ((Shell)generationOne).ActiveScopeCount);
 
-        endpointFeature.Release();
-        await request;
-        Assert.True(endpointInvoked);
-        await response.FireOnCompletedAsync();
-        await reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(ShellLifecycleState.Disposed, generationOne.State);
+            endpointFeature.Release();
+            await request;
+            Assert.True(endpointInvoked);
+            await response.FireOnCompletedAsync();
+            await reload.Drain!.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(ShellLifecycleState.Disposed, generationOne.State);
+        }
+        finally
+        {
+            endpointFeature.Release();
+            try
+            {
+                await request.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch
+            {
+                // Preserve the primary assertion failure while ensuring the blocked worker exits.
+            }
+            await response.FireOnCompletedAsync();
+        }
     }
 
     [Fact(DisplayName = "Cold-start re-match preserves fallback endpoint when no shell endpoint matches")]

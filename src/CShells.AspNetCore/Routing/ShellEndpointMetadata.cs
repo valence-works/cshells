@@ -72,6 +72,7 @@ public sealed record ShellEndpointConflict(
 public sealed class ShellEndpointConflictException : InvalidOperationException
 {
     /// <summary>Initializes a new exception with structured conflict details.</summary>
+    /// <param name="conflict">The structured candidate and existing endpoint conflict.</param>
     public ShellEndpointConflictException(ShellEndpointConflict conflict)
         : base(CreateMessage(Guard.Against.Null(conflict)))
     {
