@@ -10,6 +10,7 @@ dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedNam
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~PrepareGeneration_OverlappingCommitAndRollback_DoesNotResurrectRoutes|FullyQualifiedName~PrepareGeneration_ConcurrentConflict_SecondCommitIsRejected|FullyQualifiedName~GetChangeToken_"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~PrepareGeneration_Complete_AllowsNextCommit|FullyQualifiedName~PrepareGeneration_PendingCommit_GuardsSameShellMutations|FullyQualifiedName~PrepareGeneration_PendingCommit_GuardsCrossShellPublication|FullyQualifiedName~ColdStart_ReMatch_ConcurrentReload_KeepsMatchedGenerationLeased"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~PendingCommit_OtherShellDrain_RemovesEndpointsAndReleasesReferences|FullyQualifiedName~PendingCommit_SameShellCandidateDrain_RestoresPriorGenerationWithoutStaleRoutes"
+dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~PendingCommit_PriorGenerationDrainsThenCandidateRejects|FullyQualifiedName~PendingCommit_CandidateDrainsThenParticipantsAccept|FullyQualifiedName~Reload_CandidateDrainsDuringParticipantCompletion"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj --filter "FullyQualifiedName~ActiveTransition_PublishesPipelineBeforeEndpointsBecomeVisible|FullyQualifiedName~ActiveTransition_EndpointConflict_RemovesStagedPipeline|FullyQualifiedName~PublishGeneration_EquivalentTemplates_PreservesPreviousSnapshot"
 dotnet test tests/CShells.Tests/CShells.Tests.csproj
 dotnet build CShells.sln
@@ -55,6 +56,13 @@ endpoint object becomes collectible. The pending candidate itself is also draine
 before a later rejection, proving deferred generation cleanup neither corrupts rollback identity nor
 leaves candidate routes behind.
 
+The same-shell activation-finalization regressions drain generation one before a blocked candidate
+rejects, drain the candidate before a blocked participant accepts, and drain the candidate during
+participant completion. They prove rollback publishes its already-filtered final snapshot once,
+never restores a disposed prior generation, never returns a disposed candidate, and leaves either a
+live prior generation or an empty reactivatable slot. Each case finishes by driving a request through
+the recovered exact-generation middleware pipeline.
+
 The endpoint/pipeline ordering tests subscribe to the routing change token, which fires at the
 first externally visible publication point, and assert the exact generation pipeline is already
 available. A rejected-candidate companion test proves a staged pipeline is removed. Conflict tests
@@ -73,8 +81,10 @@ On 2026-08-16:
   invocation, repeated across 3 invocations.
 - Global transaction, lifecycle cleanup, cold-rematch, matched-before-middleware, and
   collectible-context regressions: 8 passed per invocation across 5 consecutive invocations.
-- Focused routing, lifecycle-handler, middleware, and activation regressions: 90 passed.
-- `dotnet test tests/CShells.Tests/CShells.Tests.csproj`: 628 passed after the lifecycle-cleanup
+- Same-shell activation-finalization races: 3 passed per invocation across 5 consecutive
+  invocations.
+- Focused routing, lifecycle-handler, and middleware regressions: 82 passed.
+- `dotnet test tests/CShells.Tests/CShells.Tests.csproj`: 631 passed after the activation-finalization
   follow-up.
-- `dotnet test CShells.sln`: 628 CShells tests and 31 end-to-end tests passed.
+- `dotnet test CShells.sln`: 631 CShells tests and 31 end-to-end tests passed.
 - `dotnet build CShells.sln`: succeeded with 0 warnings and 0 errors.

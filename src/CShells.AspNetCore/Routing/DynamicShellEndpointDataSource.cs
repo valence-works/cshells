@@ -391,10 +391,19 @@ public class DynamicShellEndpointDataSource(ILogger<DynamicShellEndpointDataSour
                 var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
                 return metadata is null || !metadata.ShellId.Equals(shellId);
             });
-            Volatile.Write(ref _publishedEndpoints, [.. retained, .. retired]);
+            var restorable = retired.Where(endpoint =>
+            {
+                var metadata = endpoint.Metadata.GetMetadata<ShellEndpointMetadata>();
+                return metadata is null || !pending.DeferredGenerationRemovals.Contains(metadata.Generation);
+            });
+
+            // A generation may finish draining while the replacement transaction is pending.
+            // Fold that deferred cleanup into the rollback snapshot before publication: observers
+            // receive one notification for the final state and can never transiently match a
+            // disposed generation between restore and a second removal notification.
+            Volatile.Write(ref _publishedEndpoints, [.. retained, .. restorable]);
             AdvanceVersion(shellId);
             NotifyChanged();
-            ApplyDeferredGenerationRemovals(pending);
             _pendingTransaction = null;
         }
     }

@@ -707,6 +707,121 @@ public class DynamicShellEndpointDataSourceTests
         Assert.Single(dataSource.Endpoints);
     }
 
+    [Fact(DisplayName = "A rejected candidate does not restore a prior generation that drained during commit")]
+    public async Task PendingCommit_PriorGenerationDrainsThenCandidateRejects_RecoversWithoutDisposedRoutes()
+    {
+        const string shellName = "cleanup-prior";
+        var blocker = new BlockingActivationParticipant(shellName, generation: 2, rejectAfterRelease: true);
+        await using var host = CreateStableShellHost(shellName, blocker);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var generationOne = await registry.ActivateAsync(shellName);
+        var reloadTask = Task.Run(() => registry.ReloadAsync(shellName));
+
+        await blocker.Entered.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            var drain = await registry.DrainAsync(generationOne);
+            await drain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(ShellLifecycleState.Disposed, generationOne.State);
+
+            var rollbackSnapshot = new TaskCompletionSource<IReadOnlyList<Endpoint>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            using var registration = dataSource.GetChangeToken().RegisterChangeCallback(
+                _ => rollbackSnapshot.TrySetResult(dataSource.Endpoints.ToArray()),
+                null);
+
+            blocker.Release();
+            var reload = await reloadTask.WaitAsync(TimeSpan.FromSeconds(5));
+            var observed = await rollbackSnapshot.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.IsType<ShellGenerationActivationException>(reload.Error);
+            Assert.Null(reload.NewShell);
+            Assert.Empty(observed);
+            Assert.Empty(dataSource.Endpoints);
+            Assert.Null(registry.GetActive(shellName));
+            Assert.DoesNotContain(generationOne, registry.GetAll(shellName));
+            var recovered = await AssertRecoveredGenerationServesAsync(host, shellName);
+            Assert.Equal(3, recovered.Descriptor.Generation);
+        }
+        finally
+        {
+            blocker.Release();
+        }
+    }
+
+    [Fact(DisplayName = "A candidate that drains during commit is rejected and the prior generation remains live")]
+    public async Task PendingCommit_CandidateDrainsThenParticipantsAccept_DoesNotReturnDisposedGeneration()
+    {
+        const string shellName = "cleanup-candidate";
+        var blocker = new BlockingActivationParticipant(shellName, generation: 2);
+        await using var host = CreateStableShellHost(shellName, blocker);
+
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var generationOne = await registry.ActivateAsync(shellName);
+        var reloadTask = Task.Run(() => registry.ReloadAsync(shellName));
+
+        await blocker.Entered.WaitAsync(TimeSpan.FromSeconds(5));
+        var candidate = (IShell?)null;
+        try
+        {
+            candidate = Assert.IsAssignableFrom<IShell>(registry.GetActive(shellName));
+            Assert.Equal(2, candidate.Descriptor.Generation);
+            var drain = await registry.DrainAsync(candidate);
+            await drain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(ShellLifecycleState.Disposed, candidate.State);
+        }
+        finally
+        {
+            blocker.Release();
+        }
+
+        var reload = await reloadTask.WaitAsync(TimeSpan.FromSeconds(5));
+        var rejectedCandidate = Assert.IsAssignableFrom<IShell>(candidate);
+
+        Assert.IsType<ShellGenerationActivationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.DoesNotContain(rejectedCandidate, registry.GetAll(shellName));
+        Assert.DoesNotContain(registry.GetActiveShells(), shell => shell.State == ShellLifecycleState.Disposed);
+        Assert.Same(generationOne, registry.GetActive(shellName));
+        AssertGeneration(dataSource, expectedGeneration: 1);
+        var recovered = await AssertRecoveredGenerationServesAsync(host, shellName);
+        Assert.Same(generationOne, recovered);
+    }
+
+    [Fact(DisplayName = "A candidate drained during completion leaves the slot safe for reactivation")]
+    public async Task Reload_CandidateDrainsDuringParticipantCompletion_ReactivatesWithoutZombieGeneration()
+    {
+        const string shellName = "cleanup-completion";
+        var drainer = new DrainCandidateOnCompletionParticipant();
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<RollbackStableFeature>()
+            .AddShell(shellName, shell => shell.WithFeature<RollbackStableFeature>()));
+        services.AddSingleton<IShellGenerationActivationParticipant>(drainer);
+
+        await using var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        drainer.AttachRegistry(registry);
+        var generationOne = await registry.ActivateAsync(shellName);
+
+        var reload = await registry.ReloadAsync(shellName);
+
+        Assert.IsType<ShellGenerationActivationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.NotNull(drainer.DrainedShell);
+        Assert.Equal(ShellLifecycleState.Disposed, drainer.DrainedShell.State);
+        Assert.NotEqual(ShellLifecycleState.Active, generationOne.State);
+        Assert.Null(registry.GetActive(shellName));
+        Assert.Empty(dataSource.Endpoints);
+        var recovered = await AssertRecoveredGenerationServesAsync(host, shellName);
+        Assert.Equal(3, recovered.Descriptor.Generation);
+    }
+
     [Fact(DisplayName = "Repeated collectible feature generations unload after replacement and removal")]
     public async Task CollectibleFeatureGenerations_UnloadAfterReplacementAndRemoval()
     {
@@ -832,6 +947,22 @@ public class DynamicShellEndpointDataSourceTests
         services.GetRequiredService<ApplicationBuilderAccessor>().ApplicationBuilder = new ApplicationBuilder(services);
     }
 
+    private static ServiceProvider CreateStableShellHost(
+        string shellName,
+        IShellGenerationActivationParticipant blocker)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShellsAspNetCore(cshells => cshells
+            .WithAssemblyContaining<RollbackStableFeature>()
+            .AddShell(shellName, shell => shell.WithFeature<RollbackStableFeature>()));
+        services.AddSingleton<IShellGenerationActivationParticipant>(blocker);
+
+        var host = services.BuildServiceProvider();
+        CaptureRoutingInfrastructure(host);
+        return host;
+    }
+
     private static void AssertGeneration(DynamicShellEndpointDataSource dataSource, int expectedGeneration)
     {
         var endpoint = Assert.Single(dataSource.Endpoints);
@@ -849,6 +980,39 @@ public class DynamicShellEndpointDataSourceTests
         var context = new DefaultHttpContext();
         await pipeline!(context);
         Assert.Equal(expectedMarker, context.Items["pipeline-marker"]);
+    }
+
+    private static async Task<IShell> AssertRecoveredGenerationServesAsync(
+        IServiceProvider host,
+        string shellName)
+    {
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var dataSource = host.GetRequiredService<DynamicShellEndpointDataSource>();
+        var pipelines = host.GetRequiredService<ShellMiddlewarePipelineRegistry>();
+        var recovered = await registry.GetOrActivateAsync(shellName);
+        Assert.Equal(ShellLifecycleState.Active, recovered.State);
+        Assert.Same(recovered, registry.GetActive(shellName));
+        Assert.DoesNotContain(registry.GetAll(shellName), shell => shell.State == ShellLifecycleState.Disposed);
+
+        var endpoint = Assert.Single(dataSource.Endpoints);
+        Assert.Equal(recovered.Descriptor.Generation,
+            endpoint.Metadata.GetMetadata<ShellEndpointMetadata>()!.Generation);
+        var response = new ShellMiddlewareTests.FireableResponseFeature();
+        var context = new DefaultHttpContext { RequestServices = host };
+        context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpResponseFeature>(response);
+        context.SetEndpoint(endpoint);
+        var middleware = ShellMiddlewareTests.CreateMiddleware(
+            _ => Task.CompletedTask,
+            registry: registry,
+            endpointDataSource: dataSource,
+            pipelineRegistry: pipelines);
+
+        await middleware.InvokeAsync(context);
+        await response.FireOnCompletedAsync();
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Equal("stable", context.Items["pipeline-marker"]);
+        return recovered;
     }
 
     private sealed class CollectibleFeatureLoadContext : AssemblyLoadContext
@@ -1132,4 +1296,36 @@ public sealed class BlockingActivationParticipant(
     }
 
     public void Release() => release.TrySetResult();
+}
+
+internal sealed class DrainCandidateOnCompletionParticipant : IShellGenerationActivationParticipant
+{
+    private IShellRegistry? registry;
+
+    internal IShell? DrainedShell { get; private set; }
+
+    internal void AttachRegistry(IShellRegistry value) =>
+        registry = value;
+
+    public Task PrepareAsync(IShell shell, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public void Commit(IShell shell)
+    {
+    }
+
+    public void Complete(IShell shell)
+    {
+        if (shell.Descriptor.Generation != 2)
+            return;
+
+        DrainedShell = shell;
+        var currentRegistry = registry ?? throw new InvalidOperationException("The registry was not attached.");
+        var drain = currentRegistry.DrainAsync(shell).GetAwaiter().GetResult();
+        drain.WaitAsync().GetAwaiter().GetResult();
+    }
+
+    public void Rollback(IShell shell)
+    {
+    }
 }

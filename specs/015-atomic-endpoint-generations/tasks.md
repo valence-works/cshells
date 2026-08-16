@@ -42,3 +42,6 @@
   real-registry reload drains only after response completion.
 - [x] T023 Allow monotonic lifecycle cleanup during a pending global transaction, defer cleanup for
   its own generation, and prove cross-shell collection plus same-shell rollback under real drains.
+- [x] T024 Reject drained activation candidates, restore only eligible prior generations, fold
+  deferred drain cleanup into one rollback snapshot, and prove request-serving recovery for drains
+  that win during commit or completion.

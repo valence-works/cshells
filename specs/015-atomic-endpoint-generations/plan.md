@@ -13,8 +13,10 @@ route collisions are global, the data source permits one rollback-capable commit
 rejects competing commits plus additive route or host-inventory mutations until its owner completes
 or rolls it back. Removals are monotonic: other-shell cleanup applies immediately, while cleanup for
 the pending shell generation is deduplicated and replayed before completion or after rollback
-restoration. This keeps rollback infallible without allowing one slow activation to retain another
-shell's disposed routes or collectible feature code.
+restoration. Rollback builds the final snapshot with those removals already applied before one
+publication notification, so routing never observes a restored disposed route. This keeps rollback
+infallible without allowing one slow activation to retain another shell's disposed routes or
+collectible feature code.
 Change-token sources are atomically exchanged and cancelled without racing eager disposal.
 
 `IShellGenerationActivationParticipant` gives `ShellRegistry` a two-phase activation boundary.
@@ -24,7 +26,11 @@ generation into `Active`/`All`, then commits participants in registration order.
 the pipeline before committing endpoints, so the first route-change notification can resolve both
 the exact shell and its pipeline. A later commit failure rolls participants back in reverse order,
 restores the prior registry slot, and disposes the rejected provider. Only after every commit
-succeeds do participants discard rollback evidence.
+succeeds do participants discard rollback evidence. The registry verifies that the candidate is
+still Active and retained before accepting it, and restores the prior generation only when that
+generation is also still Active and retained. If cleanup wins after rollback evidence is discarded,
+the registry leaves the slot empty, drains the un-restorable prior generation, and lets the next
+activation rebuild a coherent route/pipeline generation.
 
 Route ownership is represented by typed endpoint metadata and carried into the structured conflict
 result. Shell endpoints identify the dynamic shell, generation, and owning feature; host endpoints
@@ -53,7 +59,9 @@ and returns 503. Unmatched requests retain the existing lazy activation behavior
   code. The middleware suite also drives a real registry reload after routing leases an old matched
   request and verifies drain waits for that response's `OnCompleted` callback. Real-registry reload
   tests prove invisible subscriber fan-out, reverse participant rollback, and registry/route/pipeline
-  restoration after a post-publication commit rejection.
+  restoration after a post-publication commit rejection. Same-shell drain interleavings prove that
+  neither a disposed prior generation nor a disposed candidate can become or remain Active, that
+  rollback observers see no transient disposed route, and that a later request reactivates and serves.
 
 ## Files
 

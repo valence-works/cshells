@@ -50,12 +50,17 @@ owns the endpoint metadata.
    route inventory. A second commit and additive route/host inventory mutations are rejected until
    the owner completes or rolls back the transaction. Removals for other shells apply immediately;
    generation-specific cleanup for the pending shell is deferred and replayed idempotently during
-   completion or rollback. Rollback cannot resurrect an intermediate generation, conflict with an
-   addition, or prevent unrelated lifecycle cleanup.
+   completion or folded into the rollback snapshot before its single publication notification.
+   Rollback cannot transiently republish a disposed route, resurrect an intermediate generation,
+   conflict with an addition, or prevent unrelated lifecycle cleanup.
 10. Endpoint change-token acquisition is race-safe with publication and does not expose a disposed
     token source or miss the snapshot change it is meant to observe.
 11. Cold-activation manual re-matching acquires the exact generation lease before exposing the
     rematched endpoint, so a concurrent reload cannot dispose it in the handoff to middleware.
+12. Activation succeeds only while the candidate remains the registry's retained, exact Active
+    generation. Rejection restores a prior generation only when it is still Active and retained;
+    a candidate or prior generation drained during participant fan-out is never returned or
+    resurrected as Active, and a subsequent activation can recover a live serving generation.
 
 ## Non-goals
 
