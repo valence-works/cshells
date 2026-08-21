@@ -6,7 +6,7 @@ namespace CShells.Features;
 
 internal sealed class RuntimeFeatureCatalog(
     Func<CancellationToken, Task<IReadOnlyCollection<Assembly>>> assemblyResolver,
-    ILogger<RuntimeFeatureCatalog>? logger = null) : IRuntimeFeatureCatalog
+    ILogger<RuntimeFeatureCatalog>? logger = null)
 {
     private readonly Func<CancellationToken, Task<IReadOnlyCollection<Assembly>>> assemblyResolver = Guard.Against.Null(assemblyResolver);
     private readonly ILogger<RuntimeFeatureCatalog> logger = logger ?? NullLogger<RuntimeFeatureCatalog>.Instance;
