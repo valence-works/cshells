@@ -49,17 +49,16 @@ public class CoreFeature(ShellSettings shellSettings) : IWebShellFeature
 **appsettings.json** (source of truth for the Workbench sample):
 ```json
 "CShells": {
-  "Shells": [
-    {
-      "Name": "Contoso",
-      "Features": [
-        "Core",
-        "Posts",
-        { "Name": "Analytics", "TopPostsCount": 10 }
-      ],
+  "Shells": {
+    "Contoso": {
+      "Features": {
+        "Core": true,
+        "Posts": true,
+        "Analytics": { "TopPostsCount": 10 }
+      },
       "Configuration": { "WebRouting": { "Path": "contoso" }, "Plan": "Enterprise" }
     }
-  ]
+  }
 }
 ```
 
