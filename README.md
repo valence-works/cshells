@@ -228,13 +228,23 @@ public class WeatherFeature : IShellFeature
 }
 ```
 
-Shell names are the keys under `CShells:Shells`. This makes overrides stable, for example:
+Shell names are the keys under `CShells:Shells`. Named paths remain stable when
+shell entries are reordered, so an override continues to target the same shell.
+For example:
 
 ```bash
-CSHELLS__SHELLS__DEFAULT__FEATURES__WEATHER__APIKEY=...
+CSHELLS__SHELLS__DEFAULT__FEATURES__IDENTITY__SIGNINGKEY=...
 ```
 
-Use PascalCase shell names in JSON, such as `Default` or `MyShell`; environment variable keys are commonly written in uppercase.
+Use PascalCase shell names in JSON, such as `Default` or `MyShell`. In
+environment variable paths, use the same shell-name segment without inserting
+underscores between words, for example:
+
+```bash
+CSHELLS__SHELLS__MYSHELL__FEATURES__IDENTITY__SIGNINGKEY=...
+```
+
+Environment variable keys are commonly written in uppercase.
 
 You can also override the configuration section name via `builder.AddShells("MySection")`.
 

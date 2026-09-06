@@ -2,7 +2,7 @@
 
 **Feature Branch**: `011-map-shell-config`  
 **Created**: 2026-05-07  
-**Status**: Draft  
+**Status**: Implemented (PR #99)  
 **Input**: User description: "CShells: Map-Based Shell Configuration. Replace the current array under `CShells:Shells`, where each shell repeats a `Name` property, with map syntax where each child key is the shell name. Drop the shell `Name` property, do not support both formats, update documentation and examples, document environment variable override paths and shell naming conventions, and verify map loading, shell naming, environment overrides, and configuration merging across layers."
 
 ## User Scenarios & Testing *(mandatory)*
