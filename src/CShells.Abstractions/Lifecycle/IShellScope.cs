@@ -6,7 +6,7 @@ namespace CShells.Lifecycle;
 /// </summary>
 /// <remarks>
 /// The handle bundles two responsibilities: (1) it is an <see cref="IAsyncDisposable"/> wrapping
-/// an <see cref="IServiceScope"/> built from the shell's provider, and (2) disposing it
+/// an <see cref="Microsoft.Extensions.DependencyInjection.IServiceScope"/> built from the shell's provider, and (2) disposing it
 /// decrements the shell's active-scope counter so the registry can coordinate drain safely.
 /// </remarks>
 public interface IShellScope : IAsyncDisposable

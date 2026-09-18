@@ -5,6 +5,13 @@
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
 
+        <!-- Ship XML docs in the packages so consumers get the API contract in IntelliSense
+             instead of having to decompile. See issue #130.
+             CS1591 (missing doc on a public member) is suppressed rather than gated: 47 members
+             are still undocumented, and every member that *is* documented ships regardless. -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
+
         <!-- Central base version for all packages; preview builds will append a suffix like -preview.{runNumber} -->
         <Version>0.0.29</Version>
 

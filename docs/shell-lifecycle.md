@@ -76,7 +76,7 @@ public sealed class ExistingFeature : IShellFeature
 
 Both initializers run in `LifecyclePhase.Default`, and `FirstInitializer` still runs before `SecondInitializer`.
 
-`AddShellInitializer<TInitializer>()` registers `TInitializer` as transient and also registers `IShellInitializer` through the shell service provider. Initializers may depend on shell-scoped services, but feature constructors should still only consume root-level services plus supported shell context values.
+`AddShellInitializer<TInitializer>()` registers `TInitializer` as transient *unless you have already registered it yourself* — an explicit `services.AddSingleton<TInitializer>()` is preserved, and the lifecycle then initializes that very instance — and also registers `IShellInitializer` through the shell service provider. Initializers may depend on shell-scoped services, but feature constructors should still only consume root-level services plus supported shell context values.
 
 ## Attribute Metadata
 

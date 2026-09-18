@@ -8,7 +8,7 @@ namespace CShells.Features;
 public static class FeatureDiscovery
 {
     /// <summary>
-    /// Discovers all features from the specified assemblies by scanning for types that implement <see cref="IShellFeature"/> or <see cref="IWebShellFeature"/>.
+    /// Discovers all features from the specified assemblies by scanning for types that implement <see cref="IShellFeature"/> or <c>IWebShellFeature</c>.
     /// </summary>
     /// <param name="assemblies">The assemblies to scan for features.</param>
     /// <param name="onAssemblyLoadError">Optional callback invoked when an assembly fails to load its types.</param>

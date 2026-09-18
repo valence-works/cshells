@@ -11,11 +11,12 @@ namespace CShells.AspNetCore.Routing;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lifecycle subscriber registration happens in
-/// <see cref="ServiceCollectionExtensions"/> after the registry singleton is constructed —
-/// the invalidator registers itself with the registry via <see cref="IShellRegistry.Subscribe"/>
-/// inside its <see cref="StartAsync"/> hosted-service hook so it observes every transition
-/// from process start.
+/// Registration happens in
+/// <see cref="CShells.AspNetCore.Extensions.ServiceCollectionExtensions"/> after the registry
+/// singleton is constructed. The subscription itself is performed by the companion
+/// <see cref="ShellRouteIndexInvalidatorHostedService"/>, which calls
+/// <see cref="IShellRegistry.Subscribe"/> on host start so this subscriber observes every
+/// transition from process start.
 /// </para>
 /// <para>
 /// We invalidate on transitions that may change the snapshot's routing metadata:

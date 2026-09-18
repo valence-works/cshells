@@ -30,7 +30,7 @@ public static class EndpointRouteBuilderExtensions
     /// <b>The blueprint endpoints expose registered <c>ConfigurationData</c> verbatim.</b>
     /// Configuration values may contain host-controlled secrets (connection strings, API
     /// keys, etc.). Production-style deployments MUST chain
-    /// <see cref="AuthorizationEndpointConventionBuilderExtensions.RequireAuthorization{TBuilder}"/>
+    /// <see cref="AuthorizationEndpointConventionBuilderExtensions.RequireAuthorization{TBuilder}(TBuilder)"/>
     /// (or an equivalent gate) on the returned <see cref="RouteGroupBuilder"/>.
     /// </para>
     /// <para>

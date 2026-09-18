@@ -6,7 +6,7 @@ namespace CShells.Lifecycle;
 /// <remarks>
 /// Blueprints hold no runtime state. Each blueprint is vended by an
 /// <see cref="IShellBlueprintProvider"/> — typically the built-in in-memory provider populated
-/// via <c>CShellsBuilder.AddShell</c>, the <see cref="IConfiguration"/>-backed provider, or a
+/// via <c>CShellsBuilder.AddShell</c>, the <see cref="Microsoft.Extensions.Configuration.IConfiguration"/>-backed provider, or a
 /// storage-backed provider. The registry invokes <see cref="ComposeAsync"/> on every
 /// activation and reload.
 /// </remarks>

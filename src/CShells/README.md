@@ -126,7 +126,7 @@ public class PaymentsFeature : IShellFeature
 }
 ```
 
-Initializers run sequentially during `Initializing -> Active`. Existing direct `IShellInitializer` registrations still run in DI-registration order in `LifecyclePhase.Default`; `AddShellInitializer<T>()` adds explicit phase/order metadata and registers the initializer as transient. Drain handlers run in parallel during `Draining`, after all outstanding `IShellScope` handles have been released or the drain deadline elapses.
+Initializers run sequentially during `Initializing -> Active`. Existing direct `IShellInitializer` registrations still run in DI-registration order in `LifecyclePhase.Default`; `AddShellInitializer<T>()` adds explicit phase/order metadata and registers the initializer as transient unless you have already registered it yourself, in which case your lifetime is preserved. Drain handlers run in parallel during `Draining`, after all outstanding `IShellScope` handles have been released or the drain deadline elapses.
 
 ## Reload
 

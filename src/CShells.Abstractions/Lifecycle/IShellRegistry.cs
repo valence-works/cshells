@@ -73,6 +73,7 @@ public interface IShellRegistry
     /// outcomes are returned; a single failure does not abort the batch.
     /// </summary>
     /// <param name="options">Parallelism options; defaults to <see cref="ReloadOptions.MaxDegreeOfParallelism"/> = 8.</param>
+    /// <param name="cancellationToken">Cancels the batch; per-shell reloads already in flight observe it too.</param>
     Task<IReadOnlyList<ReloadResult>> ReloadActiveAsync(ReloadOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>

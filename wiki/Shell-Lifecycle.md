@@ -50,7 +50,7 @@ services.AddTransient<IShellInitializer, SecondInitializer>();
 
 Both run in `LifecyclePhase.Default`, with `FirstInitializer` before `SecondInitializer`.
 
-`AddShellInitializer<TInitializer>()` registers `TInitializer` as transient and resolves it from the shell service provider at activation time, so initializers may depend on shell-scoped services.
+`AddShellInitializer<TInitializer>()` registers `TInitializer` as transient unless you have already registered it yourself (an explicit `services.AddSingleton<TInitializer>()` is preserved, and the lifecycle then initializes that very instance), and resolves it from the shell service provider at activation time, so initializers may depend on shell-scoped services.
 
 ## Provider/Base Feature Pairs
 
