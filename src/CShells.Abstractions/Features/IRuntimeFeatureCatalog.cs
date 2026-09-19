@@ -1,24 +1,30 @@
 namespace CShells.Features;
 
 /// <summary>
-/// Provides read access to the set of shell features discovered across every configured feature assembly
-/// provider (explicit assemblies, host assemblies, and custom <see cref="IFeatureAssemblyProvider"/>s).
+/// The supported, public contract for refreshing and reading the runtime feature catalog.
 /// </summary>
 /// <remarks>
-/// This is the authoritative catalog of features the host <em>can</em> activate. Whether any given feature is
-/// actually enabled is decided per shell by its configuration, independently of this catalog — so a host can use
-/// this to present "available" features (enabled or not) without re-implementing feature discovery.
+/// External consumers should resolve this service from the application's root service provider instead
+/// of reflecting over CShells internals. It is registered as a singleton by <c>AddCShells</c>.
 /// </remarks>
 public interface IRuntimeFeatureCatalog
 {
     /// <summary>
-    /// Returns the current catalog snapshot, performing a first discovery pass if the catalog has not been
-    /// initialized yet.
+    /// Gets the most recently committed catalog snapshot.
     /// </summary>
-    Task<RuntimeFeatureCatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default);
+    /// <exception cref="InvalidOperationException">Thrown when the catalog has not yet been initialized.</exception>
+    IRuntimeFeatureCatalogSnapshot CurrentSnapshot { get; }
 
     /// <summary>
-    /// Re-discovers features from all configured providers and commits (and returns) a new snapshot.
+    /// Ensures the catalog has been initialized at least once, performing an initial refresh if needed.
     /// </summary>
-    Task<RuntimeFeatureCatalogSnapshot> RefreshAsync(CancellationToken cancellationToken = default);
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    Task EnsureInitializedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-evaluates the feature sources and commits a new catalog snapshot.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The newly committed snapshot.</returns>
+    Task<IRuntimeFeatureCatalogSnapshot> RefreshAsync(CancellationToken cancellationToken = default);
 }

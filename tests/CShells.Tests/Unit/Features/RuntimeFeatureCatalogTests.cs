@@ -60,13 +60,13 @@ public class RuntimeFeatureCatalogTests
         Assert.Contains(catalog.CurrentSnapshot.FeatureDescriptors, descriptor => descriptor.Id == "Unique");
     }
 
-    [Fact(DisplayName = "GetSnapshotAsync initializes on first access and returns the committed snapshot")]
-    public async Task GetSnapshotAsync_InitializesAndReturnsCommittedSnapshot()
+    [Fact(DisplayName = "EnsureInitializedAsync initializes on first access and returns the committed snapshot")]
+    public async Task EnsureInitializedAsync_InitializesAndReturnsCommittedSnapshot()
     {
         // Arrange
         var refreshCalls = 0;
         var uniqueAssembly = CreateDynamicFeatureAssembly("RuntimeFeatureCatalogGetSnapshot", "GetSnapshotFeature", "GetSnapshot");
-        IRuntimeFeatureCatalog catalog = new RuntimeFeatureCatalog(
+        var catalog = new RuntimeFeatureCatalog(
             _ =>
             {
                 refreshCalls++;
@@ -75,8 +75,10 @@ public class RuntimeFeatureCatalogTests
             NullLogger<RuntimeFeatureCatalog>.Instance);
 
         // Act
-        var first = await catalog.GetSnapshotAsync();
-        var second = await catalog.GetSnapshotAsync();
+        await catalog.EnsureInitializedAsync();
+        var first = catalog.CurrentSnapshot;
+        await catalog.EnsureInitializedAsync();
+        var second = catalog.CurrentSnapshot;
 
         // Assert: first access discovers once; subsequent access reuses the committed snapshot.
         Assert.Equal(1, refreshCalls);

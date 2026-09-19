@@ -137,12 +137,12 @@ public static class FeatureDiscovery
         {
             if (!string.IsNullOrWhiteSpace(attribute.DisplayName))
             {
-                descriptor.Metadata["DisplayName"] = attribute.DisplayName;
+                descriptor.Metadata[ShellFeatureMetadataKeys.DisplayName] = attribute.DisplayName;
             }
 
             if (!string.IsNullOrWhiteSpace(attribute.Description))
             {
-                descriptor.Metadata["Description"] = attribute.Description;
+                descriptor.Metadata[ShellFeatureMetadataKeys.Description] = attribute.Description;
             }
         }
 
