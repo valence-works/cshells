@@ -21,8 +21,9 @@ namespace CShells.AspNetCore.Hosting;
 /// </list>
 /// </para>
 /// <para>
-/// These exclusions work in conjunction with <see cref="ShellAuthenticationSchemeProvider"/> and
-/// <see cref="ShellAuthorizationPolicyProvider"/>, which bridge the root middleware to shell-specific providers.
+/// These exclusions work in conjunction with
+/// <see cref="CShells.AspNetCore.Authentication.ShellAuthenticationSchemeProvider"/> and
+/// <see cref="CShells.AspNetCore.Authorization.ShellAuthorizationPolicyProvider"/>, which bridge the root middleware to shell-specific providers.
 /// </para>
 /// </remarks>
 public class AspNetCoreShellServiceExclusionProvider : IShellServiceExclusionProvider

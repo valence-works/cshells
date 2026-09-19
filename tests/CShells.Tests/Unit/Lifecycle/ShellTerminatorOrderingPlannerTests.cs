@@ -220,6 +220,27 @@ public class ShellTerminatorOrderingPlannerTests
         Assert.False(entry.IsExplicit);
     }
 
+    [Fact(DisplayName = "AddShellTerminator preserves a terminator already registered by the consumer")]
+    public void AddShellTerminator_ExistingRegistration_LifetimeIsPreserved()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<FirstTerminator>();
+
+        services.AddShellTerminator<FirstTerminator>(LifecyclePhase.Prepare, -100);
+
+        var concreteDescriptor = Assert.Single(services, d => d.ServiceType == typeof(FirstTerminator));
+        Assert.Equal(ServiceLifetime.Singleton, concreteDescriptor.Lifetime);
+
+        using var provider = services.BuildServiceProvider();
+        var terminator = provider.GetRequiredService<FirstTerminator>();
+
+        // Every resolution path, and every repeat enumeration, must hand back that one
+        // instance; a stateful terminator is only correct if the lifecycle shares it.
+        Assert.Same(terminator, provider.GetRequiredService<FirstTerminator>());
+        Assert.Same(terminator, Assert.Single(provider.GetServices<IShellTerminator>()));
+        Assert.Same(terminator, Assert.Single(provider.GetServices<IShellTerminator>()));
+    }
+
     private static ShellTerminatorRegistration Registration<TTerminator>(
         LifecyclePhase phase,
         int order,

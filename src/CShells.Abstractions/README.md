@@ -47,7 +47,7 @@ public class MyFeature : IShellFeature
 }
 ```
 
-`AddShellInitializer<T>()` registers the initializer as transient and attaches deterministic phase/order metadata. Existing direct `IShellInitializer` registrations remain valid and run in `LifecyclePhase.Default` using DI registration order.
+`AddShellInitializer<T>()` registers the initializer as transient (unless you have already registered it yourself, in which case your lifetime is preserved) and attaches deterministic phase/order metadata. Existing direct `IShellInitializer` registrations remain valid and run in `LifecyclePhase.Default` using DI registration order.
 
 ## Learn More
 

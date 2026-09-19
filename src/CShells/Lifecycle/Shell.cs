@@ -6,7 +6,7 @@ namespace CShells.Lifecycle;
 /// <summary>
 /// The default <see cref="IShell"/> implementation. Monotonic lifecycle state is maintained
 /// via <see cref="Interlocked.CompareExchange(ref int, int, int)"/> on an integer backing
-/// field; state reads go through <see cref="Volatile.Read(ref int)"/>.
+/// field; state reads go through <see cref="Volatile"/><c>.Read</c>.
 /// </summary>
 /// <remarks>
 /// Shell disposal is registry-owned. <see cref="DisposeAsync"/> is <c>internal</c> — hosts

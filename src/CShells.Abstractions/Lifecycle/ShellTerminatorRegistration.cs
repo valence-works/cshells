@@ -14,7 +14,8 @@ namespace CShells.Lifecycle;
 /// <param name="Source">Human-readable metadata source for diagnostics.</param>
 /// <remarks>
 /// <see cref="ServiceCollectionLifecycleExtensions.AddShellTerminator{TTerminator}(Microsoft.Extensions.DependencyInjection.IServiceCollection, LifecyclePhase, int)"/>
-/// registers terminator implementations with transient lifetime. Existing unordered
+/// registers terminator implementations with transient lifetime unless the consumer has
+/// already registered the implementation type, in which case that lifetime wins. Existing unordered
 /// <see cref="IShellTerminator"/> registrations do not need this metadata and are treated as
 /// <see cref="LifecyclePhase.Default"/> entries.
 /// </remarks>

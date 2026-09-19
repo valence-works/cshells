@@ -136,6 +136,27 @@ public class ShellInitializerOrderingPlannerTests
         Assert.False(entry.IsExplicit);
     }
 
+    [Fact(DisplayName = "AddShellInitializer preserves an initializer already registered by the consumer")]
+    public void AddShellInitializer_ExistingRegistration_LifetimeIsPreserved()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<FirstInitializer>();
+
+        services.AddShellInitializer<FirstInitializer>(LifecyclePhase.Prepare, -100);
+
+        var concreteDescriptor = Assert.Single(services, d => d.ServiceType == typeof(FirstInitializer));
+        Assert.Equal(ServiceLifetime.Singleton, concreteDescriptor.Lifetime);
+
+        using var provider = services.BuildServiceProvider();
+        var initializer = provider.GetRequiredService<FirstInitializer>();
+
+        // Every resolution path, and every repeat enumeration, must hand back that one
+        // instance; a stateful initializer is only correct if the lifecycle shares it.
+        Assert.Same(initializer, provider.GetRequiredService<FirstInitializer>());
+        Assert.Same(initializer, Assert.Single(provider.GetServices<IShellInitializer>()));
+        Assert.Same(initializer, Assert.Single(provider.GetServices<IShellInitializer>()));
+    }
+
     [Fact(DisplayName = "Planner only emits equal-order diagnostics for explicitly ordered ties")]
     public void Plan_EqualOrderDiagnostics_RequireExplicitOrdering()
     {
