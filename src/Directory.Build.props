@@ -28,11 +28,20 @@
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>logo.png</PackageIcon>
         <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+
+        <!-- Source Link / symbol packages -->
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     </PropertyGroup>
 
-    <!-- Include project-specific README.md for NuGet packages -->
+    <!-- Include project-specific README.md and the shared logo for NuGet packages.
+         Note: this file shadows the repo-root Directory.Build.props (MSBuild imports only the
+         nearest one), so the logo item has to be repeated here rather than inherited. -->
     <ItemGroup>
         <None Include="$(MSBuildProjectDirectory)\README.md" Pack="true" PackagePath="\" Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
+        <None Include="$(MSBuildThisFileDirectory)..\branding\logo.png" Pack="true" PackagePath="\" Link="logo.png" />
     </ItemGroup>
 
     <ItemGroup>
