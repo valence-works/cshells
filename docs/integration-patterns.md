@@ -235,12 +235,30 @@ The contract exposes only what external consumers need:
 | `IRuntimeFeatureCatalog.RefreshAsync(ct)` | Re-evaluates feature sources and returns a new snapshot. |
 | `IRuntimeFeatureCatalog.EnsureInitializedAsync(ct)` | Performs an initial refresh only if the catalog has never been built. |
 | `IRuntimeFeatureCatalog.CurrentSnapshot` | The most recently committed snapshot. |
+| `IRuntimeFeatureCatalog.GetSnapshotAsync(ct)` | Initializes if needed and returns the detailed discovery snapshot without forcing another refresh. |
 | `IRuntimeFeatureCatalogSnapshot.FeatureDescriptors` | The discovered features (use `.Count` for the descriptor count). |
 | `IRuntimeFeatureCatalogSnapshot.Generation` / `RefreshedAt` | Monotonic generation number and UTC timestamp of the snapshot. |
 | `RuntimeFeatureDescriptor.Id` / `Name` | The feature identifier (`Name` is an alias for `Id`). |
 | `RuntimeFeatureDescriptor.DisplayName` | Human-readable name; falls back to `Id` when none is declared. |
 | `RuntimeFeatureDescriptor.Description` | Optional description, or `null`. |
 | `RuntimeFeatureDescriptor.Dependencies` | Names of the features this feature depends on. |
+
+### Detailed discovery integrations
+
+Integrations that attribute activities to feature assemblies or inspect custom startup-type attributes
+can use `GetSnapshotAsync(ct)`. The returned `RuntimeFeatureCatalogSnapshot` retains discovered
+assemblies, `ShellFeatureDescriptor` metadata/startup types, and the case-insensitive feature map.
+It is the same committed catalog generation used by typed reads; reading it does not construct
+features or invoke their configurators. Call `RefreshAsync(ct)` explicitly to rediscover sources.
+
+The built-in catalog supports this detailed read. Custom catalog implementations that only provide
+the typed projection may leave the default method unchanged; detailed reads then throw
+`NotSupportedException`, while their existing typed operations keep working. A typed projection
+cannot reconstruct missing startup types or arbitrary metadata.
+
+Existing consumers of `GetSnapshotAsync` can keep their detailed read calls. `RefreshAsync` returns
+`IRuntimeFeatureCatalogSnapshot`; custom implementations and test doubles must use that return type.
+After a refresh, use `GetSnapshotAsync` if detailed descriptors are needed.
 
 ### Migration from reflection
 

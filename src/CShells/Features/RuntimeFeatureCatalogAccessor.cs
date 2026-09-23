@@ -9,6 +9,10 @@ internal sealed class RuntimeFeatureCatalogAccessor(RuntimeFeatureCatalog catalo
     private readonly RuntimeFeatureCatalog catalog = Guard.Against.Null(catalog);
 
     /// <inheritdoc />
+    public Task<RuntimeFeatureCatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
+        catalog.GetSnapshotAsync(cancellationToken);
+
+    /// <inheritdoc />
     public IRuntimeFeatureCatalogSnapshot CurrentSnapshot => Map(catalog.CurrentSnapshot);
 
     /// <inheritdoc />
