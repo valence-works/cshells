@@ -96,12 +96,94 @@ public class RuntimeFeatureCatalogAccessorTests
         Assert.NotNull(snapshot);
     }
 
+    [Fact]
+    public async Task GetSnapshotAsync_PreservesDetailsWithoutRefreshingOrConstructingFeatures()
+    {
+        var assembly = CreateDynamicFeatureAssembly(
+            "RuntimeFeatureCatalogDetailed", "DetailedFeature", "Detailed",
+            displayName: "Detailed Feature", description: "Discovery metadata.", throwOnConstruction: true);
+        var discoveryCount = 0;
+        IRuntimeFeatureCatalog accessor = new RuntimeFeatureCatalogAccessor(new RuntimeFeatureCatalog(_ =>
+        {
+            discoveryCount++;
+            return Task.FromResult<IReadOnlyCollection<Assembly>>([assembly]);
+        }));
+
+        var first = await accessor.GetSnapshotAsync();
+        var second = await accessor.GetSnapshotAsync();
+
+        Assert.Same(first, second);
+        Assert.Equal(1, discoveryCount);
+        Assert.Same(assembly, Assert.Single(first.Assemblies));
+        var descriptor = Assert.Single(first.FeatureDescriptors);
+        Assert.Equal(assembly.GetType("DetailedFeature"), descriptor.StartupType);
+        Assert.Equal("Detailed Feature", descriptor.Metadata["DisplayName"]);
+        Assert.Equal("Discovery metadata.", descriptor.Metadata["Description"]);
+        Assert.Same(descriptor, first.FeatureMap["detailed"]);
+        Assert.Equal(first.Generation, accessor.CurrentSnapshot.Generation);
+
+        var refreshed = await accessor.RefreshAsync();
+        var currentDetails = await accessor.GetSnapshotAsync();
+        Assert.Equal(2, discoveryCount);
+        Assert.True(refreshed.Generation > first.Generation);
+        Assert.Equal(refreshed.Generation, currentDetails.Generation);
+        Assert.Equal(refreshed.RefreshedAt, currentDetails.RefreshedAt);
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_PropagatesCancellationBeforeInitialization()
+    {
+        IRuntimeFeatureCatalog accessor = new RuntimeFeatureCatalogAccessor(new RuntimeFeatureCatalog(
+            _ => throw new InvalidOperationException("Discovery must not start after cancellation.")));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => accessor.GetSnapshotAsync(cancellation.Token));
+        Assert.Throws<InvalidOperationException>(() => accessor.CurrentSnapshot);
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_PropagatesDiscoveryFailureWithoutCommittingASnapshot()
+    {
+        var expected = new InvalidOperationException("Discovery failed.");
+        IRuntimeFeatureCatalog accessor = new RuntimeFeatureCatalogAccessor(new RuntimeFeatureCatalog(_ => throw expected));
+
+        var actual = await Assert.ThrowsAsync<InvalidOperationException>(() => accessor.GetSnapshotAsync());
+
+        Assert.Same(expected, actual);
+        Assert.Throws<InvalidOperationException>(() => accessor.CurrentSnapshot);
+    }
+
+    [Fact]
+    public async Task ProjectionOnlyImplementations_KeepTypedReadsAndExplicitlyRefuseDetailedReads()
+    {
+        IRuntimeFeatureCatalog builtIn = new RuntimeFeatureCatalogAccessor(new RuntimeFeatureCatalog(
+            _ => Task.FromResult<IReadOnlyCollection<Assembly>>([])));
+        var snapshot = await builtIn.RefreshAsync();
+        IRuntimeFeatureCatalog projectionOnly = new ProjectionOnlyCatalog(snapshot);
+
+        await projectionOnly.EnsureInitializedAsync();
+
+        Assert.Same(snapshot, projectionOnly.CurrentSnapshot);
+        Assert.Same(snapshot, await projectionOnly.RefreshAsync());
+        await Assert.ThrowsAsync<NotSupportedException>(() => projectionOnly.GetSnapshotAsync());
+    }
+
+    private sealed class ProjectionOnlyCatalog(IRuntimeFeatureCatalogSnapshot snapshot) : IRuntimeFeatureCatalog
+    {
+        public IRuntimeFeatureCatalogSnapshot CurrentSnapshot => snapshot;
+        public Task EnsureInitializedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IRuntimeFeatureCatalogSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(snapshot);
+    }
+
     private static Assembly CreateDynamicFeatureAssembly(
         string assemblyName,
         string typeName,
         string featureName,
         string? displayName = null,
-        string? description = null)
+        string? description = null,
+        bool throwOnConstruction = false)
     {
         var dynamicAssembly = AssemblyBuilder.DefineDynamicAssembly(new(assemblyName), AssemblyBuilderAccess.Run);
         var module = dynamicAssembly.DefineDynamicModule(assemblyName);
@@ -130,7 +212,15 @@ public class RuntimeFeatureCatalogAccessorTests
             [featureName],
             [.. namedProperties],
             [.. propertyValues]));
-        type.DefineDefaultConstructor(MethodAttributes.Public);
+        if (throwOnConstruction)
+        {
+            var constructor = type.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, Type.EmptyTypes);
+            var body = constructor.GetILGenerator();
+            body.Emit(OpCodes.Newobj, typeof(InvalidOperationException).GetConstructor(Type.EmptyTypes)!);
+            body.Emit(OpCodes.Throw);
+        }
+        else
+            type.DefineDefaultConstructor(MethodAttributes.Public);
 
         var configureServices = type.DefineMethod(
             nameof(IShellFeature.ConfigureServices),
