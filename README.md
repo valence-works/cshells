@@ -516,6 +516,39 @@ builder.AddShells(cshells =>
 
 `DatabaseShellBlueprint` is your `IShellBlueprint` implementation that composes fresh `ShellSettings` for a tenant.
 
+### Preparing settings before feature activation
+
+An application can register one root-owned `IShellSettingsPreparer` to validate or materialize configuration for the complete resolved feature set:
+
+```csharp
+using CShells.Lifecycle;
+using Microsoft.Extensions.DependencyInjection;
+
+builder.Services.AddSingleton<IShellSettingsPreparer, DeploymentSettingsPreparer>();
+
+public sealed class DeploymentSettingsPreparer : IShellSettingsPreparer
+{
+    public Task<ShellSettingsPreparationResult> PrepareAsync(
+        ShellSettingsPreparationContext context,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Inspect context.OrderedFeatures and configuration here.
+        // Return explicit setting updates/removals in a preparation result.
+        return Task.FromResult(ShellSettingsPreparationResult.Unchanged(context));
+    }
+}
+```
+
+Preparation runs once per generation build, after `ConfigureAllShells` defaults have been composed and feature dependencies have been expanded. It runs before any feature constructor, configuration binder, code-first configurator, or `ConfigureServices` call. Without a registered preparer, normal feature activation continues. Registering multiple preparers is rejected; compose application policies inside one preparer when needed.
+
+The context identifies the shell, requested features, implicit dependencies, unknown requested IDs, and the ordered feature descriptors. Each descriptor reports `HasConfigurator` without exposing the delegate. Applications can reject an opaque configurator when it could overwrite a setting that their policy needs to guarantee. CShells does not interpret persistence providers or application resource schemas.
+
+The context exposes a detached scalar view of the composed shell configuration, using the same value conversion as feature binding. Root application configuration fallback is not included in this view; a preparer can receive root services through dependency injection when its policy needs that context. A result contains a patch: non-null values set entries, and null values remove entries. Untouched entries retain their original values and types. It cannot change the shell identity, feature selection, dependency order, or configurators. The prepared configuration is used in memory for this generation; it does not rewrite the blueprint's authored configuration. A reload prepares a fresh generation again. This hook does not add automatic file watching or automatic reload.
+
+Throw to refuse a build, using an error that contains no secrets. Refusal or cancellation during preparation prevents feature activation for that generation. If a reload fails, the previously active generation remains available. A singleton preparer must support concurrent builds for different shells and must not retain mutable per-build state.
+
 ## Shell Scopes & Background Work
 
 Shell scopes provide a way to create scoped services within a shell's service provider. This is particularly useful for background workers or other services that need to execute work in the context of each shell.

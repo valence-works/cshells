@@ -64,7 +64,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IShellServiceExclusionRegistry>(),
             sp.GetRequiredService<IShellFeatureFactory>(),
             sp.GetRequiredService<RuntimeFeatureCatalog>(),
-            sp.GetService<ILogger<ShellProviderBuilder>>()));
+            sp.GetService<ILogger<ShellProviderBuilder>>(),
+            sp.GetServices<IShellSettingsPreparer>()));
 
         // Blueprint provider: exactly one is registered. Default is the built-in in-memory
         // provider populated from AddShell(...) calls. Hosts that register an external provider
