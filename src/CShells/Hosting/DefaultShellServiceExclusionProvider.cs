@@ -40,6 +40,7 @@ public class DefaultShellServiceExclusionProvider : IShellServiceExclusionProvid
         yield return typeof(Lifecycle.ShellLifecycleLogger);
         yield return typeof(IShellLifecycleSubscriber);
         yield return typeof(IShellGenerationActivationParticipant);
+        yield return typeof(IShellSettingsPreparer);
         yield return typeof(IShellBlueprint);
         yield return typeof(RuntimeFeatureCatalog);
         // Excluded here AND re-registered as a root delegation in ShellProviderBuilder so shells can read the

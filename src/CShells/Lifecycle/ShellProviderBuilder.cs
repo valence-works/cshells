@@ -3,7 +3,6 @@ using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Features.Validation;
 using CShells.Hosting;
-using CShells.Lifecycle;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -28,13 +27,15 @@ internal sealed class ShellProviderBuilder(
     IShellServiceExclusionRegistry exclusionRegistry,
     IShellFeatureFactory featureFactory,
     RuntimeFeatureCatalog featureCatalog,
-    ILogger<ShellProviderBuilder>? logger = null)
+    ILogger<ShellProviderBuilder>? logger = null,
+    IEnumerable<IShellSettingsPreparer>? settingsPreparers = null)
 {
     private readonly IRootServiceCollectionAccessor _rootServicesAccessor = Guard.Against.Null(rootServicesAccessor);
     private readonly IServiceProvider _rootProvider = Guard.Against.Null(rootProvider);
     private readonly IShellServiceExclusionRegistry _exclusionRegistry = Guard.Against.Null(exclusionRegistry);
     private readonly IShellFeatureFactory _featureFactory = Guard.Against.Null(featureFactory);
     private readonly RuntimeFeatureCatalog _featureCatalog = Guard.Against.Null(featureCatalog);
+    private readonly IShellSettingsPreparer? _settingsPreparer = ResolveSettingsPreparer(settingsPreparers);
     private readonly ILogger<ShellProviderBuilder> _logger = logger ?? NullLogger<ShellProviderBuilder>.Instance;
     private readonly FeatureDependencyResolver _dependencyResolver = new();
 
@@ -45,9 +46,17 @@ internal sealed class ShellProviderBuilder(
     public async Task<BuildResult> BuildAsync(ShellSettings settings, CancellationToken cancellationToken = default)
     {
         Guard.Against.Null(settings);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Blueprint implementations are allowed to reuse a ShellSettings instance. Build every
+        // generation from a private copy so dependency expansion and preparation cannot contaminate
+        // a later activation or reload of the same blueprint.
+        settings = CloneSettings(settings);
 
         await _featureCatalog.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         var catalog = _featureCatalog.CurrentSnapshot;
+
+        var requestedFeatureIds = settings.EnabledFeatures.ToArray();
 
         // Explicit disabled entries are already excluded from EnabledFeatures. Unknown positive entries
         // are tolerated so hosts can share configuration across deployments that do not reference
@@ -76,6 +85,53 @@ internal sealed class ShellProviderBuilder(
         // Dependencies are effective shell features too.
         settings.EnabledFeatures = [..orderedFeatures];
 
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_settingsPreparer is not null)
+        {
+            var requestedSet = requestedFeatureIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var unknownFeatureIds = requestedFeatureIds
+                .Where(id => !catalog.FeatureMap.ContainsKey(id))
+                .ToArray();
+            var implicitFeatureIds = orderedFeatures
+                .Where(id => !requestedSet.Contains(id))
+                .ToArray();
+            var preparationFeatures = orderedFeatures
+                .Select(featureName =>
+                {
+                    var descriptor = catalog.FeatureMap[featureName];
+                    return new ShellFeaturePreparationDescriptor(
+                        descriptor.Id,
+                        descriptor.Dependencies,
+                        descriptor.StartupType,
+                        settings.FeatureConfigurators.ContainsKey(featureName));
+                })
+                .ToArray();
+            var preparationContext = new ShellSettingsPreparationContext(
+                settings.Id,
+                settings.ConfigurationData.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value?.ToString(),
+                    StringComparer.OrdinalIgnoreCase),
+                orderedFeatures,
+                settings.DisabledFeatures,
+                settings.FeatureSettingResets,
+                preparationFeatures,
+                requestedFeatureIds,
+                implicitFeatureIds,
+                unknownFeatureIds);
+            var preparationResult = await _settingsPreparer.PrepareAsync(preparationContext, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The shell settings preparer returned a null result.");
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var (key, value) in preparationResult.ConfigurationData)
+            {
+                if (value is null)
+                    settings.ConfigurationData.Remove(key);
+                else
+                    settings.ConfigurationData[key] = value;
+            }
+        }
+
         var services = new ServiceCollection();
         CopyRootServices(services);
 
@@ -87,6 +143,34 @@ internal sealed class ShellProviderBuilder(
         var provider = services.BuildServiceProvider();
 
         return new BuildResult(provider, holder, orderedFeatures.AsReadOnly());
+    }
+
+    private static IShellSettingsPreparer? ResolveSettingsPreparer(IEnumerable<IShellSettingsPreparer>? settingsPreparers)
+    {
+        var preparers = settingsPreparers?.ToList() ?? [];
+        return preparers.Count switch
+        {
+            0 => null,
+            1 => preparers[0],
+            _ => throw new InvalidOperationException(
+                $"CShells permits at most one IShellSettingsPreparer, but {preparers.Count} were registered."),
+        };
+    }
+
+    private static ShellSettings CloneSettings(ShellSettings source)
+    {
+        var clone = new ShellSettings(source.Id)
+        {
+            EnabledFeatures = [..source.EnabledFeatures],
+            DisabledFeatures = [..source.DisabledFeatures],
+            FeatureSettingResets = [..source.FeatureSettingResets],
+            ConfigurationData = new Dictionary<string, object>(source.ConfigurationData, StringComparer.OrdinalIgnoreCase),
+        };
+
+        foreach (var (featureName, configurator) in source.FeatureConfigurators)
+            clone.FeatureConfigurators[featureName] = configurator;
+
+        return clone;
     }
 
     private void CopyRootServices(IServiceCollection shellServices)
