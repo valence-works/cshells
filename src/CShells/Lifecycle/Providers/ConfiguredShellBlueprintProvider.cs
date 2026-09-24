@@ -81,6 +81,8 @@ internal sealed class ConfiguredShellBlueprintProvider(
                     merged.FeatureConfigurators[featureName] = configure;
             }
 
+            ShellConfigurationGeneration.Copy(shellSpecific, merged);
+
             return merged;
         }
 

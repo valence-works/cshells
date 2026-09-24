@@ -52,6 +52,7 @@ internal sealed class ShellProviderBuilder(
         // generation from a private copy so dependency expansion and preparation cannot contaminate
         // a later activation or reload of the same blueprint.
         settings = CloneSettings(settings);
+        ShellConfigurationGeneration.ThrowIfChanged(settings, "after composition and before preparation of");
 
         await _featureCatalog.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         var catalog = _featureCatalog.CurrentSnapshot;
@@ -86,6 +87,7 @@ internal sealed class ShellProviderBuilder(
         settings.EnabledFeatures = [..orderedFeatures];
 
         cancellationToken.ThrowIfCancellationRequested();
+        ShellConfigurationGeneration.ThrowIfChanged(settings, "before preparation of");
 
         if (_settingsPreparer is not null)
         {
@@ -123,6 +125,7 @@ internal sealed class ShellProviderBuilder(
             var preparationResult = await _settingsPreparer.PrepareAsync(preparationContext, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("The shell settings preparer returned a null result.");
             cancellationToken.ThrowIfCancellationRequested();
+            ShellConfigurationGeneration.ThrowIfChanged(settings, "during preparation of");
             foreach (var (key, value) in preparationResult.ConfigurationData)
             {
                 if (value is null)
@@ -132,12 +135,15 @@ internal sealed class ShellProviderBuilder(
             }
         }
 
+        ShellConfigurationGeneration.ThrowIfChanged(settings, "before feature construction for");
+
         var services = new ServiceCollection();
         CopyRootServices(services);
 
         var holder = new ShellHolder();
         RegisterCoreServices(services, settings, holder, catalog.FeatureDescriptors);
 
+        ShellConfigurationGeneration.ThrowIfChanged(settings, "immediately before feature construction for");
         ConfigureFeatures(services, settings, orderedFeatures, catalog.FeatureMap);
 
         var provider = services.BuildServiceProvider();
@@ -169,6 +175,8 @@ internal sealed class ShellProviderBuilder(
 
         foreach (var (featureName, configurator) in source.FeatureConfigurators)
             clone.FeatureConfigurators[featureName] = configurator;
+
+        ShellConfigurationGeneration.Copy(source, clone);
 
         return clone;
     }

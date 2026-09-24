@@ -38,6 +38,7 @@ public sealed class ConfigurationShellBlueprint : IShellBlueprint
     /// <inheritdoc />
     public Task<ShellSettings> ComposeAsync(CancellationToken cancellationToken = default)
     {
+        var sourceGeneration = _section.GetReloadToken();
         var settings = new ShellSettings(new ShellId(Name));
 
         var configurationSection = _section.GetSection("Configuration");
@@ -46,6 +47,11 @@ public sealed class ConfigurationShellBlueprint : IShellBlueprint
         var featuresSection = _section.GetSection("Features");
         var features = ConfigurationHelper.ParseFeaturesFromConfiguration(featuresSection, Name);
         ConfigurationHelper.ApplyFeatureEntries(features, settings);
+
+        if (sourceGeneration.HasChanged)
+            throw ShellConfigurationGeneration.CreateChangedException(Name, "while composing");
+
+        ShellConfigurationGeneration.Attach(settings, sourceGeneration);
 
         return Task.FromResult(settings);
     }
