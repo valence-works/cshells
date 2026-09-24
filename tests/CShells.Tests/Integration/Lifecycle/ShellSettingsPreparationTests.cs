@@ -1,6 +1,8 @@
 using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Lifecycle;
+using CShells.Lifecycle.Providers;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Integration.Lifecycle;
@@ -179,6 +181,78 @@ public class ShellSettingsPreparationTests
         Assert.Equal(["prepare"], probe.Events);
     }
 
+    [Fact(DisplayName = "Configuration change after composition refuses before the settings preparer or features run")]
+    public async Task ConfigurationChange_AfterComposition_RefusesReloadBeforePreparation()
+    {
+        var probe = new PreparationProbe();
+        var configuration = CreateShellConfiguration();
+        var provider = new ReloadAfterComposeBlueprintProvider(configuration);
+        await using var host = BuildConfigurationPreparedHost(configuration, probe, new FirstPreparer(), provider);
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var active = await registry.ActivateAsync("payments");
+        probe.Events.Clear();
+        provider.ReloadAfterCompose = true;
+
+        var reload = await registry.ReloadAsync("payments");
+
+        Assert.IsType<InvalidOperationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.Same(active, registry.GetActive("payments"));
+        Assert.Equal(ShellLifecycleState.Active, active.State);
+        Assert.Empty(probe.Events);
+    }
+
+    [Fact(DisplayName = "Configuration change during settings preparation refuses before feature construction")]
+    public async Task ConfigurationChange_DuringPreparation_RefusesReloadBeforeFeatures()
+    {
+        var probe = new PreparationProbe();
+        var configuration = CreateShellConfiguration();
+        var preparer = new RecordingPreparer(probe, context =>
+        {
+            if (context.ConfigurationData["Generation"] == "first" && probe.ReloadDuringPreparation)
+            {
+                configuration["CShells:Shells:payments:Configuration:Generation"] = "second";
+                configuration.Reload();
+            }
+            return ShellSettingsPreparationResult.Unchanged(context);
+        });
+        await using var host = BuildConfigurationPreparedHost(
+            configuration,
+            probe,
+            preparer,
+            new ConfigurationShellBlueprintProvider(configuration.GetSection("CShells:Shells")));
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var active = await registry.ActivateAsync("payments");
+        probe.Events.Clear();
+        probe.ReloadDuringPreparation = true;
+
+        var reload = await registry.ReloadAsync("payments");
+
+        Assert.IsType<InvalidOperationException>(reload.Error);
+        Assert.Null(reload.NewShell);
+        Assert.Same(active, registry.GetActive("payments"));
+        Assert.Equal(ShellLifecycleState.Active, active.State);
+        Assert.Equal(["prepare"], probe.Events);
+    }
+
+    [Fact(DisplayName = "A stable configuration source activates through settings preparation")]
+    public async Task ConfigurationSource_StableDuringPreparation_Activates()
+    {
+        var probe = new PreparationProbe();
+        var configuration = CreateShellConfiguration();
+        await using var host = BuildConfigurationPreparedHost(
+            configuration,
+            probe,
+            new RecordingPreparer(probe, ShellSettingsPreparationResult.Unchanged),
+            new ConfigurationShellBlueprintProvider(configuration.GetSection("CShells:Shells")));
+
+        var shell = await host.GetRequiredService<IShellRegistry>().ActivateAsync("payments");
+
+        Assert.Equal(ShellLifecycleState.Active, shell.State);
+        Assert.Equal("first", shell.ServiceProvider.GetRequiredService<ShellSettings>().GetConfiguration("Generation"));
+        Assert.Equal(["prepare", "ctor:PreparationDependency", "services:PreparationDependency:", "ctor:PreparationDependent", "services:PreparationDependent:"], probe.Events);
+    }
+
     [Theory(DisplayName = "No-op preparation and no preparer preserve typed configuration and code-first overrides")]
     [InlineData(false)]
     [InlineData(true)]
@@ -264,6 +338,30 @@ public class ShellSettingsPreparationTests
                 services.AddSingleton<IShellSettingsPreparer>(preparer);
         });
 
+    private static ServiceProvider BuildConfigurationPreparedHost(
+        IConfigurationRoot configuration,
+        PreparationProbe probe,
+        IShellSettingsPreparer preparer,
+        IShellBlueprintProvider blueprintProvider) => ShellRegistryActivateTests.BuildHost(
+        cshells => cshells
+            .WithAssemblyContaining<ShellSettingsPreparationTests>()
+            .ConfigureAllShells(_ => { })
+            .AddBlueprintProvider(_ => blueprintProvider),
+        services =>
+        {
+            services.AddSingleton<IConfiguration>(configuration);
+            services.AddSingleton(probe);
+            services.AddSingleton(preparer);
+        });
+
+    private static IConfigurationRoot CreateShellConfiguration() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["CShells:Shells:payments:Features:PreparationDependent"] = "true",
+            ["CShells:Shells:payments:Configuration:Generation"] = "first"
+        })
+        .Build();
+
     private sealed class RecordingPreparer(
         PreparationProbe probe,
         Func<ShellSettingsPreparationContext, ShellSettingsPreparationResult> prepare) : IShellSettingsPreparer
@@ -288,6 +386,46 @@ public class ShellSettingsPreparationTests
     public sealed class PreparationProbe
     {
         public List<string> Events { get; } = [];
+        public bool ReloadDuringPreparation { get; set; }
+    }
+
+    private sealed class ReloadAfterComposeBlueprintProvider(
+        IConfigurationRoot configuration) : IShellBlueprintProvider
+    {
+        private readonly IConfigurationRoot configuration = configuration;
+        private readonly ConfigurationShellBlueprintProvider inner = new(configuration.GetSection("CShells:Shells"));
+
+        public bool ReloadAfterCompose { get; set; }
+
+        public async Task<ProvidedBlueprint?> GetAsync(string name, CancellationToken cancellationToken = default)
+        {
+            var provided = await inner.GetAsync(name, cancellationToken);
+            return provided is null
+                ? null
+                : new ProvidedBlueprint(new ReloadAfterComposeBlueprint(provided.Blueprint, this), provided.Manager);
+        }
+
+        public Task<BlueprintPage> ListAsync(BlueprintListQuery query, CancellationToken cancellationToken = default) =>
+            inner.ListAsync(query, cancellationToken);
+
+        private sealed class ReloadAfterComposeBlueprint(
+            IShellBlueprint inner,
+            ReloadAfterComposeBlueprintProvider provider) : IShellBlueprint
+        {
+            public string Name => inner.Name;
+            public IReadOnlyDictionary<string, string> Metadata => inner.Metadata;
+
+            public async Task<ShellSettings> ComposeAsync(CancellationToken cancellationToken = default)
+            {
+                var settings = await inner.ComposeAsync(cancellationToken);
+                if (provider.ReloadAfterCompose)
+                {
+                    provider.configuration["CShells:Shells:payments:Configuration:Generation"] = "second";
+                    provider.configuration.Reload();
+                }
+                return settings;
+            }
+        }
     }
 
     public sealed class PreparationOptions
