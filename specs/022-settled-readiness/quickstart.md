@@ -3,6 +3,7 @@
 Use the repository .NET SDK through the shared build-slot wrapper. The focused scenario uses real DI/registry composition and gated participants; no elapsed-time sleeps determine correctness.
 
 ```bash
+dotnet restore CShells.sln
 dotnet test tests/CShells.Tests/CShells.Tests.csproj -c Release --filter FullyQualifiedName~ShellRegistrySettledObservationTests
 dotnet test tests/CShells.Tests/CShells.Tests.csproj -c Release --no-restore
 dotnet test tests/CShells.Tests.EndToEnd/CShells.Tests.EndToEnd.csproj -c Release --no-restore
