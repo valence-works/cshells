@@ -54,7 +54,22 @@ internal sealed class Shell(
     /// <inheritdoc />
     public IDrainOperation? Drain => State == ShellLifecycleState.Disposed ? null : PublishedDrain;
 
-    internal DrainOperation? PublishedDrain => Volatile.Read(ref _drain);
+    internal DrainOperation? PublishedDrain
+    {
+        get
+        {
+            while (Volatile.Read(ref _drain) is { } operation)
+            {
+                if (!operation.IsCompleted)
+                    return operation;
+
+                // Completion can wake a caller before RunAsync removes its published pointer.
+                ReleaseDrain(operation);
+            }
+
+            return null;
+        }
+    }
 
     internal void ReleaseDrain(DrainOperation operation) =>
         Interlocked.CompareExchange(ref _drain, null, operation);

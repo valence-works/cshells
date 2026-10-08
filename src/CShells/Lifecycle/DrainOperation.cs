@@ -41,6 +41,8 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
     /// <inheritdoc />
     public DrainStatus Status => (DrainStatus)Volatile.Read(ref _status);
 
+    internal bool IsCompleted => _completion.Task.IsCompleted;
+
     /// <inheritdoc />
     public DateTimeOffset? Deadline => _deadline;
 
@@ -101,14 +103,14 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
                 {
                     var finalStatus = ResolveStatus(result.HandlerResults);
                     Volatile.Write(ref _status, (int)finalStatus);
-                    _shell.ReleaseDrain(this);
                     _completion.TrySetResult(result with { Status = finalStatus });
+                    _shell.ReleaseDrain(this);
                 }
             }
             catch (Exception ex)
             {
-                _shell.ReleaseDrain(this);
                 _completion.TrySetException(ex);
+                _shell.ReleaseDrain(this);
             }
             finally
             {
