@@ -43,7 +43,7 @@ public static class CShellsNuplaneBuilderExtensions
             services.AddSingleton<CoordinatorHolder>(serviceProvider => new CoordinatorHolder(
                 new NuplaneRefreshCoordinator(
                     serviceProvider.GetRequiredService<CShells.Features.IRuntimeFeatureCatalog>(),
-                    serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<NuplaneIntegrationOptions>>(),
+                    serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<NuplaneIntegrationOptions>>(),
                     () => serviceProvider.GetRequiredService<IShellRegistry>())));
             services.AddSingleton<INuplaneObserver>(serviceProvider => serviceProvider.GetRequiredService<CoordinatorHolder>().Coordinator);
             services.AddSingleton<IShellGenerationBuildParticipant>(serviceProvider => serviceProvider.GetRequiredService<CoordinatorHolder>().Coordinator);

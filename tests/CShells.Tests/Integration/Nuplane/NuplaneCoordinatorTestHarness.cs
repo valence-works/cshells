@@ -1,9 +1,47 @@
 using System.Reflection;
 using CShells.Features;
 using CShells.Lifecycle;
+using Microsoft.Extensions.Options;
 using Nuplane.Abstractions;
+using System.Runtime.ExceptionServices;
 
 namespace CShells.Tests.Integration.Nuplane;
+
+internal sealed class TestOptionsMonitor<TOptions>(TOptions currentValue) : IOptionsMonitor<TOptions>
+    where TOptions : class
+{
+    private TOptions _currentValue = currentValue;
+    private Exception? _readException;
+    private int _readCount;
+
+    public int ReadCount => Volatile.Read(ref _readCount);
+
+    public TOptions CurrentValue => Get(Options.DefaultName);
+
+    public TOptions Get(string? name)
+    {
+        Interlocked.Increment(ref _readCount);
+        if (Volatile.Read(ref _readException) is { } exception)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+
+        return Volatile.Read(ref _currentValue);
+    }
+
+    public IDisposable? OnChange(Action<TOptions, string?> listener) => NoOpDisposable.Instance;
+
+    public void Replace(TOptions options) => Volatile.Write(ref _currentValue, options);
+
+    public void ThrowOnRead(Exception? exception) => Volatile.Write(ref _readException, exception);
+
+    private sealed class NoOpDisposable : IDisposable
+    {
+        public static NoOpDisposable Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
+    }
+}
 
 internal sealed class TestRuntimeFeatureCatalog : IRuntimeFeatureCatalog
 {
@@ -97,5 +135,51 @@ internal static class NuplaneCoordinatorTestCases
             changeSet = FakePackageAssemblyCatalog.ChangeSet(removed: ["removed-package"]);
 
         return observer.OnPackagesReconciledAsync(changeSet, appliedPackages, cancellationToken);
+    }
+
+    public static async Task RunWithGateCleanupAsync(Func<Task> exercise, Action releaseGates, params Func<Task?>[] inFlightTasks)
+    {
+        Exception? primaryFailure = null;
+        try
+        {
+            await exercise();
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
+        finally
+        {
+            releaseGates();
+        }
+
+        var cleanupFailures = new List<Exception>();
+        foreach (var getTask in inFlightTasks)
+        {
+            if (getTask() is not { } task)
+                continue;
+
+            try
+            {
+                await task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
+        }
+
+        if (primaryFailure is not null)
+        {
+            if (cleanupFailures.Count > 0)
+                throw new AggregateException("The gated test failed and cleanup also failed.", [primaryFailure, .. cleanupFailures]);
+
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+        }
+
+        if (cleanupFailures.Count == 1)
+            ExceptionDispatchInfo.Capture(cleanupFailures[0]).Throw();
+        if (cleanupFailures.Count > 1)
+            throw new AggregateException("Gated test cleanup failed.", cleanupFailures);
     }
 }

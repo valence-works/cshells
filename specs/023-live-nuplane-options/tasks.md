@@ -27,7 +27,7 @@
 **Independent Test**: An outside or DI-composed observer receives one eligible event with reload off, configuration is reloaded to turn reload on, and a later event reloads the active shell without rebuilding the provider. A gate proves changes during an admitted operation apply only to the next event.
 
 - [ ] T003 [US1] Update `src/CShells.Nuplane/Internal/NuplaneRefreshCoordinator.cs` to read `CurrentValue` once after null/cancellation/eligibility checks, validate the enum, copy all four policy values before epochs/registry/awaits, and use only that private immutable snapshot through refresh, reload, and result reporting.
-- [ ] T004 [US1] Add deterministic tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneRefreshCoordinatorTests.cs` for false-to-true automatic reload across deliveries and for a gated refresh where mutating the captured settings object and replacing `OnReloadResults` does not alter the current operation but the next delivery sees the new values.
+- [ ] T004 [US1] Add deterministic tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneLiveOptionsTests.cs` for false-to-true automatic reload across deliveries and for a gated refresh where mutating the captured settings object and replacing `OnReloadResults` does not alter the current operation but the next delivery sees the new values.
 - [ ] T005 [US1] Add or extend a DI integration test in `tests/CShells.Tests/Integration/Nuplane/NuplaneCompositionTests.cs` to prove configuration reload reaches the adapter through standard options binding, while retaining fluent and dependency-aware configuration coverage.
 
 ## Phase 4: User Story 2 - Preserve pending work and fail bad policy before side effects (P2)
@@ -36,8 +36,8 @@
 
 **Independent Test**: Gate a freshness/reload attempt, toggle enabled/reload policy, and assert existing epochs survive and can be retried without unnecessary catalog work. Use monitor, registry, and catalog counters to prove empty/canceled/error paths remain side-effect free.
 
-- [ ] T006 [US2] Extend `tests/CShells.Tests/Integration/Nuplane/NuplaneRefreshCoordinatorTests.cs` to prove disabling observer work records no new epochs while a build consumes prior freshness without reading options, and automatic-reload-off retains pending promotion work for a later enabled delivery without rescanning fresh catalog state.
-- [ ] T007 [US2] Add monitor-read, catalog, and registry counter tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneRefreshCoordinatorTests.cs` for failed-only, empty, pre-canceled, undefined refresh-trigger, throwing monitor, and options-validation failures; follow rejected invalid reads with a valid unchanged delivery/build and prove no work was recorded.
+- [ ] T006 [US2] Add tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneLiveOptionsTests.cs` to prove disabling observer work records no new epochs while a build consumes prior freshness without reading options, and automatic-reload-off retains pending promotion work for a later enabled delivery without rescanning fresh catalog state.
+- [ ] T007 [US2] Add monitor-read, catalog, and registry counter tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneLiveOptionsTests.cs` for failed-only, empty, pre-canceled, undefined refresh-trigger, throwing monitor, and options-validation failures; follow rejected invalid reads with a valid unchanged delivery/build and prove no work was recorded.
 - [ ] T008 [US2] Update `src/CShells.Nuplane/README.md` to document next-eligible-delivery settings, per-operation callback capture, preserved pending work, standard configuration paths, and direct `IOptions<NuplaneIntegrationOptions>`-only replacement as unsupported.
 
 ## Phase 5: Verification and Publication Qualification

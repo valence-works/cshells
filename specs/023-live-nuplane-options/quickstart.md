@@ -8,7 +8,7 @@ Run the focused Nuplane adapter suites through the repository's shared `dotnet` 
 
 ```bash
 dotnet test tests/CShells.Tests/CShells.Tests.csproj -c Release \
-  --filter 'FullyQualifiedName~NuplaneRefreshCoordinatorTests|FullyQualifiedName~NuplaneCompositionTests|FullyQualifiedName~NuplaneReloadResultsTests'
+  --filter 'FullyQualifiedName~NuplaneRefreshCoordinatorTests|FullyQualifiedName~NuplaneCompositionTests|FullyQualifiedName~NuplaneLiveOptionsTests|FullyQualifiedName~NuplaneReloadResultsTests'
 ```
 
 The focused cases must prove:

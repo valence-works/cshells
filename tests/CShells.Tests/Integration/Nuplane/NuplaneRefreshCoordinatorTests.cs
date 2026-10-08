@@ -2,10 +2,8 @@ using CShells.Lifecycle;
 using CShells.Nuplane;
 using CShells.Nuplane.Internal;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Nuplane.Abstractions;
 using Nuplane.Loading;
-using System.Runtime.ExceptionServices;
 
 namespace CShells.Tests.Integration.Nuplane;
 
@@ -98,7 +96,7 @@ public sealed class NuplaneRefreshCoordinatorTests
         var catalog = new TestRuntimeFeatureCatalog();
         var registry = TestShellRegistry.Create(out var registryState);
         registryState.HasActiveShell = false;
-        var coordinator = new NuplaneRefreshCoordinator(catalog, Options.Create(options), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(options), () => registry);
 
         await NuplaneCoordinatorTestCases.NotifyAsync(coordinator);
         options.Enabled = false;
@@ -147,11 +145,11 @@ public sealed class NuplaneRefreshCoordinatorTests
             if (count == 2)
                 secondActiveRead.TrySetResult();
         };
-        var coordinator = new NuplaneRefreshCoordinator(catalog, Options.Create(new NuplaneIntegrationOptions()), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()), () => registry);
 
         Task? first = null;
         Task? second = null;
-        await RunWithGateCleanupAsync(
+        await NuplaneCoordinatorTestCases.RunWithGateCleanupAsync(
             async () =>
             {
                 first = NuplaneCoordinatorTestCases.NotifyAsync(coordinator);
@@ -177,7 +175,7 @@ public sealed class NuplaneRefreshCoordinatorTests
                 : Task.CompletedTask
         };
         var registry = TestShellRegistry.Create(out _);
-        var coordinator = new NuplaneRefreshCoordinator(catalog, Options.Create(new NuplaneIntegrationOptions()), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()), () => registry);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator));
         Assert.Equal("refresh failed", exception.Message);
@@ -198,7 +196,7 @@ public sealed class NuplaneRefreshCoordinatorTests
         };
         var registry = TestShellRegistry.Create(out var registryState);
         registryState.HasActiveShell = false;
-        var coordinator = new NuplaneRefreshCoordinator(catalog, Options.Create(new NuplaneIntegrationOptions()), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()), () => registry);
         await NuplaneCoordinatorTestCases.NotifyAsync(coordinator);
         var context = new ShellGenerationBuildContext(ShellDescriptor.Create("retry-build", 1), new ShellId("retry-build"));
 
@@ -222,7 +220,7 @@ public sealed class NuplaneRefreshCoordinatorTests
             }
         };
         var registry = TestShellRegistry.Create(out _);
-        var coordinator = new NuplaneRefreshCoordinator(catalog, Options.Create(new NuplaneIntegrationOptions()), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()), () => registry);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator, cancellationToken: cancellation.Token));
         await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
@@ -289,12 +287,12 @@ public sealed class NuplaneRefreshCoordinatorTests
         };
         var coordinator = new NuplaneRefreshCoordinator(
             catalog,
-            Options.Create(new NuplaneIntegrationOptions { AutoReload = true }),
+            new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions { AutoReload = true }),
             () => registry);
 
         Task? first = null;
         Task? second = null;
-        await RunWithGateCleanupAsync(
+        await NuplaneCoordinatorTestCases.RunWithGateCleanupAsync(
             async () =>
             {
                 first = NuplaneCoordinatorTestCases.NotifyAsync(coordinator);
@@ -316,56 +314,8 @@ public sealed class NuplaneRefreshCoordinatorTests
     {
         var catalog = new TestRuntimeFeatureCatalog();
         var registry = TestShellRegistry.Create(out var registryState);
-        var coordinator = new NuplaneRefreshCoordinator(catalog, Options.Create(options ?? new NuplaneIntegrationOptions()), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(options ?? new NuplaneIntegrationOptions()), () => registry);
         return (coordinator, catalog, registryState);
     }
 
-    private static async Task RunWithGateCleanupAsync(
-        Func<Task> exercise,
-        Action releaseGates,
-        params Func<Task?>[] inFlightTasks)
-    {
-        Exception? primaryFailure = null;
-        try
-        {
-            await exercise();
-        }
-        catch (Exception exception)
-        {
-            primaryFailure = exception;
-        }
-        finally
-        {
-            releaseGates();
-        }
-
-        var cleanupFailures = new List<Exception>();
-        foreach (var getTask in inFlightTasks)
-        {
-            if (getTask() is not { } task)
-                continue;
-
-            try
-            {
-                await task.WaitAsync(TimeSpan.FromSeconds(5));
-            }
-            catch (Exception exception)
-            {
-                cleanupFailures.Add(exception);
-            }
-        }
-
-        if (primaryFailure is not null)
-        {
-            if (cleanupFailures.Count > 0)
-                throw new AggregateException("The gated test failed and cleanup also failed.", [primaryFailure, .. cleanupFailures]);
-
-            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
-        }
-
-        if (cleanupFailures.Count == 1)
-            ExceptionDispatchInfo.Capture(cleanupFailures[0]).Throw();
-        if (cleanupFailures.Count > 1)
-            throw new AggregateException("Gated test cleanup failed.", cleanupFailures);
-    }
 }

@@ -109,21 +109,35 @@ public sealed class NuplaneCompositionTests
         Assert.Equal(1, packageCatalog.QueryCount);
     }
 
-    [Fact]
-    public void StandardDependencyAwareOptionsConfigurationRemainsAvailable()
+    [Fact(DisplayName = "Dependency-aware options configuration reaches the registered observer")]
+    public async Task DependencyAwareConfiguration_RegisteredWithTheObserver_InvokesConfiguredCallback()
     {
-        Func<IReadOnlyList<ReloadResult>, CancellationToken, ValueTask> callback = (_, _) => ValueTask.CompletedTask;
-        var services = new ServiceCollection();
-        services.AddSingleton(new CallbackDependency(callback));
-        services.AddOptions<NuplaneIntegrationOptions>()
-            .Configure<CallbackDependency>((options, dependency) => options.OnReloadResults = dependency.Callback);
-        services.AddSingleton<IPackageAssemblyCatalog>(new FakePackageAssemblyCatalog());
-        services.AddCShells(shells => shells.WithNuplaneFeatureDiscovery());
-        using var provider = services.BuildServiceProvider();
+        var callbackCount = 0;
+        var dependencyCallback = (IReadOnlyList<ReloadResult> _, CancellationToken _) =>
+        {
+            Interlocked.Increment(ref callbackCount);
+            return ValueTask.CompletedTask;
+        };
+        await using var host = NuplaneTestHost.Build(
+            services =>
+            {
+                services.AddSingleton(new CallbackDependency(dependencyCallback));
+                services.AddOptions<NuplaneIntegrationOptions>()
+                    .Configure<CallbackDependency>((options, dependency) =>
+                    {
+                        options.AutoReload = true;
+                        options.OnReloadResults = dependency.Callback;
+                    });
+                services.AddSingleton<IPackageAssemblyCatalog>(new FakePackageAssemblyCatalog());
+            },
+            shells => shells.WithNuplaneFeatureDiscovery().AddShell("dependency-options", _ => { }));
 
-        var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<NuplaneIntegrationOptions>>().Value;
+        var configured = host.GetRequiredService<Microsoft.Extensions.Options.IOptions<NuplaneIntegrationOptions>>().Value;
+        Assert.Same(dependencyCallback, configured.OnReloadResults);
+        await host.GetRequiredService<IShellRegistry>().ActivateAsync("dependency-options");
+        await NuplaneCoordinatorTestCases.NotifyAsync(host.GetRequiredService<INuplaneObserver>());
 
-        Assert.Same(callback, options.OnReloadResults);
+        Assert.Equal(1, callbackCount);
     }
 
     [Theory]

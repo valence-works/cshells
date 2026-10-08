@@ -72,6 +72,7 @@ src/CShells.Nuplane/
 tests/CShells.Tests/Integration/Nuplane/
   NuplaneRefreshCoordinatorTests.cs
   NuplaneCompositionTests.cs
+  NuplaneLiveOptionsTests.cs
   NuplaneCoordinatorTestHarness.cs or a narrowly scoped options-monitor helper
 ```
 
@@ -81,7 +82,7 @@ tests/CShells.Tests/Integration/Nuplane/
 
 Run, once on the final implementation head:
 
-1. Focused `NuplaneRefreshCoordinatorTests`, `NuplaneCompositionTests`, and `NuplaneReloadResultsTests`.
+1. Focused `NuplaneRefreshCoordinatorTests`, `NuplaneCompositionTests`, `NuplaneLiveOptionsTests`, and `NuplaneReloadResultsTests`.
 2. Full `tests/CShells.Tests/CShells.Tests.csproj` suite.
 3. Release builds of `src/CShells.Nuplane/CShells.Nuplane.csproj` for net8.0, net9.0, and net10.0.
 4. A compiled freeze-options mutation that restores the old captured-settings behavior; the live-options regression must fail under the mutation and pass after byte-identical restoration.
