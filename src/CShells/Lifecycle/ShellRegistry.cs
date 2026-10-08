@@ -449,7 +449,7 @@ internal sealed class ShellRegistry : IShellRegistry
     /// Fans out a state-change event to every registered subscriber. Subscriber exceptions are
     /// caught and logged so one failing subscriber cannot block peers or the transition.
     /// </summary>
-    internal async Task FireStateChangedAsync(
+    internal async Task<bool> FireStateChangedAsync(
         IShell shell,
         ShellLifecycleState previous,
         ShellLifecycleState current,
@@ -457,9 +457,10 @@ internal sealed class ShellRegistry : IShellRegistry
     {
         var snapshot = _subscribers;
         if (snapshot.IsEmpty)
-            return;
+            return false;
 
         var activationFailure = (ShellGenerationActivationException?)null;
+        var notificationFailed = false;
 
         foreach (var subscriber in snapshot)
         {
@@ -473,20 +474,38 @@ internal sealed class ShellRegistry : IShellRegistry
                 // generation. Continue notifying peers first so subscriber isolation remains
                 // intact, then let the transition owner dispose the rejected candidate.
                 activationFailure ??= ex;
-                _logger.LogError(ex,
-                    "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
-                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                notificationFailed = true;
+                try
+                {
+                    _logger.LogError(ex,
+                        "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
+                        subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                }
+                catch
+                {
+                    // A logger failure must not stop notification fan-out.
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex,
-                    "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
-                subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                notificationFailed = true;
+                try
+                {
+                    _logger.LogError(ex,
+                        "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
+                        subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                }
+                catch
+                {
+                    // A logger failure must not stop notification fan-out.
+                }
             }
         }
 
         if (activationFailure is not null)
             throw activationFailure;
+
+        return notificationFailed;
     }
 
     // =========================================================================
@@ -634,7 +653,9 @@ internal sealed class ShellRegistry : IShellRegistry
             {
                 try
                 {
-                    await FireStateChangedAsync(s, prev, curr).ConfigureAwait(false);
+                    var notificationFailed = await FireStateChangedAsync(s, prev, curr).ConfigureAwait(false);
+                    if (curr == ShellLifecycleState.Disposed && notificationFailed)
+                        ((Shell)s).MarkDisposedNotificationFailed();
                 }
                 finally
                 {

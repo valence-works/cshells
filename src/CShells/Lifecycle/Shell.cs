@@ -26,6 +26,7 @@ internal sealed class Shell(
     private readonly Action<ShellGenerationBuildLeaseSet>? retainBuildLeaseSet = retainBuildLeaseSet;
     private int _state = (int)ShellLifecycleState.Initializing;
     private int _activeScopes;
+    private int _disposedNotificationFailed;
 
     // Signals waiters (drain phase 1) whenever the scope counter drops. Created lazily by
     // the drain path; written to atomically.
@@ -72,6 +73,8 @@ internal sealed class Shell(
 
     /// <summary>Current active-scope count. Exposed for diagnostics.</summary>
     internal int ActiveScopeCount => Volatile.Read(ref _activeScopes);
+
+    internal void MarkDisposedNotificationFailed() => Volatile.Write(ref _disposedNotificationFailed, 1);
 
     internal void RetainBuildLeases()
     {
@@ -242,7 +245,10 @@ internal sealed class Shell(
                     break;
             }
 
-            await ReleaseBuildLeasesAfterProviderTeardownAsync().ConfigureAwait(false);
+            if (Volatile.Read(ref _disposedNotificationFailed) != 0)
+                RetainBuildLeases();
+            else
+                await ReleaseBuildLeasesAfterProviderTeardownAsync().ConfigureAwait(false);
             tcs.TrySetResult();
         }
         catch (Exception ex)
