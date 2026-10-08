@@ -20,7 +20,7 @@
 
 ## Decision: Use one small idempotent lease-set owner
 
-- **Decision**: The registry's lease-set object owns leases during acquisition and pre-provider build. The set passes through the builder result and transfers to `Shell` before initializer resolution. It releases in reverse acquisition order, attempts all leases, and retains only lease objects whose release fails. One cached release operation prevents duplicate attempts.
+- **Decision**: The registry's lease-set object owns leases during acquisition and pre-provider build. The set passes through the builder result and transfers to `Shell` before initializer resolution. It releases in reverse acquisition order, attempts all leases, and retains only lease objects whose release fails. One shared in-flight release operation and terminal state prevent duplicate attempts. After completion, the retained owner drops the task and its original exception graph; concurrent callers receive the original release failure, while later calls report a lightweight prior-failure error without retrying.
 - **Rationale**: A single owner object makes handoff and exactly-once release observable without a public lifecycle state machine. It supports reverse unwind for partial acquisition and normal teardown.
 - **Alternatives considered**: A list copied between layers (can double-release or orphan resources); a public lease state machine (unnecessary API complexity); disposing leases directly from lifecycle subscribers (notification occurs before provider teardown and is fallible).
 

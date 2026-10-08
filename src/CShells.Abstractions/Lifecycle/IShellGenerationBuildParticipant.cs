@@ -8,6 +8,9 @@ namespace CShells.Lifecycle;
 /// composition and name validation, but before CShells initializes or reads the runtime feature catalog. Callbacks
 /// for different shell names may run concurrently. A callback must not reenter activation, reload, or unregister for
 /// the same shell name because the registry serializes those operations with a non-reentrant per-name semaphore.
+/// Root registrations whose service type, implementation type, or instance implements this contract are excluded
+/// from shell providers. Factory registrations must expose a participant service type; CShells does not invoke
+/// arbitrary factories to discover hidden participant implementations.
 /// If a call throws before returning a lease, the participant must clean up its own partial acquisition. A failure
 /// from a participant propagates unchanged. If one lease's snapshot callback fails, callbacks for later leases are
 /// skipped, but CShells still releases every lease acquired for that attempt.
