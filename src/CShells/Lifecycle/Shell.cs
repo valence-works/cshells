@@ -37,10 +37,8 @@ internal sealed class Shell(
     // shutdown, see CShellsStartupHostedService).
     private Task? _disposeTask;
 
-    // CAS-published in-flight drain. Non-null while State is Deactivating/Draining/Drained;
-    // cleared back to null in DisposeCoreAsync to break the reference cycle for GC. The
-    // registry calls PublishDrain(...) once per generation; subsequent concurrent callers
-    // observe the published instance and return early.
+    // CAS-published drain, retained until the operation settles so late callers join the
+    // same provider teardown. Public Drain hides it once State reaches Disposed.
     private DrainOperation? _drain;
 
     /// <inheritdoc />
@@ -53,7 +51,12 @@ internal sealed class Shell(
     public ShellLifecycleState State => (ShellLifecycleState)Volatile.Read(ref _state);
 
     /// <inheritdoc />
-    public IDrainOperation? Drain => Volatile.Read(ref _drain);
+    public IDrainOperation? Drain => State == ShellLifecycleState.Disposed ? null : PublishedDrain;
+
+    internal DrainOperation? PublishedDrain => Volatile.Read(ref _drain);
+
+    internal void ReleaseDrain(DrainOperation operation) =>
+        Interlocked.CompareExchange(ref _drain, null, operation);
 
     /// <summary>
     /// CAS-publishes <paramref name="candidate"/> as the in-flight drain operation for this shell.
@@ -225,13 +228,8 @@ internal sealed class Shell(
     {
         try
         {
-            // Clear the drain reference BEFORE advancing to Disposed so subscribers notified of
-            // the Drained → Disposed transition observe the documented IShell.Drain invariant
-            // ("null when the state is Disposed") at the moment of the transition. Also breaks
-            // the Shell ↔ DrainOperation reference cycle so both become GC-eligible together
-            // once the registry releases its slot reference.
-            Volatile.Write(ref _drain, null);
-
+            // Public Drain becomes null with this transition; the internal operation remains
+            // available until completion so concurrent callers cannot start teardown again.
             await ForceAdvanceAsync(ShellLifecycleState.Disposed).ConfigureAwait(false);
 
             switch (ServiceProvider)

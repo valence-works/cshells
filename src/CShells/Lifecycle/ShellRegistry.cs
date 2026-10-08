@@ -381,8 +381,8 @@ internal sealed class ShellRegistry : IShellRegistry
         // the IDrainOperation contract ("concurrent callers for the same shell receive the
         // same instance") with one less moving part than the previous Lazy<T>+ConcurrentDictionary
         // pattern — the drain reference now lives on the Shell where it always belonged.
-        if (typedShell.Drain is { } existing)
-            return Task.FromResult(existing);
+        if (typedShell.PublishedDrain is { } existing)
+            return Task.FromResult<IDrainOperation>(existing);
 
         var policy = ResolveDrainPolicy();
         var gracePeriod = ResolveGracePeriod();

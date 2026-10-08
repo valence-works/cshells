@@ -135,6 +135,15 @@ public class ShellRegistryDrainTests
         var secondOp = await registry.DrainAsync(shell);
 
         Assert.NotSame(firstOp, secondOp);
+        Assert.Null(shell.Drain);
+        var secondResult = await secondOp.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(DrainStatus.Completed, secondResult.Status);
+        Assert.Empty(secondResult.HandlerResults);
+        Assert.Null(shell.Drain);
+
+        var thirdOp = await registry.DrainAsync(shell);
+        Assert.NotSame(secondOp, thirdOp);
+        await thirdOp.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [Fact(DisplayName = "Fixed-timeout policy cancels handler after deadline → TimedOut status")]

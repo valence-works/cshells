@@ -16,6 +16,7 @@ Expected outcomes:
 4. Begin, snapshot, feature build, initializer, lifecycle and provider failures preserve the designated primary error and either unwind or retain unresolved leases as specified.
 5. GC proof shows the root registry retains an unresolved lease independently of the disposed shell and provider.
 6. No participant registration follows existing behavior; participant services are root-only and do not resolve from a child shell provider.
+7. Reload remains successful when its old generation finishes draining while the candidate is blocked before initialization. Await the returned drain; a late drain joins provider teardown and preserves teardown failures while public `Drain` remains null after `Disposed`.
 
 Run the project-level multi-target build and lifecycle regression suites before integration review:
 

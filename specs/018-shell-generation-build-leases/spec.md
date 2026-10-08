@@ -71,6 +71,7 @@ If candidate construction or teardown fails, CShells attempts safe cleanup witho
 - Retaining the lease object cannot reverse participant side effects. A participant that cannot prove release must preserve its external protection while throwing.
 - Cleanup never adds lifecycle transitions to an unpublished failed candidate and never disposes the same provider twice.
 - `Disposed` can be reported before provider disposal finishes; it is not the lease-release boundary.
+- A late drain must join shared provider teardown without resolving services from a disposed provider. Completed operations are released, public `Drain` remains null after `Disposed`, and a repeated drain preserves teardown failures.
 - A no-op participant lease is the way a participant with no work participates; CShells does not invent fake participants.
 
 ## Requirements
