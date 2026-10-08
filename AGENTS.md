@@ -167,5 +167,5 @@ When asked to review or address PR review comments, think critically about each 
 - 011-map-shell-config: Planned map-based shell configuration under `CShells:Shells`
 
 <!-- SPECKIT START -->
-For the active work unit, read `specs/022-settled-readiness/plan.md`.
+For the active work unit, read `specs/023-live-nuplane-options/plan.md`.
 <!-- SPECKIT END -->
