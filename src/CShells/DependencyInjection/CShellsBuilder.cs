@@ -150,7 +150,6 @@ public class CShellsBuilder
     /// </remarks>
     /// <returns>This builder.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="serviceType"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException">The selected service is open generic, or an unkeyed enumerable registration overrides its service aggregation.</exception>
     public CShellsBuilder ShareSingletonWithShells(Type serviceType)
     {
         Guard.Against.Null(serviceType);
