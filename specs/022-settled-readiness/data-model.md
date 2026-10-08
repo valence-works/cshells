@@ -1,0 +1,3 @@
+# Data Model: Settled Active Observation
+
+No new retained state is introduced. A name slot identifies its current shell and retained historical shells. Each concrete Shell already has an activation-committed marker and lifecycle state. The observation may return the current shell only when the marker is true and the shell is still the published Active generation. Initial and replacement candidates remain unobservable until settlement. Commit rejection follows existing rollback; Complete callback exceptions remain diagnostic and do not reject activation. A returned reference is not a use lease and can begin draining immediately afterward.
