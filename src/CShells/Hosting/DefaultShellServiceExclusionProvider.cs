@@ -41,6 +41,8 @@ public class DefaultShellServiceExclusionProvider : IShellServiceExclusionProvid
         yield return typeof(IShellLifecycleSubscriber);
         yield return typeof(IShellGenerationActivationParticipant);
         yield return typeof(IShellGenerationBuildParticipant);
+        yield return typeof(IShellActivationRunner);
+        yield return typeof(ShellActivationRunner);
         yield return typeof(IShellSettingsPreparer);
         yield return typeof(IShellBlueprint);
         yield return typeof(RuntimeFeatureCatalog);

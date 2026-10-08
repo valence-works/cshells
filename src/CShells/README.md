@@ -125,6 +125,32 @@ The selection includes every unkeyed singleton registration for that service typ
 
 Keyed registrations are unchanged. A selection must have at least one unkeyed registration and every matching unkeyed registration must be singleton. Open generic selections, matching open-generic registrations, null factory results, and root-only exclusions fail when CShells builds a shell provider. Later shell core and feature registrations keep normal precedence, so this API does not force the host instance to win every single-service resolution.
 
+## Opt-In Shell Activation Runner
+
+Hosts that own their startup or warmup policy can explicitly register the generic runner:
+
+```csharp
+builder.Services.AddShellActivationRunner();
+
+var run = app.Services.GetRequiredService<IShellActivationRunner>().Start(
+    ["system", "tenant-a"],
+    retryPolicy: attempt => attempt.AttemptNumber < 4
+        ? ShellActivationRetryDecision.RetryAfter(TimeSpan.FromSeconds(2))
+        : ShellActivationRetryDecision.Stop);
+
+await run.InitialPass;
+foreach (var target in run.Snapshot)
+    logger.LogInformation("Shell {ShellName}: {Status}", target.ShellName, target.Status);
+
+await run.StopAsync(hostStoppingToken);
+```
+
+Registration is opt-in and TryAdd-style. `AddCShells` does not register or start this runner, and it adds no hosted service or startup ordering. The runner resolves the registry when the root runner service is first resolved, so registration may appear before or after `AddCShells`. The runner itself is excluded from shell service copies.
+
+Each run validates and copies its target names, deduplicates them case-insensitively, and performs one serial initial pass in first-occurrence order. `InitialPass` completes only after every target gets its first attempt; retries and their deadlines start afterward. Without a retry policy, unsuccessful targets are one-shot. A policy chooses Stop or a positive RetryAfter delay. Snapshots contain attempt counts, outcome and generic error codes, timing, failure history, retry state, and a verified generation where available; they do not expose exceptions or their messages. Retry policy and observer inputs may inspect the transient activation exception.
+
+Only a current, committed concrete CShells `Shell` can satisfy a target through external snapshot reconciliation; an unknown custom shell implementation cannot. A successful custom registry return is accepted only when it remains current at verification. Once a target is satisfied, it remains terminal even if that shell later drains. `StopAsync` cancels scheduling and joins work, bounded by its caller token, but it never drains shells. Callbacks must not synchronously wait for `StopAsync` on their own run.
+
 ## Per-Shell Initialization & Drain
 
 Register `IShellInitializer` services for per-shell startup work and `IDrainHandler` services for cooperative shutdown:
