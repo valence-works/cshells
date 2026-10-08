@@ -39,7 +39,9 @@ public interface IShellRegistry
     /// </summary>
     /// <remarks>
     /// Concurrent calls for the same inactive name are serialized — exactly one provider
-    /// lookup and one shell build is performed; all callers observe the same instance.
+    /// lookup and one shell build is performed; all callers observe the same instance. An
+    /// implementation must not complete successfully with a candidate whose activation
+    /// transaction has not settled, even if active-shell observers can already see it.
     /// </remarks>
     /// <exception cref="ShellBlueprintNotFoundException">The provider returned <c>null</c>.</exception>
     /// <exception cref="ShellBlueprintUnavailableException">The provider threw during lookup.</exception>

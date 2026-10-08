@@ -6,7 +6,9 @@ namespace CShells.Lifecycle;
 /// <remarks>
 /// Preparation runs before the Active lifecycle notification and must remain externally
 /// invisible. Commit runs only after subscribers accept the generation and the registry makes
-/// it exactly addressable. Rollback releases prepared state when either phase fails.
+/// it exactly addressable. Rollback releases prepared state when either phase fails. These
+/// callbacks run inside the shell name's activation transaction; they must not await activation,
+/// reload, or unregister for that same name.
 /// </remarks>
 public interface IShellGenerationActivationParticipant
 {

@@ -17,6 +17,10 @@ CShells is the core runtime package that provides blueprint-driven shell activat
 - **Observable events** — `IShellLifecycleSubscriber` receives every state transition
 - **Configurable drain policies** — fixed, extensible, and unbounded timeouts
 
+## Activation Request Settlement
+
+`GetOrActivateAsync` returns only after a generation's activation transaction has settled. `GetActive` and `GetAll` may expose a published candidate earlier so routing and lifecycle participants can resolve that exact generation while commit is in progress. A concurrent `GetOrActivateAsync` call waits for the same-name activation to commit or roll back; cancelling that wait does not cancel the activation. Activation participants must not await activation, reload, or unregister for the same shell name from their callbacks.
+
 ## Installation
 
 ```bash
