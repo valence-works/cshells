@@ -2,13 +2,16 @@ using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Lifecycle;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace CShells.Tests.Integration.Lifecycle;
 
 public sealed class ShellDisposedNotificationLeaseTests
 {
-    [Fact]
-    public async Task OrdinaryDisposedSubscriberFailureStillNotifiesPeersAndDisposesProviderButRetainsLeases()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OrdinaryDisposedSubscriberFailureStillNotifiesPeersAndDisposesProviderButRetainsLeases(bool loggerThrows)
     {
         var participant = new RecordingBuildParticipant();
         var failingSubscriber = new ThrowingDisposedSubscriber();
@@ -22,6 +25,8 @@ public sealed class ShellDisposedNotificationLeaseTests
                 services.AddSingleton<IShellGenerationBuildParticipant>(participant);
                 services.AddSingleton<IShellLifecycleSubscriber>(failingSubscriber);
                 services.AddSingleton<IShellLifecycleSubscriber>(peerSubscriber);
+                if (loggerThrows)
+                    services.AddSingleton<ILogger<ShellRegistry>, ThrowingErrorLogger<ShellRegistry>>();
             });
         var registry = Assert.IsType<ShellRegistry>(host.GetRequiredService<IShellRegistry>());
         var shell = await registry.ActivateAsync("disposed-notification");
@@ -112,6 +117,24 @@ public sealed class ShellDisposedNotificationLeaseTests
             if (current == ShellLifecycleState.Disposed)
                 Interlocked.Increment(ref _disposedNotifications);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingErrorLogger<T> : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Error)
+                throw new InvalidOperationException("logger failed");
         }
     }
 }

@@ -468,37 +468,18 @@ internal sealed class ShellRegistry : IShellRegistry
             {
                 await subscriber.OnStateChangedAsync(shell, previous, current, cancellationToken).ConfigureAwait(false);
             }
-            catch (ShellGenerationActivationException ex)
-            {
-                // Candidate publication is the one subscriber failure that must abort the
-                // generation. Continue notifying peers first so subscriber isolation remains
-                // intact, then let the transition owner dispose the rejected candidate.
-                activationFailure ??= ex;
-                notificationFailed = true;
-                try
-                {
-                    _logger.LogError(ex,
-                        "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
-                        subscriber.GetType().FullName, previous, current, shell.Descriptor);
-                }
-                catch
-                {
-                    // A logger failure must not stop notification fan-out.
-                }
-            }
             catch (Exception ex)
             {
                 notificationFailed = true;
-                try
+                if (ex is ShellGenerationActivationException activationException)
                 {
-                    _logger.LogError(ex,
-                        "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
-                        subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                    // Candidate publication is the one subscriber failure that must abort the
+                    // generation. Continue notifying peers before the transition owner rolls back.
+                    activationFailure ??= activationException;
+                    LogSubscriberFailure(activationException, subscriber, shell, previous, current, publicationFailure: true);
                 }
-                catch
-                {
-                    // A logger failure must not stop notification fan-out.
-                }
+                else
+                    LogSubscriberFailure(ex, subscriber, shell, previous, current, publicationFailure: false);
             }
         }
 
@@ -506,6 +487,35 @@ internal sealed class ShellRegistry : IShellRegistry
             throw activationFailure;
 
         return notificationFailed;
+    }
+
+    private void LogSubscriberFailure(
+        Exception exception,
+        IShellLifecycleSubscriber subscriber,
+        IShell shell,
+        ShellLifecycleState previous,
+        ShellLifecycleState current,
+        bool publicationFailure)
+    {
+        try
+        {
+            if (publicationFailure)
+            {
+                _logger.LogError(exception,
+                    "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
+                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+            }
+            else
+            {
+                _logger.LogError(exception,
+                    "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
+                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+            }
+        }
+        catch
+        {
+            // A logger failure must not stop notification fan-out.
+        }
     }
 
     // =========================================================================
