@@ -22,8 +22,8 @@ internal sealed class Shell(
     Action<ShellGenerationBuildLeaseSet>? retainBuildLeaseSet = null) : IShell
 {
     private readonly Func<IShell, ShellLifecycleState, ShellLifecycleState, Task> _onStateChanged = Guard.Against.Null(onStateChanged);
-    private readonly ShellGenerationBuildLeaseSet? _buildLeaseSet = buildLeaseSet;
-    private readonly Action<ShellGenerationBuildLeaseSet>? _retainBuildLeaseSet = retainBuildLeaseSet;
+    private readonly ShellGenerationBuildLeaseSet? buildLeaseSet = buildLeaseSet;
+    private readonly Action<ShellGenerationBuildLeaseSet>? retainBuildLeaseSet = retainBuildLeaseSet;
     private int _state = (int)ShellLifecycleState.Initializing;
     private int _activeScopes;
 
@@ -72,18 +72,18 @@ internal sealed class Shell(
 
     internal void RetainBuildLeases()
     {
-        if (_buildLeaseSet is { UnresolvedLeaseCount: > 0 } leaseSet)
-            (_retainBuildLeaseSet ?? throw new InvalidOperationException("The shell build lease owner has no root retention callback."))(leaseSet);
+        if (buildLeaseSet is { UnresolvedLeaseCount: > 0 } leaseSet)
+            (retainBuildLeaseSet ?? throw new InvalidOperationException("The shell build lease owner has no root retention callback."))(leaseSet);
     }
 
     internal async ValueTask ReleaseBuildLeasesAfterProviderTeardownAsync()
     {
-        if (_buildLeaseSet is null || _buildLeaseSet.UnresolvedLeaseCount == 0)
+        if (buildLeaseSet is null || buildLeaseSet.UnresolvedLeaseCount == 0)
             return;
 
         try
         {
-            await _buildLeaseSet.DisposeAsync().ConfigureAwait(false);
+            await buildLeaseSet.DisposeAsync().ConfigureAwait(false);
         }
         catch
         {

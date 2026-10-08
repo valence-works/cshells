@@ -52,8 +52,8 @@ internal sealed class ShellGenerationBuildLeaseSet(ShellDescriptor descriptor)
 
     private async Task ReleaseCoreAsync(TaskCompletionSource completion)
     {
-        var failedLeases = new List<IShellGenerationBuildLease>();
-        var failures = new List<Exception>();
+        List<IShellGenerationBuildLease> failedLeases = [];
+        List<Exception> failures = [];
 
         for (var index = _leases.Count - 1; index >= 0; index--)
         {
