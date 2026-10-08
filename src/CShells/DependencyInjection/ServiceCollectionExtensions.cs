@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IRootServiceCollectionAccessor>(),
             sp,
             sp.GetRequiredService<IShellServiceExclusionRegistry>(),
+            builder.SharedSingletonServiceTypes.ToArray(),
             sp.GetRequiredService<IShellFeatureFactory>(),
             sp.GetRequiredService<RuntimeFeatureCatalog>(),
             sp.GetService<ILogger<ShellProviderBuilder>>(),
