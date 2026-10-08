@@ -247,6 +247,17 @@ internal sealed class ShellProviderBuilder(
                     $"CShells cannot share service type '{serviceType}' because the root service collection has no unkeyed registration for it. Register at least one unkeyed singleton before building shells.");
             }
 
+            var enumerableServiceType = typeof(IEnumerable<>).MakeGenericType(serviceType);
+            var enumerableOverride = rootDescriptors.FirstOrDefault(descriptor =>
+                !descriptor.IsKeyedService &&
+                (descriptor.ServiceType == enumerableServiceType ||
+                 descriptor.ServiceType == typeof(IEnumerable<>)));
+            if (enumerableOverride is not null)
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share service type '{serviceType}' because the root has an unkeyed registration for '{enumerableOverride.ServiceType}', which overrides the DI-generated IEnumerable<{serviceType.Name}> aggregation. Remove the enumerable registration or do not select this service type for sharing. Keyed enumerable registrations are independent and do not conflict.");
+            }
+
             var nonSingleton = registrations.FirstOrDefault(descriptor => descriptor.Lifetime != ServiceLifetime.Singleton);
             if (nonSingleton is not null)
             {

@@ -16,6 +16,7 @@ Registers a runtime-selected service type under the same contract. The argument 
 - An alias registered under another service type is not implicitly selected.
 - A closed generic selection cannot also match an unkeyed open-generic registration for its generic definition.
 - The selected type cannot also be in the aggregated root-only shell exclusion set.
+- An unkeyed explicit registration for `IEnumerable<TService>` or open generic `IEnumerable<>` conflicts with the DI-generated aggregation and is rejected. Keyed enumerable registrations do not affect unkeyed aggregation and do not conflict.
 - Validation occurs when CShells copies the final root service collection into a shell provider. Invalid selections throw `InvalidOperationException` with the service type and corrective guidance.
 
 ## Ownership and resolution
@@ -26,3 +27,4 @@ Registers a runtime-selected service type under the same contract. The argument 
 - A selected factory that returns `null` is rejected with an actionable diagnostic.
 - Registrations not selected retain existing copy semantics. Feature service registrations continue to be appended after root copies and therefore retain existing precedence.
 - Shared registrations are borrowed root registrations, not forced-global resolutions. Later shell core or feature registrations retain their normal descriptor order and may override a selected registration for single-service resolution.
+- Multiple `AddCShells` calls made before building the root service provider configure one shared builder/registration. Configuration after provider construction is unsupported.

@@ -29,3 +29,15 @@
 - **Decision**: If a selected closed generic service type also matches an unkeyed open-generic descriptor, reject the selection. Reject a root enumerable containing a null result before constructing shell instance descriptors.
 - **Rationale**: A closed `GetServices<T>()` result can include instances produced by open-generic registrations that are not in the exact closed descriptor group. Silently pairing those objects with selected exact descriptors would break descriptor-order guarantees. Explicit null handling avoids leaking a lower-level descriptor-construction exception.
 - **Alternatives considered**: Pair the result by count and rely on a confusing mismatch error; silently allow open-generic registrations; let null fail later during shell descriptor creation.
+
+## Decision: Reject explicit enumerable overrides for selected service types
+
+- **Decision**: During final descriptor validation, reject an unkeyed exact `IEnumerable<TService>` descriptor or unkeyed open-generic `IEnumerable<>` descriptor when `TService` is selected for sharing.
+- **Rationale**: Microsoft DI resolves an exact or open-generic registration before synthesizing `IEnumerable<TService>` from the `TService` descriptors. The explicit registration can return unrelated objects (including a same-count sequence that passes a count check) and also overrides the shell's generated sequence after the selected descriptors are copied. Keyed enumerable registrations are independent and are not rejected.
+- **Alternatives considered**: Manually invoking descriptor factories would bypass root singleton caching/disposal ownership; constructing a temporary provider would create different singleton identities and change dependency resolution. Both conflict with this feature's ownership contract.
+
+## Decision: Reuse the builder for repeated AddCShells calls
+
+- **Decision**: Associate one registration-state/builder instance with each service collection, install core CShells descriptors once, and invoke each call's configuration action on that shared builder.
+- **Rationale**: `TryAddSingleton` retains factory closures from the first call, so separate builders silently lose later calls' configuration. Reusing the builder preserves the additive API and keeps blueprint-provider conflict checks based on registrations that predated the first CShells call. Configuration must finish before the host service provider is built.
+- **Alternatives considered**: Rejecting every repeated call is fail-fast but breaks composition where extensions contribute builder configuration in separate calls; merely sharing the singleton-selection list would leave later blueprints, assembly providers, and shell configurators silently ignored.
