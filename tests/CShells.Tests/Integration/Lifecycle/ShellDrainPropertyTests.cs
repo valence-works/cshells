@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Lifecycle;
@@ -108,28 +109,85 @@ public class ShellDrainPropertyTests
     [Fact(DisplayName = "Drain is the same instance across concurrent DrainAsync calls (publish-once CAS)")]
     public async Task Drain_SameInstance_AcrossConcurrentDrainAsyncCalls()
     {
-        await using var host = ShellRegistryActivateTests.BuildHost(cshells => cshells
-            .WithAssemblies()
-            .AddShell("epsilon", _ => { }));
+        var gate = new BlockingDrainGate();
+        await using var host = ShellRegistryActivateTests.BuildHost(cshells =>
+        {
+            cshells.Services.AddSingleton(gate);
+            cshells
+                .WithAssemblyContaining<ShellDrainPropertyTests>()
+                .AddShell("epsilon", shell => shell.WithFeature<BlockingDrainFeature>());
+        });
         var registry = host.GetRequiredService<IShellRegistry>();
         var shell = await registry.ActivateAsync("epsilon");
 
-        // Race 16 concurrent DrainAsync calls. The first to win the CAS publishes its
-        // DrainOperation onto the shell; every subsequent caller observes the same instance.
-        var tasks = Enumerable
-            .Range(0, 16)
-            .Select(_ => registry.DrainAsync(shell))
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = Enumerable.Range(0, 16)
+            .Select(_ => StartDrainCallAsync())
             .ToArray();
-        var results = await Task.WhenAll(tasks);
+        var operations = new HashSet<IDrainOperation>(ReferenceEqualityComparer.Instance);
+        Exception? primaryFailure = null;
 
-        var first = results[0];
-        Assert.All(results, r => Assert.Same(first, r));
+        async Task<IDrainOperation> StartDrainCallAsync()
+        {
+            await start.Task;
+            return await registry.DrainAsync(shell);
+        }
 
-        // Don't assert shell.Drain here — with no handlers the drain can complete and dispose
-        // the shell before Task.WhenAll returns. The CAS contract is
-        // already proven by Assert.All above; shell.Drain identity is covered by
-        // Drain_SameInstance_AsRegistryDrainAsyncReturn.
-        await first.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            start.TrySetResult();
+            await gate.Started.WaitAsync(TimeSpan.FromSeconds(5));
+            var results = await Task.WhenAll(calls).WaitAsync(TimeSpan.FromSeconds(5));
+
+            var first = results[0];
+            Assert.All(results, operation => Assert.Same(first, operation));
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
+        finally
+        {
+            start.TrySetResult();
+            gate.Release();
+        }
+
+        var cleanupFailures = new List<Exception>();
+        foreach (var call in calls)
+        {
+            try
+            {
+                var operation = await call.WaitAsync(TimeSpan.FromSeconds(5));
+                operations.Add(operation);
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
+        }
+
+        foreach (var operation in operations)
+        {
+            try
+            {
+                await operation.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
+        }
+
+        if (primaryFailure is not null)
+        {
+            if (cleanupFailures.Count > 0)
+                throw new AggregateException("The drain identity assertion and cleanup both failed.", [primaryFailure, .. cleanupFailures]);
+
+            ExceptionDispatchInfo.Capture(primaryFailure).Throw();
+        }
+
+        if (cleanupFailures.Count > 0)
+            throw new AggregateException("Concurrent drain cleanup failed.", cleanupFailures);
     }
 
     public sealed class BlockingDrainFeature : IShellFeature
