@@ -2,7 +2,7 @@
 
 ## Decision: Reserve identity before composition and validate before acquisition
 
-- **Decision**: Under the existing per-name semaphore, reserve the next descriptor generation and snapshot blueprint metadata into an immutable `ShellDescriptor` before calling `ComposeAsync`. Pair it with `new ShellId(blueprint.Name)`. Preserve the composed-name validation and begin participants only after it succeeds. Reject any generation greater than `int.MaxValue` before narrowing.
+- **Decision**: Under the existing per-name semaphore, reserve the next descriptor generation and snapshot blueprint metadata into an immutable `ShellDescriptor` before calling `ComposeAsync`. Pair it with `new ShellId(blueprint.Name)`. Preserve the composed-name validation and begin participants only after it succeeds. Keep a case-insensitive name-to-counter high-water mark for the registry lifetime, independently of removable shell slots, so unregister/recreate cannot reuse a generation. Reserve atomically, including when a removed slot overlaps a replacement, and reject any generation greater than `int.MaxValue` before narrowing.
 - **Rationale**: This gives each attempted build one framework-owned identity even if composition fails, prevents mutable blueprint metadata from changing the context, and avoids descriptor wrap/reuse.
 - **Alternatives considered**: Assigning the descriptor after composition (lets callbacks miss the attempt identity and observe mutated metadata); deriving identity from composed settings (lets the blueprint select another shell identity); unchecked cast (wraps the public descriptor generation).
 

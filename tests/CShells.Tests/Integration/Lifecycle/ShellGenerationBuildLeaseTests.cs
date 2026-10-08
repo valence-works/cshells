@@ -20,7 +20,7 @@ public sealed class ShellGenerationBuildLeaseTests
     [Fact]
     public async Task ParticipantsReceiveReservedIdentityAndSelectedSnapshotBeforeFeatureConstruction()
     {
-        List<string> events = [];
+        var events = new List<string>();
         var participant = new RecordingParticipant(events);
         BuildLeaseTestEvents.Events = events;
 
@@ -126,7 +126,7 @@ public sealed class ShellGenerationBuildLeaseTests
     [Fact]
     public async Task BeginFailureIsPreservedAndPreviouslyAcquiredLeaseIsReleased()
     {
-        List<string> events = [];
+        var events = new List<string>();
         var failure = new ApplicationException("begin failed");
         var first = new RecordingParticipant(events, "first", releaseFailure: new ApplicationException("lease dispose failed"));
         var second = new ThrowingBeginParticipant(failure);
@@ -167,7 +167,7 @@ public sealed class ShellGenerationBuildLeaseTests
     public async Task CancellationDuringSnapshotCallbackStopsBeforeFeatureConstructionAndReleasesLeases()
     {
         using var cancellation = new CancellationTokenSource();
-        List<string> events = [];
+        var events = new List<string>();
         var first = new RecordingParticipant(events, "first", onSnapshot: cancellation.Cancel);
         var second = new RecordingParticipant(events, "second");
         await using var host = BuildHost([first, second], cshells => cshells
@@ -321,7 +321,7 @@ public sealed class ShellGenerationBuildLeaseTests
     [Fact]
     public async Task SnapshotCallbackFailureSkipsLaterCallbacksAndReleasesAllAcquiredLeasesInReverseOrder()
     {
-        List<string> events = [];
+        var events = new List<string>();
         var first = new RecordingParticipant(events, "first", callbackFailure: new ApplicationException("snapshot failed"));
         var second = new RecordingParticipant(events, "second");
 
@@ -477,7 +477,7 @@ public sealed class ShellGenerationBuildLeaseTests
     [Fact]
     public async Task FailedLeaseReleaseRetainsOnlyUnresolvedLeaseAndAttemptsEarlierLeases()
     {
-        List<string> events = [];
+        var events = new List<string>();
         var firstFailure = new ApplicationException("first release failed");
         var secondFailure = new ApplicationException("second release failed");
         var first = new RecordingParticipant(events, "first", releaseFailure: firstFailure);

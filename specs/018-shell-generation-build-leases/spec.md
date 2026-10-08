@@ -79,7 +79,7 @@ If candidate construction or teardown fails, CShells attempts safe cleanup witho
 ### Functional Requirements
 
 - **FR-001**: The framework MUST define an optional build participant, immutable build context and asynchronous generation lease in the abstractions package.
-- **FR-002**: The framework MUST reserve an unused monotonic generation and immutable descriptor metadata from blueprint identity before composition, and reject exhaustion before narrowing the generation type.
+- **FR-002**: The framework MUST reserve an unused monotonic generation and immutable descriptor metadata from blueprint identity before composition, including across unregister/recreate within a registry lifetime, and reject exhaustion before narrowing the generation type.
 - **FR-003**: The framework MUST preserve composed-name validation and MUST begin participants in root registration order only after successful composition and validation.
 - **FR-004**: Participants MUST begin before catalog initialization or any catalog read; no CShells global, catalog-refresh or service-collection lock may surround participant callbacks.
 - **FR-005**: Each acquired lease MUST receive the exact detailed snapshot selected for feature building, once and before feature construction.
