@@ -1,6 +1,6 @@
 # Validation: Apply Live Nuplane Integration Options
 
-This guide defines the proof to run on the final implementation head. No implementation or acceptance test is claimed by this planning artifact.
+This guide defines the source and publication gates for Task #161. The source checks below passed; actual public-package acceptance remains pending.
 
 ## Deterministic owner tests
 
@@ -43,3 +43,17 @@ After normal owner-repository merge and package publication, audit all ten actua
 ## Acceptance boundary
 
 Record each exact source/package identity and results. This feature does not complete stable release, Foundation pin/lock updates, Foundation Host/Workbench adoption, `#2164` readability acceptance, or `#2362` unloading/pruning work.
+
+## Source qualification record (2026-10-08)
+
+Product/test head: `8cb10fba9e58c68040da993a9e634fad02f4a372`, based on `353f9e37db0607d9fb1540e139bce02aecf14e16`. Subsequent validation-record changes contain documentation only. Root and independent source review found no material blocker after correcting disabled/pending counter assertions, cleanup ownership, and real configuration reload coverage.
+
+| Gate | Exact command/result |
+| --- | --- |
+| Focused adapter tests | `dotnet test tests/CShells.Tests/CShells.Tests.csproj -c Release --no-restore --filter 'FullyQualifiedName~CShells.Tests.Integration.Nuplane' --logger trx` — 34 passed, zero failed/skipped. |
+| Full library suite | `dotnet test tests/CShells.Tests/CShells.Tests.csproj -c Release --no-build --no-restore --logger trx` — 795 passed, zero failed/skipped. |
+| Adapter Release targets | `dotnet build src/CShells.Nuplane/CShells.Nuplane.csproj -c Release --no-restore` — net8.0, net9.0, net10.0 passed, zero warnings/errors. |
+| Compiled causal mutation | Isolated exact-head worktree; replace monitor field with construction-time `CurrentValue` capture and use it in policy capture. Run `dotnet test tests/CShells.Tests/CShells.Tests.csproj -c Release --filter FullyQualifiedName~ConfigurationReload_UpdatesRegisteredObserverPolicy_OnLaterDelivery --logger trx` — one executed, one failed at `Assert.NotSame` because the shell was not reloaded. Exit 1; no compilation or timeout failure. |
+| Byte-identical restoration | Restore coordinator SHA-256 `6cfb3cb0cc725994b508cb9838f75bb849f05156eba574b9623475c351106092`; repeat the mutation command with `--no-restore` — one executed/passed, zero failed/skipped, exit 0. |
+
+TRX, build logs, both mutation sources, command arrays, hashes, and root/independent review records are retained with the program delivery artifacts. Hosted owner-repository CI, normal merge/main publication, all ten public archives, and the outside-checkout three-runtime consumer remain required before T010 and issue closure. Copilot was not requested; Greptile is optional under the maintainer's D15 decision.
