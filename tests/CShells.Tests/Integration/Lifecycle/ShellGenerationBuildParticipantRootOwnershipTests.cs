@@ -1,7 +1,6 @@
 using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Lifecycle;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Integration.Lifecycle;
@@ -13,14 +12,16 @@ public sealed class ShellGenerationBuildParticipantRootOwnershipTests
     {
         await using var host = BuildHost(services =>
         {
-            services.AddSingleton<RootOnlyBuildParticipant>();
-            services.AddSingleton<IShellGenerationBuildParticipant>(sp => sp.GetRequiredService<RootOnlyBuildParticipant>());
+            services.AddSingleton<BuildParticipantBase, RootOnlyBuildParticipant>();
+            services.AddSingleton<IShellGenerationBuildParticipant>(sp =>
+                sp.GetRequiredService<BuildParticipantBase>() as IShellGenerationBuildParticipant
+                ?? throw new InvalidOperationException("The root participant registration has an unexpected implementation."));
         });
-        var participant = host.GetRequiredService<RootOnlyBuildParticipant>();
+        var participant = Assert.IsType<RootOnlyBuildParticipant>(host.GetRequiredService<BuildParticipantBase>());
         Assert.Same(participant, host.GetRequiredService<IShellGenerationBuildParticipant>());
 
-        await ActivateDrainAndAssertRootOnlyAsync(host, "implementation-first", participant);
-        await ActivateDrainAndAssertRootOnlyAsync(host, "implementation-second", participant);
+        await ActivateDrainAndAssertRootOnlyAsync(host, "first", participant);
+        await ActivateDrainAndAssertRootOnlyAsync(host, "second", participant);
 
         Assert.Equal(2, participant.BeginCount);
         Assert.Equal(0, participant.DisposeCount);
@@ -35,16 +36,18 @@ public sealed class ShellGenerationBuildParticipantRootOwnershipTests
             services.AddSingleton<RootOnlyBuildParticipant>(_ => participant);
             services.AddSingleton<IShellGenerationBuildParticipant>(participant);
         });
-        var rootParticipant = host.GetRequiredService<RootOnlyBuildParticipant>();
-        Assert.Same(participant, rootParticipant);
+        await using (host)
+        {
+            var rootParticipant = host.GetRequiredService<RootOnlyBuildParticipant>();
+            Assert.Same(participant, rootParticipant);
 
-        await ActivateDrainAndAssertRootOnlyAsync(host, "factory-first", participant);
-        await ActivateDrainAndAssertRootOnlyAsync(host, "factory-second", participant);
+            await ActivateDrainAndAssertRootOnlyAsync(host, "first", participant);
+            await ActivateDrainAndAssertRootOnlyAsync(host, "second", participant);
 
-        Assert.Equal(2, participant.BeginCount);
-        Assert.Equal(0, participant.DisposeCount);
+            Assert.Equal(2, participant.BeginCount);
+            Assert.Equal(0, participant.DisposeCount);
+        }
 
-        await host.DisposeAsync();
         Assert.Equal(1, participant.DisposeCount);
     }
 
@@ -58,75 +61,42 @@ public sealed class ShellGenerationBuildParticipantRootOwnershipTests
             services.AddSingleton<IShellGenerationBuildParticipant>(participant);
         });
 
-        await ActivateDrainAndAssertRootOnlyAsync(host, "instance-first", participant);
-        await ActivateDrainAndAssertRootOnlyAsync(host, "instance-second", participant);
+        await ActivateDrainAndAssertRootOnlyAsync(host, "first", participant);
+        await ActivateDrainAndAssertRootOnlyAsync(host, "second", participant);
 
         Assert.Equal(2, participant.BeginCount);
         Assert.Equal(0, participant.DisposeCount);
     }
 
     private static async Task ActivateDrainAndAssertRootOnlyAsync(
-        ShellTestHost host,
+        ServiceProvider host,
         string shellName,
         RootOnlyBuildParticipant participant)
     {
         var registry = host.GetRequiredService<IShellRegistry>();
         var shell = await registry.ActivateAsync(shellName);
 
-        Assert.Null(shell.ServiceProvider.GetService<IShellGenerationBuildParticipant>());
-        Assert.Null(shell.ServiceProvider.GetService<RootOnlyBuildParticipant>());
-        Assert.Null(shell.ServiceProvider.GetService<BuildParticipantBase>());
+        try
+        {
+            Assert.Null(shell.ServiceProvider.GetService<IShellGenerationBuildParticipant>());
+            Assert.Null(shell.ServiceProvider.GetService<RootOnlyBuildParticipant>());
+            Assert.Null(shell.ServiceProvider.GetService<BuildParticipantBase>());
+        }
+        finally
+        {
+            var drain = await registry.DrainAsync(shell);
+            await drain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
 
-        var drain = await registry.DrainAsync(shell);
-        await drain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(0, participant.DisposeCount);
     }
 
-    private static ShellTestHost BuildHost(Action<IServiceCollection> configureRootServices)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-        configureRootServices(services);
-        services.AddCShells(builder =>
-        {
-            builder.WithAssemblyContaining<RootOnlyParticipantFeature>()
-                .AddShell("implementation-first", shell => shell.WithFeature<RootOnlyParticipantFeature>())
-                .AddShell("implementation-second", shell => shell.WithFeature<RootOnlyParticipantFeature>())
-                .AddShell("factory-first", shell => shell.WithFeature<RootOnlyParticipantFeature>())
-                .AddShell("factory-second", shell => shell.WithFeature<RootOnlyParticipantFeature>())
-                .AddShell("instance-first", shell => shell.WithFeature<RootOnlyParticipantFeature>())
-                .AddShell("instance-second", shell => shell.WithFeature<RootOnlyParticipantFeature>());
-        });
-        return new ShellTestHost(services.BuildServiceProvider());
-    }
-
-    private sealed class ShellTestHost(ServiceProvider provider) : IServiceProvider, IAsyncDisposable
-    {
-        public object? GetService(Type serviceType) => provider.GetService(serviceType);
-
-        public T GetRequiredService<T>() where T : notnull => provider.GetRequiredService<T>();
-
-        public async ValueTask DisposeAsync()
-        {
-            if (provider.GetService(typeof(IShellRegistry)) is IShellRegistry registry)
-            {
-                foreach (var shell in registry.GetActiveShells())
-                {
-                    try
-                    {
-                        var drain = await registry.DrainAsync(shell);
-                        await drain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-                    }
-                    catch
-                    {
-                        // Preserve the assertion while continuing teardown of remaining shells.
-                    }
-                }
-            }
-
-            await provider.DisposeAsync();
-        }
-    }
+    private static ServiceProvider BuildHost(Action<IServiceCollection> configureRootServices) =>
+        ShellRegistryActivateTests.BuildHost(cshells => cshells
+                .WithAssemblyContaining<RootOnlyParticipantFeature>()
+                .AddShell("first", shell => shell.WithFeature<RootOnlyParticipantFeature>())
+                .AddShell("second", shell => shell.WithFeature<RootOnlyParticipantFeature>()),
+            configureRootServices);
 
     public class BuildParticipantBase
     {
