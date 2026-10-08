@@ -76,6 +76,9 @@ Refresh requests and acknowledgements use separate epochs. A failed or cancelled
 `IShellRegistry.ReloadActiveAsync` returns one `ReloadResult` per active shell. The callback receives a stable read-only copy of those original results, including partial errors and nested exception chains. Use standard options configuration when reporting needs another service:
 
 ```csharp
+using CShells.Nuplane;
+using Microsoft.Extensions.Logging;
+
 services.AddOptions<NuplaneIntegrationOptions>()
     .Configure<ILoggerFactory>((options, loggerFactory) =>
     {
