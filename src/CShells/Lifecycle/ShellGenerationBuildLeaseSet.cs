@@ -5,26 +5,26 @@ namespace CShells.Lifecycle;
 /// <summary>Owns leases acquired for one generation and releases each at most once.</summary>
 internal sealed class ShellGenerationBuildLeaseSet(ShellDescriptor descriptor)
 {
-    private readonly object releaseGate = new();
-    private readonly List<IShellGenerationBuildLease> leases = [];
-    private Task? releaseTask;
-    private bool releaseCompleted;
-    private bool releaseFailed;
-    private int unresolvedLeaseCount;
+    private readonly object _releaseGate = new();
+    private readonly List<IShellGenerationBuildLease> _leases = [];
+    private Task? _releaseTask;
+    private bool _releaseCompleted;
+    private bool _releaseFailed;
+    private int _unresolvedLeaseCount;
 
     internal ShellDescriptor Descriptor { get; } = Guard.Against.Null(descriptor);
 
-    internal int UnresolvedLeaseCount => Volatile.Read(ref unresolvedLeaseCount);
+    internal int UnresolvedLeaseCount => Volatile.Read(ref _unresolvedLeaseCount);
 
     internal void Add(IShellGenerationBuildLease lease)
     {
-        lock (releaseGate)
+        lock (_releaseGate)
         {
-            if (releaseTask is not null || releaseCompleted)
+            if (_releaseTask is not null || _releaseCompleted)
                 throw new InvalidOperationException($"Build leases for shell '{Descriptor}' are already being released.");
 
-            leases.Add(Guard.Against.Null(lease));
-            Interlocked.Increment(ref unresolvedLeaseCount);
+            _leases.Add(Guard.Against.Null(lease));
+            Interlocked.Increment(ref _unresolvedLeaseCount);
         }
     }
 
@@ -34,7 +34,7 @@ internal sealed class ShellGenerationBuildLeaseSet(ShellDescriptor descriptor)
     {
         Guard.Against.Null(snapshot);
 
-        foreach (var lease in leases)
+        foreach (var lease in _leases)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await lease.OnSnapshotSelectedAsync(snapshot, cancellationToken).ConfigureAwait(false);
@@ -44,21 +44,21 @@ internal sealed class ShellGenerationBuildLeaseSet(ShellDescriptor descriptor)
     internal ValueTask DisposeAsync()
     {
         TaskCompletionSource completion;
-        lock (releaseGate)
+        lock (_releaseGate)
         {
-            if (releaseTask is not null)
-                return new ValueTask(releaseTask);
+            if (_releaseTask is not null)
+                return new ValueTask(_releaseTask);
 
-            if (releaseCompleted)
+            if (_releaseCompleted)
             {
-                return releaseFailed
+                return _releaseFailed
                     ? ValueTask.FromException(new InvalidOperationException(
                         $"Build lease release for shell '{Descriptor}' previously failed; unresolved leases remain."))
                     : ValueTask.CompletedTask;
             }
 
             completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            releaseTask = completion.Task;
+            _releaseTask = completion.Task;
         }
 
         _ = ReleaseCoreAsync(completion);
@@ -67,12 +67,12 @@ internal sealed class ShellGenerationBuildLeaseSet(ShellDescriptor descriptor)
 
     private async Task ReleaseCoreAsync(TaskCompletionSource completion)
     {
-        List<IShellGenerationBuildLease> failedLeases = [];
-        List<Exception> failures = [];
+        var failedLeases = new List<IShellGenerationBuildLease>();
+        var failures = new List<Exception>();
 
-        for (var index = leases.Count - 1; index >= 0; index--)
+        for (var index = _leases.Count - 1; index >= 0; index--)
         {
-            var lease = leases[index];
+            var lease = _leases[index];
             try
             {
                 await lease.DisposeAsync().ConfigureAwait(false);
@@ -85,9 +85,9 @@ internal sealed class ShellGenerationBuildLeaseSet(ShellDescriptor descriptor)
         }
 
         failedLeases.Reverse();
-        leases.Clear();
-        leases.AddRange(failedLeases);
-        Volatile.Write(ref unresolvedLeaseCount, failedLeases.Count);
+        _leases.Clear();
+        _leases.AddRange(failedLeases);
+        Volatile.Write(ref _unresolvedLeaseCount, failedLeases.Count);
 
         if (failures.Count == 0)
             completion.TrySetResult();
@@ -96,11 +96,11 @@ internal sealed class ShellGenerationBuildLeaseSet(ShellDescriptor descriptor)
                 $"One or more build leases for shell '{Descriptor}' failed to release.",
                 failures));
 
-        lock (releaseGate)
+        lock (_releaseGate)
         {
-            releaseFailed = failures.Count != 0;
-            releaseCompleted = true;
-            releaseTask = null;
+            _releaseFailed = failures.Count != 0;
+            _releaseCompleted = true;
+            _releaseTask = null;
         }
     }
 }

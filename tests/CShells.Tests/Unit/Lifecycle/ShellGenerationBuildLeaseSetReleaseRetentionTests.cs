@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using CShells.Lifecycle;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CShells.Tests.Unit.Lifecycle;
 
@@ -28,13 +29,14 @@ public sealed class ShellGenerationBuildLeaseSetReleaseRetentionTests
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static async Task<RetainedRelease> CaptureConcurrentFailureAsync()
     {
-        var provider = new ProviderProbe();
+        var provider = new ServiceCollection().BuildServiceProvider();
         var providerReference = new WeakReference<object>(provider);
         var failure = new ProviderHoldingException(provider);
         var failureReference = new WeakReference<Exception>(failure);
         var lease = new GatedFailureLease(failureReference);
         var leaseSet = new ShellGenerationBuildLeaseSet(ShellDescriptor.Create("retained", 1));
         leaseSet.Add(lease);
+        await provider.DisposeAsync();
 
         var firstAttempt = CaptureReleaseFailureAsync(leaseSet.DisposeAsync());
         await lease.DisposeStarted.WaitAsync(TimeSpan.FromSeconds(5));
@@ -85,8 +87,6 @@ public sealed class ShellGenerationBuildLeaseSetReleaseRetentionTests
         GatedFailureLease Lease,
         WeakReference<object> Provider,
         WeakReference<Exception> Failure);
-
-    private sealed class ProviderProbe { }
 
     private sealed class ProviderHoldingException : Exception
     {
