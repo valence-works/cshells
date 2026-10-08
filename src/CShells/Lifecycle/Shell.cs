@@ -17,9 +17,13 @@ namespace CShells.Lifecycle;
 internal sealed class Shell(
     ShellDescriptor descriptor,
     IServiceProvider serviceProvider,
-    Func<IShell, ShellLifecycleState, ShellLifecycleState, Task> onStateChanged) : IShell
+    Func<IShell, ShellLifecycleState, ShellLifecycleState, Task> onStateChanged,
+    ShellGenerationBuildLeaseSet? buildLeaseSet = null,
+    Action<ShellGenerationBuildLeaseSet>? retainBuildLeaseSet = null) : IShell
 {
     private readonly Func<IShell, ShellLifecycleState, ShellLifecycleState, Task> _onStateChanged = Guard.Against.Null(onStateChanged);
+    private readonly ShellGenerationBuildLeaseSet? _buildLeaseSet = buildLeaseSet;
+    private readonly Action<ShellGenerationBuildLeaseSet>? _retainBuildLeaseSet = retainBuildLeaseSet;
     private int _state = (int)ShellLifecycleState.Initializing;
     private int _activeScopes;
 
@@ -65,6 +69,28 @@ internal sealed class Shell(
 
     /// <summary>Current active-scope count. Exposed for diagnostics.</summary>
     internal int ActiveScopeCount => Volatile.Read(ref _activeScopes);
+
+    internal void RetainBuildLeases()
+    {
+        if (_buildLeaseSet is { UnresolvedLeaseCount: > 0 } leaseSet)
+            (_retainBuildLeaseSet ?? throw new InvalidOperationException("The shell build lease owner has no root retention callback."))(leaseSet);
+    }
+
+    internal async ValueTask ReleaseBuildLeasesAfterProviderTeardownAsync()
+    {
+        if (_buildLeaseSet is null || _buildLeaseSet.UnresolvedLeaseCount == 0)
+            return;
+
+        try
+        {
+            await _buildLeaseSet.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            RetainBuildLeases();
+            throw;
+        }
+    }
 
     /// <inheritdoc />
     public IShellScope BeginScope()
@@ -217,10 +243,13 @@ internal sealed class Shell(
                     disposable.Dispose();
                     break;
             }
+
+            await ReleaseBuildLeasesAfterProviderTeardownAsync().ConfigureAwait(false);
             tcs.TrySetResult();
         }
         catch (Exception ex)
         {
+            RetainBuildLeases();
             tcs.TrySetException(ex);
             throw;
         }

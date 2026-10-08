@@ -161,6 +161,7 @@ When asked to review or address PR review comments, think critically about each 
 - N/A; lifecycle ordering is contributed by feature service registrations and type metadata only (013-lifecycle-ordering)
 - C# 14 / .NET 10; source projects multi-target `net8.0;net9.0;net10.0` per repository conventions + Existing `Microsoft.Extensions.Configuration`, `Microsoft.Extensions.DependencyInjection`, `System.Text.Json`; no new third-party packages (014-polymorphic-feature-config)
 - N/A; configuration provider inputs only (014-polymorphic-feature-config)
+- C# 14; source packages multi-target `net8.0;net9.0;net10.0` + Existing `Microsoft.Extensions.DependencyInjection`, `Microsoft.Extensions.Logging`, and `System.Collections.Immutable`; no new package dependencies (018-shell-generation-build-leases)
 
 ## Recent Changes
 - 011-map-shell-config: Planned map-based shell configuration under `CShells:Shells`

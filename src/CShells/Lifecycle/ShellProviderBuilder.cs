@@ -45,9 +45,15 @@ internal sealed class ShellProviderBuilder(
     /// Builds a service provider for a shell composed from <paramref name="settings"/>.
     /// </summary>
     /// <returns>The provider, the holder that will be populated with the <see cref="IShell"/> reference, and the ordered enabled-feature list.</returns>
-    public async Task<BuildResult> BuildAsync(ShellSettings settings, CancellationToken cancellationToken = default)
+    internal async Task<BuildResult> BuildAsync(
+        ShellSettings settings,
+        ShellGenerationBuildContext context,
+        ShellGenerationBuildLeaseSet leaseSet,
+        CancellationToken cancellationToken = default)
     {
         Guard.Against.Null(settings);
+        Guard.Against.Null(context);
+        Guard.Against.Null(leaseSet);
         cancellationToken.ThrowIfCancellationRequested();
 
         // Blueprint implementations are allowed to reuse a ShellSettings instance. Build every
@@ -58,6 +64,7 @@ internal sealed class ShellProviderBuilder(
 
         await _featureCatalog.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         var catalog = _featureCatalog.CurrentSnapshot;
+        await leaseSet.OnSnapshotSelectedAsync(catalog, cancellationToken).ConfigureAwait(false);
 
         var requestedFeatureIds = settings.EnabledFeatures.ToArray();
 
@@ -150,7 +157,7 @@ internal sealed class ShellProviderBuilder(
 
         var provider = services.BuildServiceProvider();
 
-        return new BuildResult(provider, holder, orderedFeatures.AsReadOnly());
+        return new BuildResult(provider, holder, orderedFeatures.AsReadOnly(), context, leaseSet);
     }
 
     private static IShellSettingsPreparer? ResolveSettingsPreparer(IEnumerable<IShellSettingsPreparer>? settingsPreparers)
@@ -392,8 +399,10 @@ internal sealed class ShellProviderBuilder(
     }
 
     /// <summary>Output of <see cref="BuildAsync"/>.</summary>
-    public sealed record BuildResult(
+    internal sealed record BuildResult(
         ServiceProvider Provider,
         ShellHolder Holder,
-        IReadOnlyList<string> EnabledFeatures);
+        IReadOnlyList<string> EnabledFeatures,
+        ShellGenerationBuildContext Context,
+        ShellGenerationBuildLeaseSet LeaseSet);
 }
