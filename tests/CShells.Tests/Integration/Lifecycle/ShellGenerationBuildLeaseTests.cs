@@ -367,6 +367,42 @@ public sealed class ShellGenerationBuildLeaseTests
     }
 
     [Fact]
+    public async Task LateDrainWaitsForSharedProviderTeardownAndReleasesLeaseOnce()
+    {
+        var participant = new RecordingParticipant([]);
+        await using var host = BuildHost(participant, cshells => cshells
+            .WithAssemblyContaining<ShellGenerationBuildLeaseTests>()
+            .AddShell("late-drain", shell => shell.WithFeature<BlockingDisposalFeature>()));
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var shell = Assert.IsType<Shell>(await registry.ActivateAsync("late-drain"));
+        var probe = shell.ServiceProvider.GetRequiredService<BlockingShellDisposal>();
+        await using var heldScope = shell.BeginScope();
+        var disposal = shell.DisposeAsync().AsTask();
+        Task<DrainResult>? lateWait = null;
+        try
+        {
+            await probe.DisposeEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(ShellLifecycleState.Disposed, shell.State);
+            var lateDrain = await registry.DrainAsync(shell);
+            Assert.Null(shell.Drain);
+            lateWait = lateDrain.WaitAsync();
+            await Assert.ThrowsAsync<TimeoutException>(() => lateWait.WaitAsync(TimeSpan.FromMilliseconds(100)));
+            Assert.Equal(0, participant.Lease!.DisposeCount);
+        }
+        finally
+        {
+            probe.AllowDispose.TrySetResult();
+            await disposal.WaitAsync(TimeSpan.FromSeconds(5));
+            if (lateWait is not null)
+                await lateWait.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        Assert.Equal(1, participant.Lease!.DisposeCount);
+        Assert.Equal(1, (await lateWait!).AbandonedScopeCount);
+        Assert.Null(shell.Drain);
+    }
+
+    [Fact]
     public async Task SelectedOldSnapshotRemainsPinnedAfterNewCommitAndOtherOldShellsDrainBeforeInitializerCompletes()
     {
         CatalogSnapshotGate.Reset();
@@ -406,6 +442,10 @@ public sealed class ShellGenerationBuildLeaseTests
             CatalogSnapshotGate.Allow.TrySetResult();
             var reload = await reloadTask.WaitAsync(TimeSpan.FromSeconds(5));
             var candidate = Assert.IsAssignableFrom<IShell>(reload.NewShell);
+            Assert.Null(reload.Error);
+            var oldDrain = Assert.IsAssignableFrom<IDrainOperation>(reload.Drain);
+            var oldDrainResult = await oldDrain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(DrainStatus.Completed, oldDrainResult.Status);
             Assert.Equal(originalSnapshot.Generation, participant.SelectedGeneration(candidate.Descriptor.Generation));
             Assert.Equal(1, CandidateInitializerGate.InitializerCalls);
             Assert.Equal(1, CandidateInitializerGate.PinCountAtInitializer);
@@ -594,6 +634,12 @@ public sealed class ShellGenerationBuildLeaseTests
         {
             failure = exception;
         }
+
+        Assert.NotNull(failure);
+        var lateDrain = await registry.DrainAsync(shell);
+        var lateFailure = await Record.ExceptionAsync(() => lateDrain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Same(failure, lateFailure);
+        Assert.Null(shell.Drain);
 
         return new RetentionTargets(shellReference, providerReference, lease, probeReference, failure);
     }

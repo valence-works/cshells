@@ -7,6 +7,7 @@ namespace CShells.Lifecycle;
 /// <param name="ShellId">The shell identifier created from the same blueprint name.</param>
 /// <remarks>
 /// The descriptor's metadata is an immutable snapshot. A generation is reserved even if composition or a later
-/// build phase fails, so its value is never reused for that shell name.
+/// build phase fails. Its value is never reused for that shell name within the owning registry, including after
+/// unregistering and recreating that name. A new registry starts its own generation sequence.
 /// </remarks>
 public sealed record ShellGenerationBuildContext(ShellDescriptor Descriptor, ShellId ShellId);

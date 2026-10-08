@@ -28,6 +28,7 @@ public class DefaultShellServiceExclusionProvider : IShellServiceExclusionProvid
     {
         // Build-time infrastructure — shells must never observe these directly.
         yield return typeof(IRootServiceCollectionAccessor);
+        yield return typeof(ServiceCollectionExtensions.CShellsRegistrationState);
         yield return typeof(IReadOnlyCollection<ShellSettings>);
 
         // Root-only lifecycle infrastructure — re-registered as root delegations where shells

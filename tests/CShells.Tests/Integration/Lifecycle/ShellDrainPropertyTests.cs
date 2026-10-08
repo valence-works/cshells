@@ -56,7 +56,7 @@ public class ShellDrainPropertyTests
         Assert.Equal(DrainStatus.Completed, result.Status);
     }
 
-    [Fact(DisplayName = "Drain is null after the shell reaches Disposed (reference cycle broken)")]
+    [Fact(DisplayName = "Drain is null after the shell reaches Disposed")]
     public async Task Drain_IsNull_AfterDispose()
     {
         await using var host = ShellRegistryActivateTests.BuildHost(cshells => cshells
@@ -69,8 +69,7 @@ public class ShellDrainPropertyTests
         await op.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
 
         // The drain run drives the shell to Disposed. Per the FR-004 invariant, Drain is
-        // cleared in DisposeCoreAsync — both for the contract and to break the
-        // Shell ↔ DrainOperation reference cycle for GC.
+        // hidden after that transition. Its internal operation is released on completion.
         Assert.Equal(ShellLifecycleState.Disposed, shell.State);
         Assert.Null(shell.Drain);
     }
@@ -126,8 +125,8 @@ public class ShellDrainPropertyTests
         var first = results[0];
         Assert.All(results, r => Assert.Same(first, r));
 
-        // Don't assert shell.Drain here — with no handlers the drain completes (and disposes
-        // the shell, clearing _drain to null) before Task.WhenAll returns. The CAS contract is
+        // Don't assert shell.Drain here — with no handlers the drain can complete and dispose
+        // the shell before Task.WhenAll returns. The CAS contract is
         // already proven by Assert.All above; shell.Drain identity is covered by
         // Drain_SameInstance_AsRegistryDrainAsyncReturn.
         await first.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));

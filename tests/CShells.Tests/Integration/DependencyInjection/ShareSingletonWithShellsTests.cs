@@ -1,9 +1,12 @@
+using CShells.Configuration;
 using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Hosting;
 using CShells.Lifecycle;
+using CShells.Tests.TestHelpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace CShells.Tests.Integration.DependencyInjection;
 
@@ -112,6 +115,143 @@ public sealed class ShareSingletonWithShellsTests
         Assert.Equal(1, rootDisposals);
         first.Dispose();
         Assert.Equal(1, callerDisposals);
+    }
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    public async Task ShareSingletonWithShells_ExplicitEnumerableOverride_ThrowsActionableError(
+        int enumerableCount,
+        bool registerAfterAddCShells)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton<ISharedProbe>(_ => new SharedProbe());
+
+        if (!registerAfterAddCShells)
+            AddEnumerableOverride(services, enumerableCount);
+
+        services.AddCShells(builder => builder
+            .WithAssemblies()
+            .ShareSingletonWithShells<ISharedProbe>()
+            .AddShell("tenant", _ => { }));
+
+        if (registerAfterAddCShells)
+            AddEnumerableOverride(services, enumerableCount);
+
+        await using var host = services.BuildServiceProvider();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => host.GetRequiredService<IShellRegistry>().ActivateAsync("tenant"));
+
+        Assert.Contains(typeof(IEnumerable<ISharedProbe>).ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("do not select", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ShareSingletonWithShells_OpenGenericEnumerableOverride_ThrowsActionableError()
+    {
+        await using var host = BuildHost(
+            services =>
+            {
+                services.AddSingleton<ISharedProbe>(_ => new SharedProbe());
+                services.AddSingleton(typeof(IEnumerable<>), typeof(EmptyEnumerable<>));
+            },
+            builder => builder.ShareSingletonWithShells<ISharedProbe>().AddShell("tenant", _ => { }));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => host.GetRequiredService<IShellRegistry>().ActivateAsync("tenant"));
+
+        Assert.Contains(typeof(IEnumerable<>).ToString(), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ShareSingletonWithShells_KeyedEnumerableOverride_IsIndependent()
+    {
+        var rootInstance = new SharedProbe();
+        var keyedInstances = new ISharedProbe[] { new SharedProbe() };
+        await using var host = BuildHost(
+            services =>
+            {
+                services.AddSingleton<ISharedProbe>(rootInstance);
+                services.AddKeyedSingleton<IEnumerable<ISharedProbe>>("custom", keyedInstances);
+            },
+            builder => builder.ShareSingletonWithShells<ISharedProbe>().AddShell("tenant", _ => { }));
+
+        var shell = await host.GetRequiredService<IShellRegistry>().ActivateAsync("tenant");
+
+        Assert.Same(rootInstance, Assert.Single(shell.ServiceProvider.GetServices<ISharedProbe>()));
+        Assert.Same(keyedInstances, shell.ServiceProvider.GetRequiredKeyedService<IEnumerable<ISharedProbe>>("custom"));
+    }
+
+    [Fact]
+    public async Task ShareSingletonWithShells_UnselectedExplicitEnumerable_RemainsUnchanged()
+    {
+        var explicitEnumerable = new ISharedProbe[] { new SharedProbe(), new SharedProbe() };
+        await using var host = BuildHost(
+            services =>
+            {
+                services.AddSingleton<ISharedProbe>(_ => new SharedProbe());
+                services.AddSingleton<IEnumerable<ISharedProbe>>(explicitEnumerable);
+            },
+            builder => builder.AddShell("tenant", _ => { }));
+
+        var shell = await host.GetRequiredService<IShellRegistry>().ActivateAsync("tenant");
+
+        Assert.Same(explicitEnumerable, shell.ServiceProvider.GetRequiredService<IEnumerable<ISharedProbe>>());
+        Assert.Equal(2, shell.ServiceProvider.GetServices<ISharedProbe>().Count());
+    }
+
+    [Fact]
+    public async Task AddCShells_RepeatedCallsReuseBuilderAndRegisterInfrastructureOnce()
+    {
+        var rootInstance = new SharedProbe();
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton<ISharedProbe>(rootInstance);
+
+        var firstBuilder = services.AddCShells(builder => builder
+            .WithAssemblies()
+            .ConfigureAllShells(shell => shell.WithConfiguration("FirstDefault", "present"))
+            .AddShell("one", _ => { }));
+        var secondBuilder = services.AddCShells(builder => builder
+            .ShareSingletonWithShells<ISharedProbe>()
+            .ConfigureAllShells(shell => shell.WithConfiguration("SecondDefault", "present"))
+            .AddShell("two", _ => { }));
+
+        Assert.Same(firstBuilder, secondBuilder);
+        await using var host = services.BuildServiceProvider();
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var one = await registry.ActivateAsync("one");
+        var two = await registry.ActivateAsync("two");
+
+        Assert.Same(rootInstance, one.ServiceProvider.GetRequiredService<ISharedProbe>());
+        Assert.Same(rootInstance, two.ServiceProvider.GetRequiredService<ISharedProbe>());
+        foreach (var shell in new[] { one, two })
+        {
+            var settings = shell.ServiceProvider.GetRequiredService<ShellSettings>();
+            Assert.Equal("present", settings.GetConfiguration("FirstDefault"));
+            Assert.Equal("present", settings.GetConfiguration("SecondDefault"));
+        }
+
+        Assert.Single(host.GetServices<IShellLifecycleSubscriber>());
+        Assert.Single(host.GetServices<IHostedService>().OfType<CShellsStartupHostedService>());
+        Assert.Single(host.GetServices<IShellServiceExclusionProvider>().OfType<DefaultShellServiceExclusionProvider>());
+    }
+
+    [Fact]
+    public void AddCShells_RepeatedCallsKeepPreExistingBlueprintProviderGuard()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton<IShellBlueprintProvider>(_ => new StubShellBlueprintProvider());
+        services.AddCShells(builder => builder.WithAssemblies());
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddCShells(builder => builder.AddShell("ignored", _ => { })));
+
+        Assert.Contains("pre-existing IShellBlueprintProvider", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact(DisplayName = "Unselected singleton registrations keep per-shell copy behavior")]
@@ -279,6 +419,10 @@ public sealed class ShareSingletonWithShellsTests
     }
 
     private sealed class UnselectedProbe;
+
+    private static void AddEnumerableOverride(IServiceCollection services, int count) =>
+        services.AddSingleton<IEnumerable<ISharedProbe>>(
+            Enumerable.Range(0, count).Select(_ => (ISharedProbe)new SharedProbe()).ToArray());
 }
 
 public interface ISharedProbe;
@@ -318,6 +462,13 @@ public sealed class DisposalCounts
 public interface IGenericProbe<T>;
 
 public sealed class GenericProbe<T> : IGenericProbe<T>;
+
+public sealed class EmptyEnumerable<T> : IEnumerable<T>
+{
+    public IEnumerator<T> GetEnumerator() => Enumerable.Empty<T>().GetEnumerator();
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
 
 [ShellFeature("SharedProbeOverride")]
 public sealed class SharedProbeOverrideFeature : IShellFeature

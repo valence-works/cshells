@@ -40,6 +40,7 @@ A consumer can perform more catalog work during notification handling without bl
 ## Edge Cases
 
 - Notifications are not replayed to a subscriber that registers after a commit. Such a consumer should subscribe before initialization or read `CurrentSnapshot` after subscribing to reconcile the race.
+- A subscriber added after a commit does not receive that generation even if dispatch is queued; unsubscribing before a queued generation is sampled suppresses it, while a generation already sampled may finish invoking the removed handler.
 - With concurrent commits, a callback for generation N may observe `CurrentSnapshot` at a later generation; its event payload remains the exact snapshot for N.
 - Cancellation after a snapshot commits cannot undo the committed snapshot or retract its queued notification.
 - Repeated `EnsureInitializedAsync` or snapshot reads after initialization do not create commits or notifications.
