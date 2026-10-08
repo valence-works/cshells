@@ -92,8 +92,29 @@ public class RuntimeFeatureCatalogAccessorTests
         // Assert
         Assert.NotNull(catalog);
         Assert.IsType<RuntimeFeatureCatalogAccessor>(catalog);
+        Assert.IsAssignableFrom<IRuntimeFeatureCatalogCommitSource>(catalog);
         var snapshot = await catalog.RefreshAsync();
         Assert.NotNull(snapshot);
+    }
+
+    [Fact]
+    public async Task AddCShells_DoesNotExposeAnEventAliasForAReplacedCatalog()
+    {
+        var stock = new RuntimeFeatureCatalogAccessor(new RuntimeFeatureCatalog(
+            _ => Task.FromResult<IReadOnlyCollection<Assembly>>([])));
+        var legacy = new ProjectionOnlyCatalog(await stock.RefreshAsync());
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddCShells(cshells => cshells.WithAssemblyContaining<RuntimeFeatureCatalogAccessorTests>());
+        services.AddSingleton<IRuntimeFeatureCatalog>(legacy);
+
+        await using var provider = services.BuildServiceProvider();
+        var resolved = provider.GetRequiredService<IRuntimeFeatureCatalog>();
+
+        Assert.Same(legacy, resolved);
+        Assert.IsNotAssignableFrom<IRuntimeFeatureCatalogCommitSource>(resolved);
+        Assert.Null(provider.GetService<IRuntimeFeatureCatalogCommitSource>());
+        Assert.Same(legacy.CurrentSnapshot, await resolved.RefreshAsync());
     }
 
     [Fact]
@@ -164,6 +185,7 @@ public class RuntimeFeatureCatalogAccessorTests
 
         await projectionOnly.EnsureInitializedAsync();
 
+        Assert.IsNotAssignableFrom<IRuntimeFeatureCatalogCommitSource>(projectionOnly);
         Assert.Same(snapshot, projectionOnly.CurrentSnapshot);
         Assert.Same(snapshot, await projectionOnly.RefreshAsync());
         await Assert.ThrowsAsync<NotSupportedException>(() => projectionOnly.GetSnapshotAsync());

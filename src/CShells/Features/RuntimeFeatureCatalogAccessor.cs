@@ -4,9 +4,16 @@ namespace CShells.Features;
 /// Adapts the internal <see cref="RuntimeFeatureCatalog"/> to the public <see cref="IRuntimeFeatureCatalog"/>
 /// contract, exposing only the stable members external consumers need.
 /// </summary>
-internal sealed class RuntimeFeatureCatalogAccessor(RuntimeFeatureCatalog catalog) : IRuntimeFeatureCatalog
+internal sealed class RuntimeFeatureCatalogAccessor(RuntimeFeatureCatalog catalog) : IRuntimeFeatureCatalog, IRuntimeFeatureCatalogCommitSource
 {
     private readonly RuntimeFeatureCatalog catalog = Guard.Against.Null(catalog);
+
+    /// <inheritdoc />
+    public event Action<RuntimeFeatureCatalogSnapshot>? SnapshotCommitted
+    {
+        add => catalog.SnapshotCommitted += value;
+        remove => catalog.SnapshotCommitted -= value;
+    }
 
     /// <inheritdoc />
     public Task<RuntimeFeatureCatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>

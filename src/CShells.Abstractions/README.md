@@ -49,6 +49,17 @@ public class MyFeature : IShellFeature
 
 `AddShellInitializer<T>()` registers the initializer as transient (unless you have already registered it yourself, in which case your lifetime is preserved) and attaches deterministic phase/order metadata. Existing direct `IShellInitializer` registrations remain valid and run in `LifecyclePhase.Default` using DI registration order.
 
+`IRuntimeFeatureCatalogCommitSource` is an optional capability for observing committed catalog snapshots. Resolve the configured `IRuntimeFeatureCatalog`, then capability-test that instance; custom implementations do not need to add this interface. Subscribe before initialization to observe the initial commit. Subscriptions do not replay past commits, so when subscribing to an already active catalog, subscribe first and then read `CurrentSnapshot` to reconcile. A refresh can commit during that read, so compare generations to avoid missing or processing a generation twice.
+
+```csharp
+if (catalog is IRuntimeFeatureCatalogCommitSource commits)
+{
+    commits.SnapshotCommitted += snapshot => queueReconciliation(snapshot);
+}
+```
+
+The event carries the exact detailed `RuntimeFeatureCatalogSnapshot`, including its generation. Notifications run synchronously outside the refresh lock, in commit order, and subscriber exceptions are isolated. Keep handlers quick and enqueue expensive work elsewhere. Concurrent refreshes can advance `CurrentSnapshot` beyond the generation currently being delivered.
+
 ## Learn More
 
 - [Main Documentation](https://github.com/sfmskywalker/cshells)
