@@ -11,7 +11,7 @@ namespace CShells.Lifecycle;
 /// <b>active</b> shell generations; delegates blueprint lookup and catalogue listing to the
 /// single injected <see cref="IShellBlueprintProvider"/>.
 /// </summary>
-internal sealed class ShellRegistry : IShellRegistry
+internal sealed class ShellRegistry : IShellRegistry, ISettledShellRegistry
 {
     private readonly ShellProviderBuilder? _providerBuilder;
     private readonly IServiceProvider? _rootProvider;
@@ -360,6 +360,22 @@ internal sealed class ShellRegistry : IShellRegistry
     {
         Guard.Against.NullOrWhiteSpace(name);
         return _slots.TryGetValue(name, out var slot) ? slot.Active : null;
+    }
+
+    /// <inheritdoc />
+    public IShell? GetSettledActive(string name)
+    {
+        Guard.Against.NullOrWhiteSpace(name);
+        if (!_slots.TryGetValue(name, out var slot) || slot.Active is not { IsActivationCommitted: true } active)
+            return null;
+
+        // Unregister removes the old slot after draining it; a concurrently recreated name must not
+        // let an observation return a generation from the detached slot.
+        return _slots.TryGetValue(name, out var currentSlot)
+            && ReferenceEquals(slot, currentSlot)
+            && IsPublishedActiveGeneration(slot, active)
+                ? active
+                : null;
     }
 
     /// <inheritdoc />

@@ -21,6 +21,20 @@ CShells is the core runtime package that provides blueprint-driven shell activat
 
 `GetOrActivateAsync` returns only after a generation's activation transaction has settled. `GetActive` and `GetAll` may expose a published candidate earlier so routing and lifecycle participants can resolve that exact generation while commit is in progress. A concurrent `GetOrActivateAsync` call waits for the same-name activation to commit or roll back; cancelling that wait does not cancel the activation. Activation participants must not await activation, reload, or unregister for the same shell name from their callbacks.
 
+## Settled Active Observation
+
+The built-in `IShellRegistry` also implements the optional `ISettledShellRegistry` capability. Cast the resolved registry rather than registering a second service:
+
+```csharp
+if (registry is ISettledShellRegistry settledRegistry)
+{
+    var settled = settledRegistry.GetSettledActive("orders");
+    // Null means no current generation has completed activation settlement.
+}
+```
+
+The synchronous query does not activate a cold shell or wait for an in-progress activation or reload. It returns the current active generation only after completion callbacks and final eligibility checks. While a replacement is provisional it returns null instead of an older generation; after rollback the restored current generation can be observed again. Complete callback errors remain diagnostic-only. The returned shell is a point-in-time observation, not a use lease, and may start draining immediately afterward. `GetActive` and routing visibility are unchanged. Third-party registries may omit this capability; distinguish that unsupported case from a supported query that returns null.
+
 ## Installation
 
 ```bash

@@ -11,27 +11,27 @@ Tests are required by constitution V; author them with implementation, then run 
 
 ## Phase 2: Foundational Contract
 
-- [ ] T002 Define the optional public capability and full XML documentation in `src/CShells.Abstractions/Lifecycle/ISettledShellRegistry.cs`; keep `IShellRegistry` and DI descriptors unchanged.
+- [X] T002 Define the optional public capability and full XML documentation in `src/CShells.Abstractions/Lifecycle/ISettledShellRegistry.cs`; keep `IShellRegistry` and DI descriptors unchanged.
 
 ## Phase 3: User Story 1 - Observe readiness without starting work (P1)
 
 **Goal**: Synchronous nonactivating settled observation for cold, pending, successful, and rejected initial activation.
 **Independent Test**: Observe while a real participant holds Commit and Complete; return null before release and the exact generation after settlement, with zero cold lookup/build work.
 
-- [ ] T003 [US1] Add initial activation, cold/unknown, invalid-name/case, blocked Commit/Complete, throwing Complete, and optional custom-registry coverage in `tests/CShells.Tests/Integration/Lifecycle/ShellRegistrySettledObservationTests.cs`.
-- [ ] T004 [US1] Implement the capability on `src/CShells/Lifecycle/ShellRegistry.cs` using existing marker/current-active identity and eligibility, without provider lookup, semaphore wait, callback, or new retained state.
+- [X] T003 [US1] Add initial activation, cold/unknown, invalid-name/case, blocked Commit/Complete, throwing Complete, and optional custom-registry coverage in `tests/CShells.Tests/Integration/Lifecycle/ShellRegistrySettledObservationTests.cs`.
+- [X] T004 [US1] Implement the capability on `src/CShells/Lifecycle/ShellRegistry.cs` using existing marker/current-active identity and eligibility, without provider lookup, semaphore wait, callback, or new retained state.
 
 ## Phase 4: User Story 2 - Observe current readiness across reload (P1)
 
 **Goal**: Current-generation observations follow successful reload and rollback without certifying provisional replacements or historical shells.
 **Independent Test**: Gate before and after publication, then exercise success, rollback, and direct drain/removal during completion.
 
-- [ ] T005 [US2] Add reload composition, pending commit/completion, success/rollback, drain/unregister/final-eligibility coverage in `tests/CShells.Tests/Integration/Lifecycle/ShellRegistrySettledObservationTests.cs`; ensure every gate and owned operation is released/joined during teardown.
-- [ ] T006 [US2] Verify rechecks cover removed/replaced name-slot identity in `src/CShells/Lifecycle/ShellRegistry.cs` and document only point-in-time semantics.
+- [X] T005 [US2] Add reload composition, pending commit/completion, success/rollback, drain/unregister/final-eligibility coverage in `tests/CShells.Tests/Integration/Lifecycle/ShellRegistrySettledObservationTests.cs`; ensure every gate and owned operation is released/joined during teardown.
+- [X] T006 [US2] Verify rechecks cover removed/replaced name-slot identity in `src/CShells/Lifecycle/ShellRegistry.cs` and document only point-in-time semantics.
 
 ## Phase 5: Polish and Qualification
 
-- [ ] T007 [P] Document capability casting, unsupported versus empty distinction, diagnostic-only Complete errors, no activation, no use lease, and unchanged routing/runner semantics in `src/CShells/README.md` and `src/CShells.Abstractions/README.md`.
+- [X] T007 [P] Document capability casting, unsupported versus empty distinction, diagnostic-only Complete errors, no activation, no use lease, and unchanged routing/runner semantics in `src/CShells/README.md` and `src/CShells.Abstractions/README.md`.
 - [ ] T008 Run focused observation, existing settlement/runner/lifecycle tests, full `tests/CShells.Tests/CShells.Tests.csproj`, `tests/CShells.Tests.EndToEnd/CShells.Tests.EndToEnd.csproj`, and three-target `src/CShells/CShells.csproj` build; save exact-head evidence in `specs/022-settled-readiness/quickstart.md`.
 - [ ] T009 Root independently reviews the exact delta and runs a compiled marker-bypass mutation/revert proof against `tests/CShells.Tests/Integration/Lifecycle/ShellRegistrySettledObservationTests.cs`; record results in `specs/022-settled-readiness/quickstart.md`.
 - [ ] T010 Root publishes one org-branch PR, merges only after exact-head review and required hosted gates, verifies main and all ten published preview packages, then qualifies a PackageReference-only external consumer on net8/net9/net10; record provenance/results in `specs/022-settled-readiness/quickstart.md` and the owning issue. Keep Foundation stable adoption acceptance separate.
