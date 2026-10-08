@@ -155,6 +155,17 @@ if (result.Drain is not null)
     await result.Drain.WaitAsync();
 ```
 
+## Runtime Feature Catalog Notifications
+
+The public `IRuntimeFeatureCatalog` remains compatible with custom host implementations. When observing commits, capability-test the resolved catalog instance instead of resolving a separate event service:
+
+```csharp
+if (catalog is IRuntimeFeatureCatalogCommitSource commits)
+    commits.SnapshotCommitted += snapshot => queueReconciliation(snapshot);
+```
+
+Subscribe before the first catalog initialization to receive its initial commit. Events are not replayed. If you subscribe later, subscribe first and read `CurrentSnapshot` to reconcile; a refresh may commit during that read, so compare generations to avoid missing or processing a generation twice. The property may also be newer than the exact snapshot in an event. Notifications are delivered in commit order outside the refresh lock, and subscriber exceptions are isolated. Handlers run synchronously, so enqueue lengthy work for later processing.
+
 ## Learn More
 
 - [Main Documentation](https://github.com/sfmskywalker/cshells)
