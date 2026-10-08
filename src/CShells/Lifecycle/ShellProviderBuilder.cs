@@ -45,9 +45,15 @@ internal sealed class ShellProviderBuilder(
     /// Builds a service provider for a shell composed from <paramref name="settings"/>.
     /// </summary>
     /// <returns>The provider, the holder that will be populated with the <see cref="IShell"/> reference, and the ordered enabled-feature list.</returns>
-    public async Task<BuildResult> BuildAsync(ShellSettings settings, CancellationToken cancellationToken = default)
+    internal async Task<BuildResult> BuildAsync(
+        ShellSettings settings,
+        ShellGenerationBuildContext context,
+        ShellGenerationBuildLeaseSet leaseSet,
+        CancellationToken cancellationToken = default)
     {
         Guard.Against.Null(settings);
+        Guard.Against.Null(context);
+        Guard.Against.Null(leaseSet);
         cancellationToken.ThrowIfCancellationRequested();
 
         // Blueprint implementations are allowed to reuse a ShellSettings instance. Build every
@@ -58,6 +64,7 @@ internal sealed class ShellProviderBuilder(
 
         await _featureCatalog.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         var catalog = _featureCatalog.CurrentSnapshot;
+        await leaseSet.OnSnapshotSelectedAsync(catalog, cancellationToken).ConfigureAwait(false);
 
         var requestedFeatureIds = settings.EnabledFeatures.ToArray();
 
@@ -150,7 +157,7 @@ internal sealed class ShellProviderBuilder(
 
         var provider = services.BuildServiceProvider();
 
-        return new BuildResult(provider, holder, orderedFeatures.AsReadOnly());
+        return new BuildResult(provider, holder, orderedFeatures.AsReadOnly(), context, leaseSet);
     }
 
     private static IShellSettingsPreparer? ResolveSettingsPreparer(IEnumerable<IShellSettingsPreparer>? settingsPreparers)
@@ -192,7 +199,7 @@ internal sealed class ShellProviderBuilder(
 
         foreach (var descriptor in rootDescriptors)
         {
-            if (excluded.Contains(descriptor.ServiceType))
+            if (excluded.Contains(descriptor.ServiceType) || IsBuildParticipantDescriptor(descriptor))
                 continue;
 
             if (!descriptor.IsKeyedService && sharedInstances.TryGetValue(descriptor.ServiceType, out var instances))
@@ -204,6 +211,27 @@ internal sealed class ShellProviderBuilder(
 
             shellServices.Add(descriptor);
         }
+    }
+
+    private static bool IsBuildParticipantDescriptor(ServiceDescriptor descriptor)
+    {
+        var participantType = typeof(IShellGenerationBuildParticipant);
+        if (participantType.IsAssignableFrom(descriptor.ServiceType))
+            return true;
+
+        // Participants are root-owned even when registered under a concrete/base service type.
+        // Inspect only metadata already present on the descriptor: invoking factories here could
+        // create services early or change the root container's lifetime/disposal behavior.
+        var implementationType = descriptor.IsKeyedService
+            ? descriptor.KeyedImplementationType
+            : descriptor.ImplementationType;
+        if (implementationType is not null && participantType.IsAssignableFrom(implementationType))
+            return true;
+
+        var implementationInstance = descriptor.IsKeyedService
+            ? descriptor.KeyedImplementationInstance
+            : descriptor.ImplementationInstance;
+        return implementationInstance is IShellGenerationBuildParticipant;
     }
 
     private Dictionary<Type, object[]> ResolveSharedSingletons(
@@ -403,8 +431,10 @@ internal sealed class ShellProviderBuilder(
     }
 
     /// <summary>Output of <see cref="BuildAsync"/>.</summary>
-    public sealed record BuildResult(
+    internal sealed record BuildResult(
         ServiceProvider Provider,
         ShellHolder Holder,
-        IReadOnlyList<string> EnabledFeatures);
+        IReadOnlyList<string> EnabledFeatures,
+        ShellGenerationBuildContext Context,
+        ShellGenerationBuildLeaseSet LeaseSet);
 }

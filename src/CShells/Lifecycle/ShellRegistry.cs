@@ -18,7 +18,12 @@ internal sealed class ShellRegistry : IShellRegistry
     private readonly IShellBlueprintProvider _blueprintProvider;
     private readonly ILogger<ShellRegistry> _logger;
     private readonly IReadOnlyList<IShellGenerationActivationParticipant> _activationParticipants;
+    private readonly IReadOnlyList<IShellGenerationBuildParticipant> _buildParticipants;
     private readonly ConcurrentDictionary<string, NameSlot> _slots = new(StringComparer.OrdinalIgnoreCase);
+    // Keep only generation high-water marks after unregister; removed slots/providers can be collected.
+    private readonly ConcurrentDictionary<string, long> _generationCounters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _retainedBuildLeaseSetsGate = new();
+    private readonly HashSet<ShellGenerationBuildLeaseSet> _retainedBuildLeaseSets = [];
     private ImmutableList<IShellLifecycleSubscriber> _subscribers = [];
 
     public ShellRegistry(
@@ -27,13 +32,15 @@ internal sealed class ShellRegistry : IShellRegistry
         IServiceProvider? rootProvider = null,
         ILogger<ShellRegistry>? logger = null,
         IEnumerable<IShellLifecycleSubscriber>? subscribers = null,
-        IEnumerable<IShellGenerationActivationParticipant>? activationParticipants = null)
+        IEnumerable<IShellGenerationActivationParticipant>? activationParticipants = null,
+        IEnumerable<IShellGenerationBuildParticipant>? buildParticipants = null)
     {
         _blueprintProvider = Guard.Against.Null(blueprintProvider);
         _providerBuilder = providerBuilder;
         _rootProvider = rootProvider;
         _logger = logger ?? NullLogger<ShellRegistry>.Instance;
         _activationParticipants = activationParticipants?.ToList() ?? [];
+        _buildParticipants = buildParticipants?.ToList() ?? [];
 
         // Subscribers registered in DI are subscribed at construction time so they observe
         // every transition — including the first activation kicked off by the startup hosted
@@ -55,8 +62,18 @@ internal sealed class ShellRegistry : IShellRegistry
             rootProvider: null,
             logger,
             subscribers: null,
-            activationParticipants: null)
+            activationParticipants: null,
+            buildParticipants: null)
     {
+    }
+
+    internal int RetainedBuildLeaseCount
+    {
+        get
+        {
+            lock (_retainedBuildLeaseSetsGate)
+                return _retainedBuildLeaseSets.Sum(leaseSet => leaseSet.UnresolvedLeaseCount);
+        }
     }
 
     // =========================================================================
@@ -366,8 +383,8 @@ internal sealed class ShellRegistry : IShellRegistry
         // the IDrainOperation contract ("concurrent callers for the same shell receive the
         // same instance") with one less moving part than the previous Lazy<T>+ConcurrentDictionary
         // pattern — the drain reference now lives on the Shell where it always belonged.
-        if (typedShell.Drain is { } existing)
-            return Task.FromResult(existing);
+        if (typedShell.PublishedDrain is { } existing)
+            return Task.FromResult<IDrainOperation>(existing);
 
         var policy = ResolveDrainPolicy();
         var gracePeriod = ResolveGracePeriod();
@@ -432,7 +449,7 @@ internal sealed class ShellRegistry : IShellRegistry
     /// Fans out a state-change event to every registered subscriber. Subscriber exceptions are
     /// caught and logged so one failing subscriber cannot block peers or the transition.
     /// </summary>
-    internal async Task FireStateChangedAsync(
+    internal async Task<bool> FireStateChangedAsync(
         IShell shell,
         ShellLifecycleState previous,
         ShellLifecycleState current,
@@ -440,9 +457,10 @@ internal sealed class ShellRegistry : IShellRegistry
     {
         var snapshot = _subscribers;
         if (snapshot.IsEmpty)
-            return;
+            return false;
 
         var activationFailure = (ShellGenerationActivationException?)null;
+        var notificationFailed = false;
 
         foreach (var subscriber in snapshot)
         {
@@ -450,26 +468,54 @@ internal sealed class ShellRegistry : IShellRegistry
             {
                 await subscriber.OnStateChangedAsync(shell, previous, current, cancellationToken).ConfigureAwait(false);
             }
-            catch (ShellGenerationActivationException ex)
-            {
-                // Candidate publication is the one subscriber failure that must abort the
-                // generation. Continue notifying peers first so subscriber isolation remains
-                // intact, then let the transition owner dispose the rejected candidate.
-                activationFailure ??= ex;
-                _logger.LogError(ex,
-                    "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
-                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex,
-                    "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
-                subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                notificationFailed = true;
+                if (ex is ShellGenerationActivationException activationException)
+                {
+                    // Candidate publication is the one subscriber failure that must abort the
+                    // generation. Continue notifying peers before the transition owner rolls back.
+                    activationFailure ??= activationException;
+                    LogSubscriberFailure(activationException, subscriber, shell, previous, current, publicationFailure: true);
+                }
+                else
+                    LogSubscriberFailure(ex, subscriber, shell, previous, current, publicationFailure: false);
             }
         }
 
         if (activationFailure is not null)
             throw activationFailure;
+
+        return notificationFailed;
+    }
+
+    private void LogSubscriberFailure(
+        Exception exception,
+        IShellLifecycleSubscriber subscriber,
+        IShell shell,
+        ShellLifecycleState previous,
+        ShellLifecycleState current,
+        bool publicationFailure)
+    {
+        try
+        {
+            if (publicationFailure)
+            {
+                _logger.LogError(exception,
+                    "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
+                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+            }
+            else
+            {
+                _logger.LogError(exception,
+                    "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
+                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+            }
+        }
+        catch
+        {
+            // A logger failure must not stop notification fan-out.
+        }
     }
 
     // =========================================================================
@@ -512,52 +558,165 @@ internal sealed class ShellRegistry : IShellRegistry
                 "Registry was constructed without a ShellProviderBuilder. Use AddCShells(...) to configure the container.");
     }
 
+    private ShellGenerationBuildContext ReserveBuildContext(IShellBlueprint blueprint)
+    {
+        var generation = checked((int)_generationCounters.AddOrUpdate(
+            blueprint.Name,
+            static _ => 1,
+            static (name, previous) => NextGenerationNumber(previous, name)));
+        var metadata = blueprint.Metadata.ToImmutableDictionary();
+        var descriptor = ShellDescriptor.Create(blueprint.Name, generation, metadata);
+        return new ShellGenerationBuildContext(descriptor, new ShellId(blueprint.Name));
+    }
+
+    internal static int NextGenerationNumber(long previousGeneration, string shellName)
+    {
+        if (previousGeneration >= int.MaxValue)
+            throw new InvalidOperationException($"Shell '{shellName}' has exhausted the supported generation range.");
+
+        return checked((int)(previousGeneration + 1));
+    }
+
+    private void RetainBuildLeaseSet(ShellGenerationBuildLeaseSet leaseSet)
+    {
+        if (leaseSet.UnresolvedLeaseCount == 0)
+            return;
+
+        lock (_retainedBuildLeaseSetsGate)
+            _retainedBuildLeaseSets.Add(leaseSet);
+    }
+
+    private async ValueTask ReleaseBuildLeasesPreservingPrimaryAsync(
+        ShellGenerationBuildLeaseSet leaseSet,
+        Exception primaryException,
+        string operation)
+    {
+        try
+        {
+            await leaseSet.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception cleanupException)
+        {
+            RetainBuildLeaseSet(leaseSet);
+            LogCleanupFailure(cleanupException, leaseSet.Descriptor, operation, primaryException);
+        }
+    }
+
+    private void LogCleanupFailure(
+        Exception cleanupException,
+        ShellDescriptor descriptor,
+        string operation,
+        Exception? primaryException = null)
+    {
+        try
+        {
+            _logger.LogError(cleanupException,
+                "Cleanup failed while {Operation} for shell {Shell}; primary failure: {PrimaryException}",
+                operation,
+                descriptor,
+                primaryException);
+        }
+        catch
+        {
+            // Diagnostics must never replace the build, initialization, or activation failure.
+        }
+    }
+
     /// <summary>
     /// Compose → build → initialize → promote. Must be called under the name's semaphore.
     /// </summary>
     private async Task<IShell> CreateGenerationAsync(NameSlot slot, IShellBlueprint blueprint, CancellationToken cancellationToken)
     {
-        // Assign the generation number. If the rest of this method throws we simply "skip" this
-        // number; the next successful reload picks up the following value. This satisfies
-        // no-reuse and no-partial-entry without bookkeeping.
-        var generation = Interlocked.Increment(ref slot.NextGeneration);
-
-        var settings = await blueprint.ComposeAsync(cancellationToken).ConfigureAwait(false);
-        if (!string.Equals(settings.Id.Name, blueprint.Name, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(
-                $"Blueprint '{blueprint.Name}' produced settings with Id.Name '{settings.Id.Name}' — blueprint name mismatch.");
-
-        var buildResult = await _providerBuilder!.BuildAsync(settings, cancellationToken).ConfigureAwait(false);
-
-        var descriptor = ShellDescriptor.Create(blueprint.Name, (int)generation, blueprint.Metadata);
-        var shell = new Shell(descriptor, buildResult.Provider, async (s, prev, curr) =>
+        var context = ReserveBuildContext(blueprint);
+        var descriptor = context.Descriptor;
+        var leaseSet = new ShellGenerationBuildLeaseSet(descriptor);
+        ShellSettings settings;
+        ShellProviderBuilder.BuildResult buildResult;
+        try
         {
-            await FireStateChangedAsync(s, prev, curr).ConfigureAwait(false);
+            settings = await blueprint.ComposeAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(settings.Id.Name, blueprint.Name, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    $"Blueprint '{blueprint.Name}' produced settings with Id.Name '{settings.Id.Name}' — blueprint name mismatch.");
 
-            // A generation transitioning to Disposed has had its endpoints/middleware removed (the
-            // Disposed-keyed subscriber cleanup ran just above, since FireStateChangedAsync is awaited
-            // first), and its IServiceProvider teardown is in flight on this same call stack (Shell
-            // advances to Disposed before disposing the provider). Release the registry's last strong
-            // reference to it now so the Shell — and, transitively, its (being-)disposed provider, which
-            // still holds the generation's service *types* — becomes GC-eligible once that teardown
-            // completes. Without this, slot.All pins every generation ever created for the lifetime of the
-            // host: an unbounded leak, and — when a generation's assemblies were loaded into a collectible
-            // AssemblyLoadContext — the disposed provider's type references keep that context (and its
-            // assemblies) resident forever, so it can never be unloaded.
-            if (curr == ShellLifecycleState.Disposed)
-                ReleaseGeneration(slot, s);
-        });
+            foreach (var participant in _buildParticipants)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var lease = await participant.BeginAsync(context, cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        $"Build participant '{participant.GetType().FullName}' returned a null lease for shell '{descriptor}'.");
+                leaseSet.Add(lease);
+            }
 
-        // Populate the holder so services in the shell's provider can resolve IShell.
-        buildResult.Holder.Set(shell);
+            buildResult = await _providerBuilder!.BuildAsync(settings, context, leaseSet, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception primaryException)
+        {
+            await ReleaseBuildLeasesPreservingPrimaryAsync(leaseSet, primaryException, "while building the candidate").ConfigureAwait(false);
+            throw;
+        }
+
+        Shell shell;
+        try
+        {
+            shell = new Shell(descriptor, buildResult.Provider, async (s, prev, curr) =>
+            {
+                try
+                {
+                    var notificationFailed = await FireStateChangedAsync(s, prev, curr).ConfigureAwait(false);
+                    if (curr == ShellLifecycleState.Disposed && notificationFailed)
+                        ((Shell)s).MarkDisposedNotificationFailed();
+                }
+                finally
+                {
+                    // Even a failed Disposed notification must not strand the Shell in slot history. The
+                    // unresolved lease owner is retained independently before Shell teardown reports failure.
+                    if (curr == ShellLifecycleState.Disposed)
+                        ReleaseGeneration(slot, s);
+                }
+            }, buildResult.LeaseSet, RetainBuildLeaseSet);
+
+            // Populate the holder so services in the shell's provider can resolve IShell.
+            buildResult.Holder.Set(shell);
+        }
+        catch (Exception primaryException)
+        {
+            var teardownError = await DisposePartialProviderAsync(buildResult.Provider).ConfigureAwait(false);
+            if (teardownError is null)
+                await ReleaseBuildLeasesPreservingPrimaryAsync(leaseSet, primaryException, "after shell construction failed").ConfigureAwait(false);
+            else
+            {
+                RetainBuildLeaseSet(leaseSet);
+                LogCleanupFailure(teardownError, descriptor, "disposing the provider after shell construction failed", primaryException);
+            }
+
+            throw;
+        }
 
         try
         {
             await RunInitializersAsync(descriptor, buildResult.Provider, cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception primaryException)
         {
-            await DisposePartialProviderAsync(buildResult.Provider).ConfigureAwait(false);
+            var teardownError = await DisposePartialProviderAsync(buildResult.Provider).ConfigureAwait(false);
+            if (teardownError is null)
+            {
+                try
+                {
+                    await shell.ReleaseBuildLeasesAfterProviderTeardownAsync().ConfigureAwait(false);
+                }
+                catch (Exception cleanupException)
+                {
+                    LogCleanupFailure(cleanupException, descriptor, "releasing leases after initializer failure", primaryException);
+                }
+            }
+            else
+            {
+                shell.RetainBuildLeases();
+                LogCleanupFailure(teardownError, descriptor, "disposing the partial provider after initializer failure", primaryException);
+            }
+
             throw;
         }
 
@@ -605,8 +764,7 @@ internal sealed class ShellRegistry : IShellRegistry
                 }
                 catch (Exception rollbackException)
                 {
-                    _logger.LogError(rollbackException,
-                        "Activation participant rollback failed for shell {Shell}", shell.Descriptor);
+                    LogCleanupFailure(rollbackException, descriptor, "rolling back activation participants", ex);
                 }
             }
 
@@ -620,7 +778,14 @@ internal sealed class ShellRegistry : IShellRegistry
 
             // Dispose the rejected generation only after restoring the prior registry identity.
             // Its Disposed lifecycle notification may perform idempotent participant cleanup.
-            await shell.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await shell.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception cleanupException)
+            {
+                LogCleanupFailure(cleanupException, descriptor, "disposing the rejected activation candidate", ex);
+            }
             if (ex is ShellGenerationActivationException)
                 throw;
             throw new ShellGenerationActivationException(descriptor, ex);
@@ -753,30 +918,27 @@ internal sealed class ShellRegistry : IShellRegistry
 #pragma warning restore 420
     }
 
-    private static async ValueTask DisposePartialProviderAsync(ServiceProvider provider)
+    private static async ValueTask<Exception?> DisposePartialProviderAsync(ServiceProvider provider)
     {
         try
         {
             await provider.DisposeAsync().ConfigureAwait(false);
+            return null;
         }
-        catch
+        catch (Exception exception)
         {
-            // Partial-provider disposal failures are swallowed — the primary exception already
-            // propagates, and tearing down a half-built container sometimes throws benignly.
+            return exception;
         }
     }
 
     /// <summary>
-    /// Per-name state: a serialization semaphore for activate/reload/unregister, a generation
-    /// counter, and the currently-active + historical shells. The catalogue blueprint itself
+    /// Per-name state: a serialization semaphore for activate/reload/unregister
+    /// and the currently-active + historical shells. The catalogue blueprint itself
     /// is NOT held here — it lives in the provider and is fetched on every activation.
     /// </summary>
     private sealed class NameSlot
     {
         internal readonly SemaphoreSlim Semaphore = new(1, 1);
-
-        // Incremented under the Semaphore. `long` so the cast to int in ShellDescriptor is explicit.
-        internal long NextGeneration;
 
         // Written under the Semaphore, plus a lock-free CAS-to-null in ReleaseGeneration when the active
         // generation is disposed; read without locking by GetActive.

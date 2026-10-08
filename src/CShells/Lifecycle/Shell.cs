@@ -17,11 +17,16 @@ namespace CShells.Lifecycle;
 internal sealed class Shell(
     ShellDescriptor descriptor,
     IServiceProvider serviceProvider,
-    Func<IShell, ShellLifecycleState, ShellLifecycleState, Task> onStateChanged) : IShell
+    Func<IShell, ShellLifecycleState, ShellLifecycleState, Task> onStateChanged,
+    ShellGenerationBuildLeaseSet? buildLeaseSet = null,
+    Action<ShellGenerationBuildLeaseSet>? retainBuildLeaseSet = null) : IShell
 {
     private readonly Func<IShell, ShellLifecycleState, ShellLifecycleState, Task> _onStateChanged = Guard.Against.Null(onStateChanged);
+    private readonly ShellGenerationBuildLeaseSet? buildLeaseSet = buildLeaseSet;
+    private readonly Action<ShellGenerationBuildLeaseSet>? retainBuildLeaseSet = retainBuildLeaseSet;
     private int _state = (int)ShellLifecycleState.Initializing;
     private int _activeScopes;
+    private int _disposedNotificationFailed;
 
     // Signals waiters (drain phase 1) whenever the scope counter drops. Created lazily by
     // the drain path; written to atomically.
@@ -33,10 +38,8 @@ internal sealed class Shell(
     // shutdown, see CShellsStartupHostedService).
     private Task? _disposeTask;
 
-    // CAS-published in-flight drain. Non-null while State is Deactivating/Draining/Drained;
-    // cleared back to null in DisposeCoreAsync to break the reference cycle for GC. The
-    // registry calls PublishDrain(...) once per generation; subsequent concurrent callers
-    // observe the published instance and return early.
+    // CAS-published drain, retained until the operation settles so late callers join the
+    // same provider teardown. Public Drain hides it once State reaches Disposed.
     private DrainOperation? _drain;
 
     /// <inheritdoc />
@@ -49,7 +52,27 @@ internal sealed class Shell(
     public ShellLifecycleState State => (ShellLifecycleState)Volatile.Read(ref _state);
 
     /// <inheritdoc />
-    public IDrainOperation? Drain => Volatile.Read(ref _drain);
+    public IDrainOperation? Drain => State == ShellLifecycleState.Disposed ? null : PublishedDrain;
+
+    internal DrainOperation? PublishedDrain
+    {
+        get
+        {
+            while (Volatile.Read(ref _drain) is { } operation)
+            {
+                if (!operation.IsCompleted)
+                    return operation;
+
+                // Completion can wake a caller before RunAsync removes its published pointer.
+                ReleaseDrain(operation);
+            }
+
+            return null;
+        }
+    }
+
+    internal void ReleaseDrain(DrainOperation operation) =>
+        Interlocked.CompareExchange(ref _drain, null, operation);
 
     /// <summary>
     /// CAS-publishes <paramref name="candidate"/> as the in-flight drain operation for this shell.
@@ -65,6 +88,30 @@ internal sealed class Shell(
 
     /// <summary>Current active-scope count. Exposed for diagnostics.</summary>
     internal int ActiveScopeCount => Volatile.Read(ref _activeScopes);
+
+    internal void MarkDisposedNotificationFailed() => Volatile.Write(ref _disposedNotificationFailed, 1);
+
+    internal void RetainBuildLeases()
+    {
+        if (buildLeaseSet is { UnresolvedLeaseCount: > 0 } leaseSet)
+            (retainBuildLeaseSet ?? throw new InvalidOperationException("The shell build lease owner has no root retention callback."))(leaseSet);
+    }
+
+    internal async ValueTask ReleaseBuildLeasesAfterProviderTeardownAsync()
+    {
+        if (buildLeaseSet is null || buildLeaseSet.UnresolvedLeaseCount == 0)
+            return;
+
+        try
+        {
+            await buildLeaseSet.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            RetainBuildLeases();
+            throw;
+        }
+    }
 
     /// <inheritdoc />
     public IShellScope BeginScope()
@@ -199,13 +246,8 @@ internal sealed class Shell(
     {
         try
         {
-            // Clear the drain reference BEFORE advancing to Disposed so subscribers notified of
-            // the Drained → Disposed transition observe the documented IShell.Drain invariant
-            // ("null when the state is Disposed") at the moment of the transition. Also breaks
-            // the Shell ↔ DrainOperation reference cycle so both become GC-eligible together
-            // once the registry releases its slot reference.
-            Volatile.Write(ref _drain, null);
-
+            // Public Drain becomes null with this transition; the internal operation remains
+            // available until completion so concurrent callers cannot start teardown again.
             await ForceAdvanceAsync(ShellLifecycleState.Disposed).ConfigureAwait(false);
 
             switch (ServiceProvider)
@@ -217,10 +259,16 @@ internal sealed class Shell(
                     disposable.Dispose();
                     break;
             }
+
+            if (Volatile.Read(ref _disposedNotificationFailed) != 0)
+                RetainBuildLeases();
+            else
+                await ReleaseBuildLeasesAfterProviderTeardownAsync().ConfigureAwait(false);
             tcs.TrySetResult();
         }
         catch (Exception ex)
         {
+            RetainBuildLeases();
             tcs.TrySetException(ex);
             throw;
         }

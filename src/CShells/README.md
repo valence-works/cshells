@@ -146,6 +146,10 @@ public class PaymentsFeature : IShellFeature
 
 Initializers run sequentially during `Initializing -> Active`. Existing direct `IShellInitializer` registrations still run in DI-registration order in `LifecyclePhase.Default`; `AddShellInitializer<T>()` adds explicit phase/order metadata and registers the initializer as transient unless you have already registered it yourself, in which case your lifetime is preserved. Drain handlers run in parallel during `Draining`, after all outstanding `IShellScope` handles have been released or the drain deadline elapses.
 
+Hosts that need to protect resources for a build or live generation can register root `IShellGenerationBuildParticipant` services. CShells assigns the immutable shell descriptor before blueprint composition, invokes participants after composition and name validation but before catalog initialization, then calls each acquired lease with the exact detailed snapshot used for feature selection before feature construction. Successful snapshot callbacks run in registration order. If one fails, callbacks after it are skipped while every acquired lease is unwound. Participants that fail before returning a lease clean up their own partial acquisition.
+
+For a published shell, leases release in reverse order after the Disposed lifecycle notification and full provider teardown succeed. Failed builds and unpublished initializer candidates release after partial provider cleanup. A lifecycle/provider teardown failure retains unresolved leases in the root registry without retaining the shell or provider; individual release failures retain only the leases that failed. Distinct shell names may run callbacks concurrently. Callbacks must not start activation, reload, or unregister for the same name. This lifecycle hook manages protection ownership but does not perform package deletion or guarantee assembly unloading.
+
 ## Reload
 
 ```csharp

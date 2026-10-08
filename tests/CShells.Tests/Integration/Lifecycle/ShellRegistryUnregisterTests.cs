@@ -1,4 +1,5 @@
 using CShells.DependencyInjection;
+using CShells.Features;
 using CShells.Lifecycle;
 using CShells.Tests.TestHelpers;
 using Microsoft.Extensions.Configuration;
@@ -145,10 +146,52 @@ public class ShellRegistryUnregisterTests
         Assert.Contains(("Create", "acme-44"), manager.Operations);
     }
 
-    private static ServiceProvider BuildHostWith(StubShellBlueprintProvider stub)
+    [Fact]
+    public async Task RecreatedNameReservesNewGenerationCaseInsensitively()
+    {
+        var stub = new StubShellBlueprintProvider();
+        var manager = new CouplingManager(() => stub.Clear());
+        var participant = new ContextRecordingParticipant();
+        stub.Add("recreated", manager: manager);
+        await using var host = BuildHostWith(stub, participant);
+        var registry = host.GetRequiredService<IShellRegistry>();
+
+        var first = await registry.ActivateAsync("recreated");
+        await registry.UnregisterBlueprintAsync("recreated");
+        stub.Add("RECREATED", manager: manager);
+        var replacement = await registry.ActivateAsync("RECREATED");
+
+        Assert.Equal(ShellLifecycleState.Disposed, first.State);
+        Assert.Equal([1, 2], participant.Contexts.Select(context => context.Descriptor.Generation));
+        Assert.Equal(2, replacement.Descriptor.Generation);
+        Assert.Same(replacement, registry.GetActive("recreated"));
+        var drain = await registry.DrainAsync(replacement);
+        await drain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private sealed class ContextRecordingParticipant : IShellGenerationBuildParticipant
+    {
+        public List<ShellGenerationBuildContext> Contexts { get; } = [];
+
+        public ValueTask<IShellGenerationBuildLease> BeginAsync(ShellGenerationBuildContext context, CancellationToken cancellationToken = default)
+        {
+            Contexts.Add(context);
+            return ValueTask.FromResult<IShellGenerationBuildLease>(new Lease());
+        }
+
+        private sealed class Lease : IShellGenerationBuildLease
+        {
+            public ValueTask OnSnapshotSelectedAsync(RuntimeFeatureCatalogSnapshot snapshot, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    private static ServiceProvider BuildHostWith(StubShellBlueprintProvider stub, IShellGenerationBuildParticipant? participant = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        if (participant is not null)
+            services.AddSingleton(participant);
         services.AddCShells(cshells =>
         {
             cshells.WithAssemblies();

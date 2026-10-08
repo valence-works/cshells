@@ -135,6 +135,69 @@ public class ShellRegistryDrainTests
         var secondOp = await registry.DrainAsync(shell);
 
         Assert.NotSame(firstOp, secondOp);
+        Assert.Null(shell.Drain);
+        var secondResult = await secondOp.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(DrainStatus.Completed, secondResult.Status);
+        Assert.Empty(secondResult.HandlerResults);
+        Assert.Null(shell.Drain);
+
+        var thirdOp = await registry.DrainAsync(shell);
+        Assert.NotSame(secondOp, thirdOp);
+        await thirdOp.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task CompletedPublishedOperationIsPrunedBeforeStartingAnotherDrain()
+    {
+        await using var host = ShellRegistryActivateTests.BuildHost(cshells => cshells.AddShell("completed-pointer", _ => { }));
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var shell = Assert.IsType<Shell>(await registry.ActivateAsync("completed-pointer"));
+        var completed = new DrainOperation(shell, new FixedTimeoutDrainPolicy(TimeSpan.FromSeconds(5)), TimeSpan.FromMilliseconds(1));
+        shell.PublishDrain(completed);
+        await completed.RunAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Model a reader arriving after task completion but before the published pointer is cleared.
+        shell.PublishDrain(completed);
+        Assert.True(completed.IsCompleted);
+        Assert.Null(shell.PublishedDrain);
+
+        var next = await registry.DrainAsync(shell);
+        Assert.NotSame(completed, next);
+        await next.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task ConcurrentDrainDuringProviderTeardownSharesTheOriginalHandlerResolutionFailure()
+    {
+        var failure = new ApplicationException("handler resolution failed");
+        await using var host = ShellRegistryActivateTests.BuildHost(cshells => cshells
+                .WithAssemblyContaining<ShellGenerationBuildLeaseTests>()
+                .AddShell("handler-fault", shell => shell.WithFeature<ShellGenerationBuildLeaseTests.BlockingDisposalFeature>()),
+            services => services.AddTransient<IDrainHandler>(_ => throw failure));
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var shell = await registry.ActivateAsync("handler-fault");
+        var probe = shell.ServiceProvider.GetRequiredService<ShellGenerationBuildLeaseTests.BlockingShellDisposal>();
+        var first = await registry.DrainAsync(shell);
+        var firstWait = first.WaitAsync();
+        Task<DrainResult>? concurrentWait = null;
+
+        try
+        {
+            await probe.DisposeEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(ShellLifecycleState.Disposed, shell.State);
+            var concurrent = await registry.DrainAsync(shell);
+            concurrentWait = concurrent.WaitAsync();
+            Assert.Same(first, concurrent);
+            Assert.False(firstWait.IsCompleted);
+            Assert.False(concurrentWait.IsCompleted);
+        }
+        finally
+        {
+            probe.AllowDispose.TrySetResult();
+            Assert.Same(failure, await Assert.ThrowsAsync<ApplicationException>(() => firstWait).WaitAsync(TimeSpan.FromSeconds(5)));
+            if (concurrentWait is not null)
+                Assert.Same(failure, await Assert.ThrowsAsync<ApplicationException>(() => concurrentWait).WaitAsync(TimeSpan.FromSeconds(5)));
+        }
     }
 
     [Fact(DisplayName = "Fixed-timeout policy cancels handler after deadline → TimedOut status")]
