@@ -19,6 +19,7 @@ public class CShellsBuilder
     private readonly List<Action<ShellBuilder>> _shellConfigurators = new();
     private readonly List<IShellBlueprint> _inlineBlueprints = [];
     private readonly List<Func<IServiceProvider, IShellBlueprintProvider>> _providerFactories = [];
+    private readonly List<Type> _sharedSingletonServiceTypes = [];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CShellsBuilder"/> class.
@@ -34,6 +35,8 @@ public class CShellsBuilder
 
     /// <summary>Factories that resolve additional <see cref="IShellBlueprintProvider"/> instances at DI-resolution time.</summary>
     internal IReadOnlyList<Func<IServiceProvider, IShellBlueprintProvider>> ProviderFactories => _providerFactories;
+
+    internal IReadOnlyList<Type> SharedSingletonServiceTypes => _sharedSingletonServiceTypes;
 
     /// <summary>
     /// Gets the service collection.
@@ -120,6 +123,39 @@ public class CShellsBuilder
     {
         Guard.Against.Null(configure);
         _shellConfigurators.Add(configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Shares every unkeyed root singleton registration for <typeparamref name="TService"/> with shell providers.
+    /// </summary>
+    /// <typeparam name="TService">The closed service type to share.</typeparam>
+    /// <remarks>
+    /// The root provider retains ownership of instances it creates. Shell providers receive the resolved instances
+    /// without acquiring disposal ownership. Aliases must be selected separately. See the <see cref="ShareSingletonWithShells(Type)"/>
+    /// overload for unsupported enumerable overrides.
+    /// </remarks>
+    /// <returns>This builder.</returns>
+    public CShellsBuilder ShareSingletonWithShells<TService>() => ShareSingletonWithShells(typeof(TService));
+
+    /// <summary>
+    /// Shares every unkeyed root singleton registration for <paramref name="serviceType"/> with shell providers.
+    /// </summary>
+    /// <param name="serviceType">The closed service type whose unkeyed singleton registrations should be shared.</param>
+    /// <remarks>
+    /// Validation is performed when a shell provider is built, against the final root registrations and exclusion set.
+    /// Keyed registrations and aliases are independent. An explicit unkeyed registration for
+    /// <c>IEnumerable&lt;TService&gt;</c> or the open generic <c>IEnumerable&lt;&gt;</c> conflicts with the
+    /// container-generated service aggregation and is rejected. The root provider retains ownership of instances it creates.
+    /// </remarks>
+    /// <returns>This builder.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="serviceType"/> is <see langword="null"/>.</exception>
+    public CShellsBuilder ShareSingletonWithShells(Type serviceType)
+    {
+        Guard.Against.Null(serviceType);
+        if (!_sharedSingletonServiceTypes.Contains(serviceType))
+            _sharedSingletonServiceTypes.Add(serviceType);
+
         return this;
     }
 

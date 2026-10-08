@@ -105,6 +105,24 @@ builder.Services.AddCShells(cshells =>
 });
 ```
 
+## Share Host-Owned Singleton Services
+
+By default, CShells copies root service descriptors into each shell so singleton registrations have independent instances per shell. Opt in when every shell should use the host's singleton object and the host should retain its lifetime ownership:
+
+```csharp
+builder.Services.AddSingleton<IClock, SystemClock>();
+
+builder.Services.AddCShells(cshells => cshells
+    .ShareSingletonWithShells<IClock>()
+    .AddShell("Default", shell => shell.WithFeatures("Core")));
+```
+
+The selection includes every unkeyed singleton registration for that service type, in registration order. The root provider resolves and owns those instances; shell providers borrow them without disposing them. The host disposes root-created disposable singletons with its normal provider lifecycle. Instances registered directly by the caller retain the usual caller-owned disposal behavior. Select aliases separately, and use the `Type` overload when the service type is chosen at runtime.
+
+Keyed registrations are unchanged. A selection must have at least one unkeyed registration and every matching unkeyed registration must be singleton. Open generic selections, matching open-generic registrations, null factory results, and root-only exclusions fail when CShells builds a shell provider. Later shell core and feature registrations keep normal precedence, so this API does not force the host instance to win every single-service resolution.
+
+An explicit unkeyed `IEnumerable<IClock>` or open-generic `IEnumerable<>` registration overrides the container-generated enumerable and is rejected when `IClock` is selected. Keyed enumerable registrations are independent. Repeated `AddCShells` calls before building the root service provider configure the same builder; finish all configuration before building that provider.
+
 ## Per-Shell Initialization & Drain
 
 Register `IShellInitializer` services for per-shell startup work and `IDrainHandler` services for cooperative shutdown:

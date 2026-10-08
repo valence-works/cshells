@@ -25,6 +25,7 @@ internal sealed class ShellProviderBuilder(
     IRootServiceCollectionAccessor rootServicesAccessor,
     IServiceProvider rootProvider,
     IShellServiceExclusionRegistry exclusionRegistry,
+    IReadOnlyCollection<Type> sharedSingletonServiceTypes,
     IShellFeatureFactory featureFactory,
     RuntimeFeatureCatalog featureCatalog,
     ILogger<ShellProviderBuilder>? logger = null,
@@ -33,6 +34,7 @@ internal sealed class ShellProviderBuilder(
     private readonly IRootServiceCollectionAccessor _rootServicesAccessor = Guard.Against.Null(rootServicesAccessor);
     private readonly IServiceProvider _rootProvider = Guard.Against.Null(rootProvider);
     private readonly IShellServiceExclusionRegistry _exclusionRegistry = Guard.Against.Null(exclusionRegistry);
+    private readonly IReadOnlyCollection<Type> sharedSingletonServiceTypes = Guard.Against.Null(sharedSingletonServiceTypes);
     private readonly IShellFeatureFactory _featureFactory = Guard.Against.Null(featureFactory);
     private readonly RuntimeFeatureCatalog _featureCatalog = Guard.Against.Null(featureCatalog);
     private readonly IShellSettingsPreparer? _settingsPreparer = ResolveSettingsPreparer(settingsPreparers);
@@ -184,12 +186,108 @@ internal sealed class ShellProviderBuilder(
     private void CopyRootServices(IServiceCollection shellServices)
     {
         var excluded = _exclusionRegistry.ExcludedTypes;
-        foreach (var descriptor in _rootServicesAccessor.Services)
+        var rootDescriptors = _rootServicesAccessor.Services;
+        var sharedInstances = ResolveSharedSingletons(rootDescriptors, excluded);
+        var sharedIndexes = sharedInstances.Keys.ToDictionary(serviceType => serviceType, _ => 0);
+
+        foreach (var descriptor in rootDescriptors)
         {
             if (excluded.Contains(descriptor.ServiceType))
                 continue;
+
+            if (!descriptor.IsKeyedService && sharedInstances.TryGetValue(descriptor.ServiceType, out var instances))
+            {
+                var index = sharedIndexes[descriptor.ServiceType]++;
+                shellServices.Add(ServiceDescriptor.Singleton(descriptor.ServiceType, instances[index]));
+                continue;
+            }
+
             shellServices.Add(descriptor);
         }
+    }
+
+    private Dictionary<Type, object[]> ResolveSharedSingletons(
+        IServiceCollection rootDescriptors,
+        IReadOnlySet<Type> excludedTypes)
+    {
+        var result = new Dictionary<Type, object[]>();
+        var registrationsByType = new Dictionary<Type, ServiceDescriptor[]>();
+
+        foreach (var serviceType in sharedSingletonServiceTypes)
+        {
+            if (serviceType.ContainsGenericParameters)
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share open generic service type '{serviceType}'. Select a closed service type instead.");
+            }
+
+            if (excludedTypes.Contains(serviceType))
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share service type '{serviceType}' because it is excluded from shell service collections. Remove the exclusion or do not select this type for sharing.");
+            }
+
+            var registrations = rootDescriptors
+                .Where(descriptor => descriptor.ServiceType == serviceType && !descriptor.IsKeyedService)
+                .ToArray();
+
+            var openGenericRegistration = serviceType.IsConstructedGenericType
+                ? rootDescriptors.FirstOrDefault(descriptor =>
+                    !descriptor.IsKeyedService && descriptor.ServiceType == serviceType.GetGenericTypeDefinition())
+                : null;
+            if (openGenericRegistration is not null)
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share closed service type '{serviceType}' while the root also has an unkeyed open generic registration for '{openGenericRegistration.ServiceType}'. Sharing open generic registrations alongside closed service types is not supported.");
+            }
+
+            if (registrations.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share service type '{serviceType}' because the root service collection has no unkeyed registration for it. Register at least one unkeyed singleton before building shells.");
+            }
+
+            var enumerableServiceType = typeof(IEnumerable<>).MakeGenericType(serviceType);
+            var enumerableOverride = rootDescriptors.FirstOrDefault(descriptor =>
+                !descriptor.IsKeyedService &&
+                (descriptor.ServiceType == enumerableServiceType ||
+                 descriptor.ServiceType == typeof(IEnumerable<>)));
+            if (enumerableOverride is not null)
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share service type '{serviceType}' because the root has an unkeyed registration for '{enumerableOverride.ServiceType}', which overrides the DI-generated IEnumerable<{serviceType.Name}> aggregation. Remove the enumerable registration or do not select this service type for sharing. Keyed enumerable registrations are independent and do not conflict.");
+            }
+
+            var nonSingleton = registrations.FirstOrDefault(descriptor => descriptor.Lifetime != ServiceLifetime.Singleton);
+            if (nonSingleton is not null)
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share service type '{serviceType}' because all unkeyed registrations must be singletons; found a {nonSingleton.Lifetime} registration. Make every unkeyed registration singleton or remove the sharing selection.");
+            }
+
+            registrationsByType.Add(serviceType, registrations);
+        }
+
+        foreach (var (serviceType, registrations) in registrationsByType)
+        {
+            var resolvedInstances = _rootProvider.GetServices(serviceType).ToArray();
+            if (resolvedInstances.Any(instance => instance is null))
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share service type '{serviceType}' because a root singleton factory returned null. Every selected registration must resolve to a non-null instance.");
+            }
+
+            var instances = resolvedInstances.Cast<object>().ToArray();
+            if (instances.Length != registrations.Length)
+            {
+                throw new InvalidOperationException(
+                    $"CShells resolved {instances.Length} unkeyed instance(s) for service type '{serviceType}', but found {registrations.Length} registrations. Ensure the root provider was built from the final service collection.");
+            }
+
+            result.Add(serviceType, instances);
+        }
+
+        return result;
     }
 
     private void RegisterCoreServices(
