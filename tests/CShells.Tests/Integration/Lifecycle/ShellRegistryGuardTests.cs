@@ -157,6 +157,42 @@ public class ShellRegistryGuardTests
         Assert.Equal("Standard", settings.GetConfiguration("Plan"));
     }
 
+    [Fact(DisplayName = "Repeated AddCShells calls add defaults once to a pre-existing blueprint provider")]
+    public async Task PreExistingProviderRegistration_RepeatedConfigureAllShells_ComposesDefaultsOnce()
+    {
+        var firstDefaultCalls = 0;
+        var secondDefaultCalls = 0;
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddSingleton<IShellBlueprintProvider>(_ =>
+            new StubShellBlueprintProvider().Add("custom", shell => shell.WithConfiguration("Winner", "shell-specific")));
+
+        services.AddCShells(c => c
+            .WithAssemblies()
+            .ConfigureAllShells(shell =>
+            {
+                firstDefaultCalls++;
+                shell.WithConfiguration("FirstDefault", "first")
+                    .WithConfiguration("Winner", "first-default");
+            }));
+        services.AddCShells(c => c.ConfigureAllShells(shell =>
+        {
+            secondDefaultCalls++;
+            shell.WithConfiguration("SecondDefault", "second")
+                .WithConfiguration("Winner", "second-default");
+        }));
+
+        await using var sp = services.BuildServiceProvider();
+        var shell = await sp.GetRequiredService<IShellRegistry>().GetOrActivateAsync("custom");
+        var settings = shell.ServiceProvider.GetRequiredService<ShellSettings>();
+
+        Assert.Equal(1, firstDefaultCalls);
+        Assert.Equal(1, secondDefaultCalls);
+        Assert.Equal("first", settings.GetConfiguration("FirstDefault"));
+        Assert.Equal("second", settings.GetConfiguration("SecondDefault"));
+        Assert.Equal("shell-specific", settings.GetConfiguration("Winner"));
+    }
+
     [Fact(DisplayName = "Third-party custom IShellBlueprintProvider activates shells identically to shipped providers (SC-008)")]
     public async Task ThirdPartyCustomProvider_RegisteredViaAddBlueprintProvider_ActivatesShellsLikeShippedProviders()
     {

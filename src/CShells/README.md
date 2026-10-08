@@ -121,6 +121,8 @@ The selection includes every unkeyed singleton registration for that service typ
 
 Keyed registrations are unchanged. A selection must have at least one unkeyed registration and every matching unkeyed registration must be singleton. Open generic selections, matching open-generic registrations, null factory results, and root-only exclusions fail when CShells builds a shell provider. Later shell core and feature registrations keep normal precedence, so this API does not force the host instance to win every single-service resolution.
 
+An explicit unkeyed `IEnumerable<IClock>` or open-generic `IEnumerable<>` registration overrides the container-generated enumerable and is rejected when `IClock` is selected. Keyed enumerable registrations are independent. Repeated `AddCShells` calls before building the root service provider configure the same builder; finish all configuration before building that provider.
+
 ## Per-Shell Initialization & Drain
 
 Register `IShellInitializer` services for per-shell startup work and `IDrainHandler` services for cooperative shutdown:

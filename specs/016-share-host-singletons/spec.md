@@ -39,6 +39,8 @@ A host developer receives a clear configuration error when selecting a service t
 ## Edge Cases
 
 - Keyed registrations of the selected service type are left unchanged and are not included in the shared unkeyed registration set.
+- An explicit unkeyed `IEnumerable<TService>` or open generic `IEnumerable<>` registration is rejected for a selected service type because it overrides DI's generated enumerable of selected descriptors; keyed enumerable registrations remain independent.
+- Repeated `AddCShells` calls before root provider construction contribute to one builder/registration and do not install duplicate CShells infrastructure.
 - Aliases are distinct service types; selecting one service type does not implicitly share an implementation registered through another alias.
 - Repeated host registration of the same service type preserves all unkeyed registrations and their descriptor order, including duplicate implementation types.
 - A shell feature may register its own service after host services are copied; normal later-registration precedence remains in effect.
@@ -61,6 +63,8 @@ A host developer receives a clear configuration error when selecting a service t
 - **FR-008**: Aliased service types MUST be selected independently.
 - **FR-009**: Invalid requests, including missing registrations, non-singleton unkeyed descriptors, open generic types, and root-only exclusions, MUST fail with an actionable diagnostic.
 - **FR-010**: A feature-specific later registration MUST retain existing shell override behavior.
+- **FR-011**: The system MUST reject selected service types whose unkeyed `IEnumerable<TService>` resolution is overridden by an exact or open-generic enumerable registration.
+- **FR-012**: Repeated `AddCShells` calls before root provider construction MUST reuse the same builder state and MUST NOT duplicate CShells infrastructure registrations.
 
 ## Key Entities
 
