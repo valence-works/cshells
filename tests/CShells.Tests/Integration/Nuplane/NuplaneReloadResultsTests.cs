@@ -2,7 +2,6 @@ using CShells.Lifecycle;
 using CShells.Nuplane;
 using CShells.Nuplane.Internal;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Nuplane.Abstractions;
 using Nuplane.Loading;
 
@@ -180,7 +179,7 @@ public sealed class NuplaneReloadResultsTests
     {
         var catalog = new TestRuntimeFeatureCatalog();
         var registry = TestShellRegistry.Create(out var registryState);
-        var coordinator = new NuplaneRefreshCoordinator(catalog, Options.Create(options), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(options), () => registry);
         return (coordinator, catalog, registry, registryState);
     }
 }
