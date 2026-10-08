@@ -88,17 +88,26 @@ internal sealed class ShellRegistry : IShellRegistry
 
         var slot = _slots.GetOrAdd(name, static _ => new NameSlot());
 
-        // Fast path: active shell already published. Volatile read via field.
-        if (slot.Active is { } existing)
+        // The registry publishes candidates before activation participants commit so that
+        // lifecycle observers can resolve them. Only a committed generation is a successful
+        // GetOrActivate result; an unsettled candidate must wait for the existing name lock.
+        if (slot.Active is { IsActivationCommitted: true } existing)
             return existing;
 
         await slot.Semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Re-check under the semaphore: a concurrent caller may have activated in the
-            // meantime. This is the stampede-safety guarantee — exactly one build per name.
+            // Re-check under the semaphore: any activation that published while this caller
+            // waited has now committed or rolled back. This preserves the one-build-per-name
+            // guarantee while refusing to treat provisional publication as successful activation.
             if (slot.Active is { } alreadyActive)
+            {
+                if (!alreadyActive.IsActivationCommitted)
+                    throw new InvalidOperationException(
+                        $"Shell '{name}' has an active generation that is not committed after acquiring its activation lock.");
+
                 return alreadyActive;
+            }
 
             var blueprint = await LookupBlueprintAsync(name, wrapFault: true, cancellationToken).ConfigureAwait(false)
                 ?? throw new ShellBlueprintNotFoundException(name);
@@ -802,8 +811,7 @@ internal sealed class ShellRegistry : IShellRegistry
             }
             catch (Exception completionException)
             {
-                _logger.LogError(completionException,
-                    "Activation participant completion failed for shell {Shell}", shell.Descriptor);
+                LogCleanupFailure(completionException, descriptor, "completing an activation participant");
             }
         }
 
@@ -832,6 +840,10 @@ internal sealed class ShellRegistry : IShellRegistry
                 new InvalidOperationException(
                     $"Shell generation '{descriptor}' stopped being active before activation completed."));
         }
+
+        // The final eligibility check has passed and all participant completion callbacks have
+        // run. Publish success before observational logging, which may itself throw.
+        shell.MarkActivationCommitted();
 
         _logger.LogInformation("Activated shell {Descriptor} with {FeatureCount} feature(s)",
             descriptor, buildResult.EnabledFeatures.Count);

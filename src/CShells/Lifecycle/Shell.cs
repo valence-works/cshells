@@ -25,6 +25,7 @@ internal sealed class Shell(
     private readonly ShellGenerationBuildLeaseSet? buildLeaseSet = buildLeaseSet;
     private readonly Action<ShellGenerationBuildLeaseSet>? retainBuildLeaseSet = retainBuildLeaseSet;
     private int _state = (int)ShellLifecycleState.Initializing;
+    private int _activationCommitted;
     private int _activeScopes;
     private int _disposedNotificationFailed;
 
@@ -50,6 +51,10 @@ internal sealed class Shell(
 
     /// <inheritdoc />
     public ShellLifecycleState State => (ShellLifecycleState)Volatile.Read(ref _state);
+
+    internal bool IsActivationCommitted => Volatile.Read(ref _activationCommitted) != 0;
+
+    internal void MarkActivationCommitted() => Volatile.Write(ref _activationCommitted, 1);
 
     /// <inheritdoc />
     public IDrainOperation? Drain => State == ShellLifecycleState.Disposed ? null : PublishedDrain;
