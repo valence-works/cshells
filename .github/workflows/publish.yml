@@ -91,6 +91,7 @@ jobs:
             "src/CShells.FastEndpoints/CShells.FastEndpoints.csproj"
             "src/CShells.FastEndpoints.Abstractions/CShells.FastEndpoints.Abstractions.csproj"
             "src/CShells.Management.Api/CShells.Management.Api.csproj"
+            "src/CShells.Nuplane/CShells.Nuplane.csproj"
             "src/CShells.Providers.FluentStorage/CShells.Providers.FluentStorage.csproj"
           )
 
