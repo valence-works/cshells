@@ -162,10 +162,11 @@ When asked to review or address PR review comments, think critically about each 
 - C# 14 / .NET 10; source projects multi-target `net8.0;net9.0;net10.0` per repository conventions + Existing `Microsoft.Extensions.Configuration`, `Microsoft.Extensions.DependencyInjection`, `System.Text.Json`; no new third-party packages (014-polymorphic-feature-config)
 - N/A; configuration provider inputs only (014-polymorphic-feature-config)
 - C# 14; source packages multi-target `net8.0;net9.0;net10.0` + Existing `Microsoft.Extensions.DependencyInjection`, `Microsoft.Extensions.Logging`, and `System.Collections.Immutable`; no new package dependencies (018-shell-generation-build-leases)
+- C# 14 / .NET 10 SDK; source library targets `net8.0;net9.0;net10.0` + Existing Nuplane abstractions, Microsoft.Extensions.Options, and a direct `Microsoft.Extensions.Logging.Abstractions` dependency; test-only reference to Nuplane's real observer-dispatcher package (024-nuplane-failure-diagnostics)
 
 ## Recent Changes
 - 011-map-shell-config: Planned map-based shell configuration under `CShells:Shells`
 
 <!-- SPECKIT START -->
-For the active work unit, read `specs/023-live-nuplane-options/plan.md`.
+For the active work unit, read `specs/024-nuplane-failure-diagnostics/plan.md`.
 <!-- SPECKIT END -->

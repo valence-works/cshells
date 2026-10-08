@@ -186,9 +186,10 @@ public sealed class NuplaneLiveOptionsTests
             typeof(NuplaneIntegrationOptions),
             ["The configured options were rejected."]);
         var monitor = new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions());
+        var loggerProvider = new NuplaneTestLoggerProvider();
         var catalog = new TestRuntimeFeatureCatalog();
         var registry = TestShellRegistry.Create(out var registryState);
-        var coordinator = new NuplaneRefreshCoordinator(catalog, monitor, () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, monitor, () => registry, loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
         monitor.ThrowOnRead(monitorReadFailure);
 
         var monitorThrown = await Assert.ThrowsAsync<InvalidOperationException>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator));
@@ -217,6 +218,7 @@ public sealed class NuplaneLiveOptionsTests
         Assert.Equal(0, catalog.RefreshCount);
         Assert.Equal(3, registryState.ActiveShellReadCount);
         Assert.Equal(0, registryState.ReloadCount);
+        Assert.Empty(loggerProvider.Snapshot());
     }
 
     [Fact(DisplayName = "Configuration reload changes the policy used by the registered Nuplane observer")]

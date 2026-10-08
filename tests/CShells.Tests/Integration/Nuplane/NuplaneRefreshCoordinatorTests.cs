@@ -168,22 +168,151 @@ public sealed class NuplaneRefreshCoordinatorTests
     [Fact]
     public async Task FailedRefreshRetainsFreshnessForAnUnchangedEligibleRetry()
     {
+        var refreshFailure = new InvalidOperationException("refresh failed");
+        var loggerProvider = new NuplaneTestLoggerProvider();
         var catalog = new TestRuntimeFeatureCatalog
         {
             RefreshHandler = (number, _) => number == 1
-                ? Task.FromException(new InvalidOperationException("refresh failed"))
+                ? Task.FromException(refreshFailure)
                 : Task.CompletedTask
         };
         var registry = TestShellRegistry.Create(out _);
-        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()), () => registry, loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
+        var correlationId = "refresh-failure-correlation";
+        var applied = FakePackageAssemblyCatalog.Resolved("feature-package");
+        var changeSet = new PackageChangeSet([applied], [], [], correlationId, DateTimeOffset.UtcNow);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.OnPackagesReconciledAsync(changeSet, [applied], CancellationToken.None));
+        Assert.Same(refreshFailure, exception);
         Assert.Equal("refresh failed", exception.Message);
+        NuplaneCoordinatorTestCases.AssertAdapterError(loggerProvider, refreshFailure, correlationId);
 
         await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
 
         Assert.Equal(2, catalog.RefreshCount);
+        Assert.Single(loggerProvider.Snapshot());
     }
+
+    [Fact]
+    public async Task BuildOnlyRefreshFailureRemainsUnloggedAndUnchanged()
+    {
+        var refreshFailure = new InvalidOperationException("build refresh failed");
+        var loggerProvider = new NuplaneTestLoggerProvider();
+        var catalog = new TestRuntimeFeatureCatalog
+        {
+            RefreshHandler = (_, _) => Task.FromException(refreshFailure)
+        };
+        var registry = TestShellRegistry.Create(out var registryState);
+        registryState.HasActiveShell = false;
+        var coordinator = new NuplaneRefreshCoordinator(
+            catalog,
+            new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()),
+            () => registry,
+            loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
+        await NuplaneCoordinatorTestCases.NotifyAsync(coordinator);
+        var context = new ShellGenerationBuildContext(ShellDescriptor.Create("build-only", 1), new ShellId("build-only"));
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.BeginAsync(context).AsTask());
+
+        Assert.Same(refreshFailure, thrown);
+        Assert.Empty(loggerProvider.Snapshot());
+    }
+
+    [Fact]
+    public async Task RequestedCancellationDuringRefreshIsNotLoggedAndRemainsRetryable()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var cancellationFailure = new OperationCanceledException("caller canceled", cancellation.Token);
+        var loggerProvider = new NuplaneTestLoggerProvider();
+        var catalog = new TestRuntimeFeatureCatalog
+        {
+            RefreshHandler = (number, _) =>
+            {
+                if (number == 1)
+                {
+                    cancellation.Cancel();
+                    return Task.FromException(cancellationFailure);
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+        var registry = TestShellRegistry.Create(out _);
+        var coordinator = new NuplaneRefreshCoordinator(
+            catalog,
+            new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()),
+            () => registry,
+            loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
+
+        var thrown = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator, cancellationToken: cancellation.Token));
+
+        Assert.Same(cancellationFailure, thrown);
+        Assert.Empty(loggerProvider.Snapshot());
+        await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
+        Assert.Equal(2, catalog.RefreshCount);
+    }
+
+    [Fact]
+    public async Task UnrequestedOperationCanceledExceptionIsLoggedAndRemainsRetryable()
+    {
+        var cancellationFailure = new OperationCanceledException("operation canceled without caller request");
+        var loggerProvider = new NuplaneTestLoggerProvider();
+        var catalog = new TestRuntimeFeatureCatalog
+        {
+            RefreshHandler = (number, _) => number == 1
+                ? Task.FromException(cancellationFailure)
+                : Task.CompletedTask
+        };
+        var registry = TestShellRegistry.Create(out _);
+        var coordinator = new NuplaneRefreshCoordinator(
+            catalog,
+            new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()),
+            () => registry,
+            loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
+        const string correlationId = "uncanceled-oce-correlation";
+        var applied = FakePackageAssemblyCatalog.Resolved("feature-package");
+        var changeSet = new PackageChangeSet([applied], [], [], correlationId, DateTimeOffset.UtcNow);
+
+        var thrown = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => coordinator.OnPackagesReconciledAsync(changeSet, [applied], CancellationToken.None));
+
+        Assert.Same(cancellationFailure, thrown);
+        NuplaneCoordinatorTestCases.AssertAdapterError(loggerProvider, cancellationFailure, correlationId);
+        await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
+        Assert.Equal(2, catalog.RefreshCount);
+        Assert.Single(loggerProvider.Snapshot());
+    }
+
+    [Theory]
+    [MemberData(nameof(FatalExceptionCases))]
+    public async Task FatalExceptionsAreNotLogged(Exception fatalException)
+    {
+        var loggerProvider = new NuplaneTestLoggerProvider();
+        var catalog = new TestRuntimeFeatureCatalog
+        {
+            RefreshHandler = (_, _) => Task.FromException(fatalException)
+        };
+        var registry = TestShellRegistry.Create(out _);
+        var coordinator = new NuplaneRefreshCoordinator(
+            catalog,
+            new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()),
+            () => registry,
+            loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
+
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator));
+
+        Assert.Same(fatalException, thrown);
+        Assert.Empty(loggerProvider.Snapshot());
+    }
+
+    public static IEnumerable<object[]> FatalExceptionCases =>
+    [
+        [new OutOfMemoryException("fatal")],
+        [new StackOverflowException("fatal")],
+        [new AccessViolationException("fatal")],
+        [new AppDomainUnloadedException("fatal")],
+        [new BadImageFormatException("fatal")]
+    ];
 
     [Fact]
     public async Task FailedBuildRefreshRetainsFreshnessForTheNextBuildAttempt()

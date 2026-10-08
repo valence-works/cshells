@@ -1,9 +1,14 @@
 using System.Reflection;
+using System.Runtime.ExceptionServices;
+using CShells.DependencyInjection;
 using CShells.Features;
 using CShells.Lifecycle;
+using CShells.Nuplane;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nuplane.Abstractions;
-using System.Runtime.ExceptionServices;
 
 namespace CShells.Tests.Integration.Nuplane;
 
@@ -88,6 +93,8 @@ public class TestShellRegistry : DispatchProxy
 
     public Action<int>? ActiveShellsRead { get; set; }
 
+    public Func<int, IReadOnlyList<IShell>>? ActiveShellsHandler { get; set; }
+
     public static IShellRegistry Create(out TestShellRegistry state)
     {
         var registry = DispatchProxy.Create<IShellRegistry, TestShellRegistry>();
@@ -101,7 +108,9 @@ public class TestShellRegistry : DispatchProxy
         {
             var activeRead = Interlocked.Increment(ref _activeReadCount);
             ActiveShellsRead?.Invoke(activeRead);
-            return HasActiveShell ? new IShell[] { null! } : Array.Empty<IShell>();
+            return ActiveShellsHandler is { } activeShellsHandler
+                ? activeShellsHandler(activeRead)
+                : HasActiveShell ? new IShell[] { null! } : Array.Empty<IShell>();
         }
 
         if (targetMethod?.Name == nameof(IShellRegistry.ReloadActiveAsync))
@@ -119,6 +128,38 @@ public class TestShellRegistry : DispatchProxy
 
 internal static class NuplaneCoordinatorTestCases
 {
+    public static ServiceCollection CreateAdapterServices(
+        IRuntimeFeatureCatalog catalog,
+        IShellRegistry registry,
+        NuplaneTestLoggerProvider? loggerProvider = null)
+    {
+        var services = new ServiceCollection();
+        if (loggerProvider is not null)
+        {
+            services.AddLogging(logging =>
+            {
+                logging.ClearProviders();
+                logging.AddProvider(loggerProvider);
+            });
+        }
+
+        services.AddCShells(shells => shells.WithNuplaneFeatureDiscovery());
+        services.RemoveAll<IRuntimeFeatureCatalog>();
+        services.AddSingleton(catalog);
+        services.RemoveAll<IShellRegistry>();
+        services.AddSingleton(registry);
+        return services;
+    }
+
+    public static void AssertAdapterError(NuplaneTestLoggerProvider loggerProvider, Exception exception, string correlationId)
+    {
+        var entry = Assert.Single(loggerProvider.Snapshot());
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Same(exception, entry.Exception);
+        Assert.Equal(nameof(INuplaneObserver.OnPackagesReconciledAsync), entry.Properties["Operation"]);
+        Assert.Equal(correlationId, entry.Properties["CorrelationId"]);
+    }
+
     public static Task NotifyAsync(
         INuplaneObserver observer,
         bool sourceChanged = true,
