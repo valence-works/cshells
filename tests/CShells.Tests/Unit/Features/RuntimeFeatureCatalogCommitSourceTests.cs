@@ -214,51 +214,20 @@ public class RuntimeFeatureCatalogCommitSourceTests
     [Fact]
     public async Task RefreshAsync_LateSubscriberDoesNotReceiveAlreadyCommittedQueuedGeneration()
     {
-        var catalog = CreateCatalog();
-        var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-        var firstSubscriberEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseFirstSubscriber = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var originalGenerations = new List<long>();
+        await using var blocked = new BlockedGenerationNotifications();
         var lateGenerations = new List<long>();
-        source.SnapshotCommitted += snapshot =>
-        {
-            originalGenerations.Add(snapshot.Generation);
-            if (snapshot.Generation == 1)
-            {
-                firstSubscriberEntered.SetResult();
-                releaseFirstSubscriber.Task.GetAwaiter().GetResult();
-            }
-        };
         Action<RuntimeFeatureCatalogSnapshot> lateSubscriber = snapshot => lateGenerations.Add(snapshot.Generation);
 
-        var firstRefresh = Task.Run(() => catalog.RefreshAsync());
-        Task<RuntimeFeatureCatalogSnapshot>? secondRefresh = null;
-        try
-        {
-            await firstSubscriberEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            secondRefresh = Task.Run(() => catalog.RefreshAsync());
-            var second = await secondRefresh.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(2, second.Generation);
-            Assert.Equal(1, Assert.Single(originalGenerations));
-            source.SnapshotCommitted += lateSubscriber;
-        }
-        finally
-        {
-            releaseFirstSubscriber.TrySetResult();
-            try
-            {
-                if (secondRefresh is not null)
-                    await secondRefresh.WaitAsync(TimeSpan.FromSeconds(5));
-            }
-            finally
-            {
-                await firstRefresh.WaitAsync(TimeSpan.FromSeconds(5));
-            }
-        }
+        await blocked.StartFirstRefreshAsync();
+        var second = await blocked.CommitSecondWhileBlockedAsync();
+        Assert.Equal(2, second.Generation);
+        Assert.Equal(1, Assert.Single(blocked.BlockingSubscriberGenerations));
+        blocked.Source.SnapshotCommitted += lateSubscriber;
+        await blocked.ReleaseAndJoinAsync();
 
-        var third = await catalog.RefreshAsync();
+        var third = await blocked.Catalog.RefreshAsync();
 
-        Assert.Equal([1L, 2L, 3L], originalGenerations);
+        Assert.Equal([1L, 2L, 3L], blocked.BlockingSubscriberGenerations);
         Assert.Equal([third.Generation], lateGenerations);
         Assert.Equal(3, third.Generation);
     }
@@ -266,47 +235,18 @@ public class RuntimeFeatureCatalogCommitSourceTests
     [Fact]
     public async Task RefreshAsync_UnsubscribeBeforeQueuedGenerationSamplingSuppressesOnlyQueuedDelivery()
     {
-        var catalog = CreateCatalog();
-        var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-        var firstSubscriberEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseFirstSubscriber = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var blocked = new BlockedGenerationNotifications();
         var targetGenerations = new List<long>();
-        source.SnapshotCommitted += snapshot =>
-        {
-            if (snapshot.Generation == 1)
-            {
-                firstSubscriberEntered.SetResult();
-                releaseFirstSubscriber.Task.GetAwaiter().GetResult();
-            }
-        };
         Action<RuntimeFeatureCatalogSnapshot> targetSubscriber = snapshot => targetGenerations.Add(snapshot.Generation);
-        source.SnapshotCommitted += targetSubscriber;
+        blocked.Source.SnapshotCommitted += targetSubscriber;
 
-        var firstRefresh = Task.Run(() => catalog.RefreshAsync());
-        Task<RuntimeFeatureCatalogSnapshot>? secondRefresh = null;
-        try
-        {
-            await firstSubscriberEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            secondRefresh = Task.Run(() => catalog.RefreshAsync());
-            var second = await secondRefresh.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(2, second.Generation);
-            source.SnapshotCommitted -= targetSubscriber;
-        }
-        finally
-        {
-            releaseFirstSubscriber.TrySetResult();
-            try
-            {
-                if (secondRefresh is not null)
-                    await secondRefresh.WaitAsync(TimeSpan.FromSeconds(5));
-            }
-            finally
-            {
-                await firstRefresh.WaitAsync(TimeSpan.FromSeconds(5));
-            }
-        }
+        await blocked.StartFirstRefreshAsync();
+        var second = await blocked.CommitSecondWhileBlockedAsync();
+        Assert.Equal(2, second.Generation);
+        blocked.Source.SnapshotCommitted -= targetSubscriber;
+        await blocked.ReleaseAndJoinAsync();
 
-        await catalog.RefreshAsync();
+        await blocked.Catalog.RefreshAsync();
 
         Assert.Equal([1L], targetGenerations);
     }
@@ -380,6 +320,65 @@ public class RuntimeFeatureCatalogCommitSourceTests
     private static RuntimeFeatureCatalog CreateCatalog() => new(
         _ => Task.FromResult<IReadOnlyCollection<Assembly>>([]),
         NullLogger<RuntimeFeatureCatalog>.Instance);
+
+    private sealed class BlockedGenerationNotifications : IAsyncDisposable
+    {
+        private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(5);
+        private readonly TaskCompletionSource firstSubscriberEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource releaseFirstSubscriber = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Task<RuntimeFeatureCatalogSnapshot>? firstRefresh;
+        private Task<RuntimeFeatureCatalogSnapshot>? secondRefresh;
+
+        public BlockedGenerationNotifications()
+        {
+            Catalog = CreateCatalog();
+            Source = new RuntimeFeatureCatalogAccessor(Catalog);
+            Source.SnapshotCommitted += snapshot =>
+            {
+                BlockingSubscriberGenerations.Add(snapshot.Generation);
+                if (snapshot.Generation != 1)
+                    return;
+
+                firstSubscriberEntered.SetResult();
+                releaseFirstSubscriber.Task.GetAwaiter().GetResult();
+            };
+        }
+
+        public RuntimeFeatureCatalog Catalog { get; }
+
+        public IRuntimeFeatureCatalogCommitSource Source { get; }
+
+        public List<long> BlockingSubscriberGenerations { get; } = [];
+
+        public async Task StartFirstRefreshAsync()
+        {
+            firstRefresh = Task.Run(() => Catalog.RefreshAsync());
+            await firstSubscriberEntered.Task.WaitAsync(WaitTimeout);
+        }
+
+        public async Task<RuntimeFeatureCatalogSnapshot> CommitSecondWhileBlockedAsync()
+        {
+            secondRefresh = Task.Run(() => Catalog.RefreshAsync());
+            return await secondRefresh.WaitAsync(WaitTimeout);
+        }
+
+        public async Task ReleaseAndJoinAsync()
+        {
+            releaseFirstSubscriber.TrySetResult();
+            try
+            {
+                if (secondRefresh is not null)
+                    await secondRefresh.WaitAsync(WaitTimeout);
+            }
+            finally
+            {
+                if (firstRefresh is not null)
+                    await firstRefresh.WaitAsync(WaitTimeout);
+            }
+        }
+
+        public ValueTask DisposeAsync() => new(ReleaseAndJoinAsync());
+    }
 
     private sealed class ThrowingLogger(LogLevel throwAt) : ILogger<RuntimeFeatureCatalog>
     {
