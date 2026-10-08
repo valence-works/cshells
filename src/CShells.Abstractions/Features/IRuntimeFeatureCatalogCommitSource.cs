@@ -16,10 +16,12 @@ public interface IRuntimeFeatureCatalogCommitSource
     /// </summary>
     /// <remarks>
     /// The payload is the exact detailed snapshot committed, including its generation. Callbacks run synchronously
-    /// outside the catalog refresh lock and should enqueue expensive work elsewhere. Each successful initial or later
-    /// refresh produces one notification; existing commits are not replayed to new subscribers. A concurrent or reentrant
-    /// refresh can commit and return while its notification waits behind a currently executing callback. The current
-    /// snapshot can therefore be newer than the event payload.
+    /// outside the catalog refresh lock, one at a time in commit-generation order. Each subscriber is invoked
+    /// independently; an exception is logged and does not prevent other subscribers from receiving the snapshot or
+    /// fail the committed refresh. Handlers should enqueue expensive work elsewhere. Each successful initial or later
+    /// refresh produces one notification; existing commits are not replayed to new subscribers. A concurrent or
+    /// reentrant refresh can commit and return while its notification waits behind a currently executing callback.
+    /// The current snapshot can therefore be newer than the event payload.
     /// </remarks>
     event Action<RuntimeFeatureCatalogSnapshot>? SnapshotCommitted;
 }
