@@ -45,7 +45,7 @@ internal sealed class RuntimeFeatureCatalog(
     public async Task<RuntimeFeatureCatalogSnapshot> RefreshAsync(CancellationToken cancellationToken = default)
     {
         await refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        var discoveryWarnings = new List<(Assembly Assembly, Exception Error)>();
+        List<(Assembly Assembly, Exception Error)> discoveryWarnings = [];
         var dispatchNotifications = false;
         RuntimeFeatureCatalogSnapshot snapshot;
 

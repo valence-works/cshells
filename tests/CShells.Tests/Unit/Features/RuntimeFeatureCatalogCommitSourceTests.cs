@@ -11,9 +11,9 @@ public class RuntimeFeatureCatalogCommitSourceTests
     public async Task RefreshAsync_NotifiesForInitialAndLaterCommitsWithExactSnapshots()
     {
         var catalog = CreateCatalog();
-        IRuntimeFeatureCatalogCommitSource source = new RuntimeFeatureCatalogAccessor(catalog);
-        var committed = new List<RuntimeFeatureCatalogSnapshot>();
-        var currentGenerationsSeenByCallbacks = new List<long>();
+        var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
+        List<RuntimeFeatureCatalogSnapshot> committed = [];
+        List<long> currentGenerationsSeenByCallbacks = [];
         source.SnapshotCommitted += snapshot =>
         {
             currentGenerationsSeenByCallbacks.Add(catalog.CurrentSnapshot.Generation);
@@ -37,7 +37,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
         var catalog = CreateCatalog();
         await catalog.RefreshAsync();
         var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-        var committed = new List<RuntimeFeatureCatalogSnapshot>();
+        List<RuntimeFeatureCatalogSnapshot> committed = [];
         source.SnapshotCommitted += committed.Add;
 
         var next = await catalog.RefreshAsync();
@@ -50,7 +50,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
     {
         var catalog = CreateCatalog();
         var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-        var received = new List<long>();
+        List<long> received = [];
         Action<RuntimeFeatureCatalogSnapshot> throwing = _ => throw new InvalidOperationException("subscriber failed");
         Action<RuntimeFeatureCatalogSnapshot> observer = snapshot => received.Add(snapshot.Generation);
         source.SnapshotCommitted += throwing;
@@ -84,7 +84,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
             },
             NullLogger<RuntimeFeatureCatalog>.Instance);
         var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-        var committed = new List<RuntimeFeatureCatalogSnapshot>();
+        List<RuntimeFeatureCatalogSnapshot> committed = [];
         source.SnapshotCommitted += committed.Add;
         var initial = await catalog.RefreshAsync();
 
@@ -122,7 +122,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
     {
         var catalog = CreateCatalog();
         var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-        var received = new List<long>();
+        List<long> received = [];
         var reentered = false;
         source.SnapshotCommitted += snapshot =>
         {
@@ -147,7 +147,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
         var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
         var enteredSubscriber = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseSubscriber = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var received = new List<long>();
+        List<long> received = [];
         source.SnapshotCommitted += snapshot =>
         {
             received.Add(snapshot.Generation);
@@ -194,7 +194,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
         {
             var catalog = CreateCatalog();
             var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-            var received = new List<long>();
+            List<long> received = [];
             source.SnapshotCommitted += snapshot => received.Add(snapshot.Generation);
 
             var start = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -215,7 +215,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
     public async Task RefreshAsync_LateSubscriberDoesNotReceiveAlreadyCommittedQueuedGeneration()
     {
         await using var blocked = new BlockedGenerationNotifications();
-        var lateGenerations = new List<long>();
+        List<long> lateGenerations = [];
         Action<RuntimeFeatureCatalogSnapshot> lateSubscriber = snapshot => lateGenerations.Add(snapshot.Generation);
 
         await blocked.StartFirstRefreshAsync();
@@ -236,7 +236,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
     public async Task RefreshAsync_UnsubscribeBeforeQueuedGenerationSamplingSuppressesOnlyQueuedDelivery()
     {
         await using var blocked = new BlockedGenerationNotifications();
-        var targetGenerations = new List<long>();
+        List<long> targetGenerations = [];
         Action<RuntimeFeatureCatalogSnapshot> targetSubscriber = snapshot => targetGenerations.Add(snapshot.Generation);
         blocked.Source.SnapshotCommitted += targetSubscriber;
 
@@ -256,7 +256,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
     {
         var duplicateCatalog = CreateCatalog();
         var duplicateSource = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(duplicateCatalog);
-        var duplicateCalls = new List<string>();
+        List<string> duplicateCalls = [];
         Action<RuntimeFeatureCatalogSnapshot> first = _ => duplicateCalls.Add("first");
         Action<RuntimeFeatureCatalogSnapshot> second = _ => duplicateCalls.Add("second");
         duplicateSource.SnapshotCommitted += first + second + first;
@@ -268,7 +268,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
 
         var subsequenceCatalog = CreateCatalog();
         var subsequenceSource = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(subsequenceCatalog);
-        var subsequenceCalls = new List<string>();
+        List<string> subsequenceCalls = [];
         Action<RuntimeFeatureCatalogSnapshot> firstSubsequenceHandler = _ => subsequenceCalls.Add("first");
         Action<RuntimeFeatureCatalogSnapshot> secondSubsequenceHandler = _ => subsequenceCalls.Add("second");
         subsequenceSource.SnapshotCommitted += firstSubsequenceHandler;
@@ -286,7 +286,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
         var logger = new ThrowingLogger(LogLevel.Information);
         var catalog = new RuntimeFeatureCatalog(_ => Task.FromResult<IReadOnlyCollection<Assembly>>([]), logger);
         var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-        var received = new List<long>();
+        List<long> received = [];
         source.SnapshotCommitted += snapshot => received.Add(snapshot.Generation);
         source.SnapshotCommitted += snapshot => received.Add(snapshot.Generation);
 
@@ -305,7 +305,7 @@ public class RuntimeFeatureCatalogCommitSourceTests
         var logger = new ThrowingLogger(LogLevel.Error);
         var catalog = new RuntimeFeatureCatalog(_ => Task.FromResult<IReadOnlyCollection<Assembly>>([]), logger);
         var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
-        var received = new List<long>();
+        List<long> received = [];
         source.SnapshotCommitted += _ => throw new InvalidOperationException("subscriber failed");
         source.SnapshotCommitted += snapshot => received.Add(snapshot.Generation);
 
