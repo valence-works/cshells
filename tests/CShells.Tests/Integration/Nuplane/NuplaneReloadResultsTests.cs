@@ -12,6 +12,7 @@ public sealed class NuplaneReloadResultsTests
     [Fact]
     public async Task PartialErrorsReachCallbackUnchangedAndReloadRetriesWithoutAnotherCatalogScan()
     {
+        var loggerProvider = new NuplaneTestLoggerProvider();
         var refusal = new InvalidOperationException("host refusal");
         var nested = new ApplicationException("shell activation failed", refusal);
         IReadOnlyList<ReloadResult>? callbackResults = null;
@@ -26,7 +27,7 @@ public sealed class NuplaneReloadResultsTests
                 return ValueTask.CompletedTask;
             }
         };
-        var (coordinator, catalog, registry, registryState) = CreateCoordinator(options);
+        var (coordinator, catalog, registry, registryState) = CreateCoordinator(options, loggerProvider);
         var success = new ReloadResult("successful-shell", null, null, null);
         var failed = new ReloadResult("refused-shell", null, null, nested);
         registryState.Results = [success, failed];
@@ -48,11 +49,13 @@ public sealed class NuplaneReloadResultsTests
         Assert.Equal(1, catalog.RefreshCount);
         Assert.Equal(2, registryState.ReloadCount);
         Assert.Equal(2, callbackCount);
+        Assert.Empty(loggerProvider.Snapshot());
     }
 
     [Fact]
     public async Task CallbackFailureRetainsReloadWorkAndOriginalException()
     {
+        var loggerProvider = new NuplaneTestLoggerProvider();
         var callbackFault = new InvalidOperationException("result adapter failed");
         var callbackCount = 0;
         var options = new NuplaneIntegrationOptions
@@ -66,10 +69,11 @@ public sealed class NuplaneReloadResultsTests
                 return ValueTask.CompletedTask;
             }
         };
-        var (coordinator, catalog, registry, registryState) = CreateCoordinator(options);
+        var (coordinator, catalog, registry, registryState) = CreateCoordinator(options, loggerProvider);
 
         var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator));
         Assert.Same(callbackFault, thrown);
+        NuplaneCoordinatorTestCases.AssertAdapterError(loggerProvider, callbackFault, "test");
 
         await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
 
@@ -77,11 +81,13 @@ public sealed class NuplaneReloadResultsTests
         Assert.Equal(2, registryState.ReloadCount);
         Assert.Equal(2, callbackCount);
         Assert.Single(registryState.Results);
+        Assert.Single(loggerProvider.Snapshot());
     }
 
     [Fact]
     public async Task ThrownRegistryFailureEscapesUnchangedAndDoesNotInvokeResultCallback()
     {
+        var loggerProvider = new NuplaneTestLoggerProvider();
         var registryFault = new InvalidOperationException("registry call failed");
         var callbackCount = 0;
         var options = new NuplaneIntegrationOptions
@@ -93,13 +99,14 @@ public sealed class NuplaneReloadResultsTests
                 return ValueTask.CompletedTask;
             }
         };
-        var (coordinator, catalog, registry, registryState) = CreateCoordinator(options);
+        var (coordinator, catalog, registry, registryState) = CreateCoordinator(options, loggerProvider);
         registryState.ReloadHandler = (number, _) => number == 1
             ? Task.FromException<IReadOnlyList<ReloadResult>>(registryFault)
             : Task.FromResult<IReadOnlyList<ReloadResult>>([new ReloadResult("test", null, null, null)]);
 
         var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator));
         Assert.Same(registryFault, thrown);
+        NuplaneCoordinatorTestCases.AssertAdapterError(loggerProvider, registryFault, "test");
         Assert.Equal(0, callbackCount);
 
         await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
@@ -107,6 +114,60 @@ public sealed class NuplaneReloadResultsTests
         Assert.Equal(1, catalog.RefreshCount);
         Assert.Equal(2, registryState.ReloadCount);
         Assert.Equal(1, callbackCount);
+        Assert.Single(loggerProvider.Snapshot());
+    }
+
+    [Fact]
+    public async Task RegistryFactoryFailureIsLoggedAndLeavesCatalogWorkRetryable()
+    {
+        var registryFailure = new InvalidOperationException("registry factory failed");
+        var loggerProvider = new NuplaneTestLoggerProvider();
+        var catalog = new TestRuntimeFeatureCatalog();
+        var registry = TestShellRegistry.Create(out _);
+        var factoryCalls = 0;
+        var coordinator = new NuplaneRefreshCoordinator(
+            catalog,
+            new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()),
+            () => Interlocked.Increment(ref factoryCalls) == 1 ? throw registryFailure : registry,
+            loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
+        var applied = FakePackageAssemblyCatalog.Resolved("feature-package");
+        var changeSet = new PackageChangeSet([applied], [], [], "factory-failure-correlation", DateTimeOffset.UtcNow);
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => coordinator.OnPackagesReconciledAsync(changeSet, [applied], CancellationToken.None));
+
+        Assert.Same(registryFailure, thrown);
+        NuplaneCoordinatorTestCases.AssertAdapterError(loggerProvider, registryFailure, "factory-failure-correlation");
+        Assert.Equal(0, catalog.RefreshCount);
+        await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
+        Assert.Equal(1, catalog.RefreshCount);
+        Assert.Single(loggerProvider.Snapshot());
+    }
+
+    [Fact]
+    public async Task ActiveShellRegistryFailureIsLoggedAndLeavesCatalogWorkRetryable()
+    {
+        var registryFailure = new InvalidOperationException("active shell lookup failed");
+        var loggerProvider = new NuplaneTestLoggerProvider();
+        var catalog = new TestRuntimeFeatureCatalog();
+        var registry = TestShellRegistry.Create(out var registryState);
+        registryState.ActiveShellsHandler = number => number == 1
+            ? throw registryFailure
+            : [null!];
+        var coordinator = new NuplaneRefreshCoordinator(
+            catalog,
+            new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions()),
+            () => registry,
+            loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => NuplaneCoordinatorTestCases.NotifyAsync(coordinator));
+
+        Assert.Same(registryFailure, thrown);
+        NuplaneCoordinatorTestCases.AssertAdapterError(loggerProvider, registryFailure, "test");
+        Assert.Equal(0, catalog.RefreshCount);
+        await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
+        Assert.Equal(1, catalog.RefreshCount);
+        Assert.Single(loggerProvider.Snapshot());
     }
 
     [Fact]
@@ -175,11 +236,12 @@ public sealed class NuplaneReloadResultsTests
     }
 
     private static (NuplaneRefreshCoordinator Coordinator, TestRuntimeFeatureCatalog Catalog, IShellRegistry Registry, TestShellRegistry RegistryState)
-        CreateCoordinator(NuplaneIntegrationOptions options)
+        CreateCoordinator(NuplaneIntegrationOptions options, NuplaneTestLoggerProvider? loggerProvider = null)
     {
         var catalog = new TestRuntimeFeatureCatalog();
         var registry = TestShellRegistry.Create(out var registryState);
-        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(options), () => registry);
+        var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(options), () => registry, loggerProvider?.CreateTypedLogger<NuplaneRefreshCoordinator>());
         return (coordinator, catalog, registry, registryState);
     }
+
 }

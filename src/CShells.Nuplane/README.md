@@ -67,6 +67,12 @@ An eligible completion is a delivered `OnPackagesReconciledAsync` callback with 
 
 The adapter reads the current options once for each eligible reconciliation delivery and copies the four policy values before recording work. Standard `IOptionsMonitor` configuration therefore applies on the next eligible delivery, including values bound from a reloaded `IConfiguration`; changes do not start a background refresh or reload by themselves. The current delivery keeps the policy it captured even if configuration changes while its refresh is running. Build participation does not read options. Use `Configure`, `Bind`, or dependency-aware `AddOptions` configuration so the registered monitor owns the live values. A custom `IOptionsMonitor<NuplaneIntegrationOptions>` registration is supported; replacing only `IOptions<NuplaneIntegrationOptions>` is unsupported.
 
+## Diagnose observer operation failures
+
+When logging is registered, an ordinary nonfatal failure from admitted reconciliation work produces one adapter `Error` record with the original exception, the `PackageChangeSet.CorrelationId`, and the `OnPackagesReconciledAsync` operation name. The adapter then rethrows the same exception so Nuplane retains its observer warning and continuation behavior. Requested-token cancellation, the documented fatal exceptions, build-time refresh failures, and returned per-shell `ReloadResult.Error` values remain outside this diagnostic boundary. With no logging provider, the adapter uses `NullLogger` and preserves the same failure propagation.
+
+As with the framework's other logging consumers, exception-preserving diagnostics assume registered logging providers do not throw from `ILogger.Log`; logger-provider failures are outside this adapter contract.
+
 ## Refresh cold shells before construction
 
 When a package completion arrives with no active shell, the adapter records catalog freshness and returns without scanning assemblies, activating a shell, or reloading. The next requested shell build consumes pending freshness before CShells initializes or reads the feature catalog. A successful refresh is committed even if later shell initialization fails, so the next build can reuse that fresh snapshot.

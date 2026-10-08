@@ -7,14 +7,14 @@
 
 **Purpose**: Declare the implementation dependency and the actual-dispatcher test dependency.
 
-- [ ] T001 Add `Microsoft.Extensions.Logging.Abstractions` to `src/CShells.Nuplane/CShells.Nuplane.csproj`; keep using the existing target-framework-specific central pins in `Directory.Packages.props`.
-- [ ] T002 Add the `Nuplane` runtime package to `tests/CShells.Tests/CShells.Tests.csproj` and add its test-only central version pin `0.0.11-preview.99` in `Directory.Packages.props`; do not add it to the shipping adapter project.
+- [X] T001 Add `Microsoft.Extensions.Logging.Abstractions` to `src/CShells.Nuplane/CShells.Nuplane.csproj`; keep using the existing target-framework-specific central pins in `Directory.Packages.props`.
+- [X] T002 Add the `Nuplane` runtime package to `tests/CShells.Tests/CShells.Tests.csproj` and add its test-only central version pin `0.0.11-preview.99` in `Directory.Packages.props`; do not add it to the shipping adapter project.
 
 ## Phase 2: Foundational
 
 **Purpose**: Provide shared structured log capture for the focused test cases.
 
-- [ ] T003 [P] Add a reusable capturing `ILoggerProvider` in `tests/CShells.Tests/Integration/Nuplane/NuplaneTestLoggerProvider.cs` that retains level, exception instance, structured state, and category.
+- [X] T003 [P] Add a reusable capturing `ILoggerProvider` in `tests/CShells.Tests/Integration/Nuplane/NuplaneTestLoggerProvider.cs` that retains level, exception instance, structured state, and category.
 
 ## Phase 3: User Story 1 - Diagnose package reconciliation failures (Priority: P1)
 
@@ -24,24 +24,24 @@
 
 ### Tests for User Story 1
 
-- [ ] T004 [US1] Add coordinator tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneRefreshCoordinatorTests.cs` for one Error with `PackageChangeSet.CorrelationId`, original exception identity, and retained retry after refresh failure; also assert Begin-only refresh failure remains unlogged and unchanged.
-- [ ] T005 [US1] Add logger classification tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneRefreshCoordinatorTests.cs` and validation-boundary assertions in `tests/CShells.Tests/Integration/Nuplane/NuplaneLiveOptionsTests.cs` for requested-token cancellation, uncanceled `OperationCanceledException`, each of `OutOfMemoryException`, `StackOverflowException`, `AccessViolationException`, `AppDomainUnloadedException`, and `BadImageFormatException`, plus option-read/invalid-trigger failures that precede observer admission and emit no adapter Error.
-- [ ] T006 [P] [US1] Add registry/reload and result-callback failure, exception-identity, and pending-retry assertions in `tests/CShells.Tests/Integration/Nuplane/NuplaneReloadResultsTests.cs`; assert returned `ReloadResult.Error` remains callback data and produces no new adapter Error.
-- [ ] T007 [P] [US1] Add DI logger-factory wiring and no-`AddLogging` propagation coverage in `tests/CShells.Tests/Integration/Nuplane/NuplaneCompositionTests.cs`.
-- [ ] T008 [P] [US1] Add `tests/CShells.Tests/Integration/Nuplane/NuplaneObserverDiagnosticsTests.cs` using the real `ObserverEventDispatcher` and `ReconciliationLogger`; assert the adapter Error carries the exception and correlation, Nuplane's Warning remains, and the following observer runs and can retry.
+- [X] T004 [US1] Add coordinator tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneRefreshCoordinatorTests.cs` for one Error with `PackageChangeSet.CorrelationId`, original exception identity, and retained retry after refresh failure; also assert Begin-only refresh failure remains unlogged and unchanged.
+- [X] T005 [US1] Add logger classification tests in `tests/CShells.Tests/Integration/Nuplane/NuplaneRefreshCoordinatorTests.cs` and validation-boundary assertions in `tests/CShells.Tests/Integration/Nuplane/NuplaneLiveOptionsTests.cs` for requested-token cancellation, uncanceled `OperationCanceledException`, each of `OutOfMemoryException`, `StackOverflowException`, `AccessViolationException`, `AppDomainUnloadedException`, and `BadImageFormatException`, plus option-read/invalid-trigger failures that precede observer admission and emit no adapter Error.
+- [X] T006 [P] [US1] Add registry/reload and result-callback failure, exception-identity, and pending-retry assertions in `tests/CShells.Tests/Integration/Nuplane/NuplaneReloadResultsTests.cs`; assert returned `ReloadResult.Error` remains callback data and produces no new adapter Error.
+- [X] T007 [P] [US1] Add DI logger-factory wiring and no-`AddLogging` propagation coverage in `tests/CShells.Tests/Integration/Nuplane/NuplaneCompositionTests.cs`.
+- [X] T008 [P] [US1] Add `tests/CShells.Tests/Integration/Nuplane/NuplaneObserverDiagnosticsTests.cs` using the real `ObserverEventDispatcher` and `ReconciliationLogger`; assert the adapter Error carries the exception and correlation, Nuplane's Warning remains, and the following observer runs and can retry.
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Add optional `ILogger<NuplaneRefreshCoordinator>` injection with `NullLogger` fallback and a narrow admitted-observer catch/log/rethrow boundary in `src/CShells.Nuplane/Internal/NuplaneRefreshCoordinator.cs`; include fixed `OnPackagesReconciledAsync` operation and reconciliation correlation fields, exclude only requested-token cancellation and the five specified fatal types, and preserve gates, epochs, retries, `BeginAsync`, and returned-result semantics.
-- [ ] T010 [US1] Pass the optional typed logger through the existing `CoordinatorHolder` manual factory in `src/CShells.Nuplane/CShellsNuplaneBuilderExtensions.cs`, using optional service resolution so hosts without logging remain valid.
-- [ ] T011 [US1] Document the optional logger behavior and unchanged propagation boundary in `src/CShells.Nuplane/README.md` without adding public options or API.
+- [X] T009 [US1] Add optional `ILogger<NuplaneRefreshCoordinator>` injection with `NullLogger` fallback and a narrow admitted-observer catch/log/rethrow boundary in `src/CShells.Nuplane/Internal/NuplaneRefreshCoordinator.cs`; include fixed `OnPackagesReconciledAsync` operation and reconciliation correlation fields, exclude only requested-token cancellation and the five specified fatal types, and preserve gates, epochs, retries, `BeginAsync`, and returned-result semantics.
+- [X] T010 [US1] Pass the optional typed logger through the existing `CoordinatorHolder` manual factory in `src/CShells.Nuplane/CShellsNuplaneBuilderExtensions.cs`, using optional service resolution so hosts without logging remain valid.
+- [X] T011 [US1] Document the optional logger behavior and unchanged propagation boundary in `src/CShells.Nuplane/README.md` without adding public options or API.
 
 ## Phase 4: Verification and package qualification
 
 **Purpose**: Prove the implementation against the focused source tests and supported package surfaces.
 
 - [ ] T012 Run focused Nuplane tests and the full `tests/CShells.Tests/CShells.Tests.csproj` Release suite; record exact commands and results in the issue's evidence before closure.
-- [ ] T013 Build `src/CShells.Nuplane/CShells.Nuplane.csproj` in Release for `net8.0`, `net9.0`, and `net10.0`; retain exact command results.
+- [X] T013 Build `src/CShells.Nuplane/CShells.Nuplane.csproj` in Release for `net8.0`, `net9.0`, and `net10.0`; retain exact command results.
 - [ ] T014 In a disposable copy of `src/CShells.Nuplane/Internal/NuplaneRefreshCoordinator.cs`, remove the diagnostics path and compile/run the focused diagnostic tests to prove they detect the regression; restore the intended file and verify no mutation residue.
 - [ ] T015 Open the normal organization PR after root and independent review, pass required PR CI/review gates, merge under repository policy, and verify the `.github/workflows/publish.yml` main-branch gate and owner-produced preview publication before treating package artifacts as acceptance evidence.
 - [ ] T016 After the owner-published corrective preview is available, audit all ten public CShells package archives against successful workflow metadata and feed bytes, then run the PackageReference-only diagnostic consumer on actual .NET 8, .NET 9, and .NET 10 runtimes using `public-consumer-plan.md` in the modular-hosting evidence artifact workspace. Keep this proof distinct from the accepted pre-correction counterexample; do not manually publish or promote a stable release as part of this task.

@@ -4,6 +4,8 @@ using CShells.Features;
 using CShells.Lifecycle;
 using CShells.Nuplane;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Nuplane.Abstractions;
 using Nuplane.Loading;
 
@@ -192,6 +194,47 @@ public sealed class NuplaneCompositionTests
 
         Assert.Same(observer, participant);
         Assert.Equal(0, registryResolutions);
+    }
+
+    [Fact]
+    public async Task CoordinatorFactoryUsesTheOptionalLoggerFromTheLoggerFactory()
+    {
+        var loggerProvider = new NuplaneTestLoggerProvider();
+        var refreshFailure = new InvalidOperationException("factory logger wiring failure");
+        var catalog = new TestRuntimeFeatureCatalog
+        {
+            RefreshHandler = (_, _) => Task.FromException(refreshFailure)
+        };
+        var registry = TestShellRegistry.Create(out _);
+        var services = NuplaneCoordinatorTestCases.CreateAdapterServices(catalog, registry, loggerProvider);
+
+        await using var provider = services.BuildServiceProvider();
+        var observer = provider.GetRequiredService<INuplaneObserver>();
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => NuplaneCoordinatorTestCases.NotifyAsync(observer));
+
+        Assert.Same(refreshFailure, thrown);
+        NuplaneCoordinatorTestCases.AssertAdapterError(loggerProvider, refreshFailure, "test");
+    }
+
+    [Fact]
+    public async Task MissingLoggingProviderUsesNullLoggerAndPreservesFailurePropagation()
+    {
+        var refreshFailure = new InvalidOperationException("logger is optional");
+        var catalog = new TestRuntimeFeatureCatalog
+        {
+            RefreshHandler = (_, _) => Task.FromException(refreshFailure)
+        };
+        var registry = TestShellRegistry.Create(out _);
+        var services = NuplaneCoordinatorTestCases.CreateAdapterServices(catalog, registry);
+
+        await using var provider = services.BuildServiceProvider();
+        Assert.Null(provider.GetService<ILoggerFactory>());
+        var observer = provider.GetRequiredService<INuplaneObserver>();
+
+        var thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => NuplaneCoordinatorTestCases.NotifyAsync(observer));
+
+        Assert.Same(refreshFailure, thrown);
+        Assert.Equal(1, catalog.RefreshCount);
     }
 
     [Fact]

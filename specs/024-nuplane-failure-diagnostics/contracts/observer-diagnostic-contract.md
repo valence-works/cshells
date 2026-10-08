@@ -21,5 +21,6 @@ The adapter rethrows that same exception instance. It does not format and substi
 - Do not extend the new diagnostic boundary to build-time freshness in `BeginAsync`.
 - A returned `ReloadResult.Error` is not a thrown failure and is not newly Error-logged; preserve the existing result callback and pending-reload behavior.
 - If the host has no logging provider, construction and operation remain valid through the null logger fallback.
+- Exception-preserving diagnostics assume registered logging providers do not throw from `ILogger.Log`; logger-provider failures are outside this adapter contract.
 
 No particular log message wording or event ID is a public compatibility promise. The exception object, structured correlation, observer-operation name, Error level, one-record count, and exception propagation are the contract.

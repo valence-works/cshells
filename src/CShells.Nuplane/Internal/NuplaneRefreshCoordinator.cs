@@ -1,5 +1,7 @@
 using CShells.Features;
 using CShells.Lifecycle;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nuplane.Abstractions;
 
@@ -9,11 +11,13 @@ namespace CShells.Nuplane.Internal;
 internal sealed class NuplaneRefreshCoordinator(
     IRuntimeFeatureCatalog featureCatalog,
     IOptionsMonitor<NuplaneIntegrationOptions> options,
-    Func<IShellRegistry> shellRegistryFactory) : INuplaneObserver, IShellGenerationBuildParticipant
+    Func<IShellRegistry> shellRegistryFactory,
+    ILogger<NuplaneRefreshCoordinator>? logger = null) : INuplaneObserver, IShellGenerationBuildParticipant
 {
     private readonly IRuntimeFeatureCatalog catalog = featureCatalog ?? throw new ArgumentNullException(nameof(featureCatalog));
     private readonly IOptionsMonitor<NuplaneIntegrationOptions> optionsMonitor = options ?? throw new ArgumentNullException(nameof(options));
     private readonly Func<IShellRegistry> registryFactory = shellRegistryFactory ?? throw new ArgumentNullException(nameof(shellRegistryFactory));
+    private readonly ILogger<NuplaneRefreshCoordinator> loggerInstance = logger ?? NullLogger<NuplaneRefreshCoordinator>.Instance;
     private readonly object epochStateLock = new();
     private readonly SemaphoreSlim refreshGate = new(1, 1);
     private readonly SemaphoreSlim reloadGate = new(1, 1);
@@ -46,36 +50,48 @@ internal sealed class NuplaneRefreshCoordinator(
         if (!policy.Enabled)
             return;
 
-        var hasSourceChanges = changeSet.Added.Count > 0 || changeSet.Updated.Count > 0 || changeSet.Removed.Count > 0;
-        var forceRefresh = policy.RefreshTrigger == NuplaneRefreshTrigger.EveryEligibleCompletion;
-        long catalogRequestAtDelivery;
-        bool callbackRequestsCatalogWork;
-
-        lock (epochStateLock)
+        try
         {
-            if (forceRefresh || hasSourceChanges)
-                _requestedCatalogEpoch = checked(_requestedCatalogEpoch + 1);
+            var hasSourceChanges = changeSet.Added.Count > 0 || changeSet.Updated.Count > 0 || changeSet.Removed.Count > 0;
+            var forceRefresh = policy.RefreshTrigger == NuplaneRefreshTrigger.EveryEligibleCompletion;
+            long catalogRequestAtDelivery;
+            bool callbackRequestsCatalogWork;
 
-            catalogRequestAtDelivery = _requestedCatalogEpoch;
-            callbackRequestsCatalogWork = _requestedCatalogEpoch > _committedCatalogEpoch;
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        var registry = registryFactory();
-        if (registry.GetActiveShells().Count == 0)
-            return;
-
-        if (policy.AutoReload && callbackRequestsCatalogWork)
-        {
             lock (epochStateLock)
             {
-                _requestedReloadEpoch = checked(_requestedReloadEpoch + 1);
-                _reloadCatalogEpoch = catalogRequestAtDelivery;
-            }
-        }
+                if (forceRefresh || hasSourceChanges)
+                    _requestedCatalogEpoch = checked(_requestedCatalogEpoch + 1);
 
-        await RefreshPendingCatalogAsync(cancellationToken).ConfigureAwait(false);
-        await TryReloadPendingAsync(registry, policy, cancellationToken).ConfigureAwait(false);
+                catalogRequestAtDelivery = _requestedCatalogEpoch;
+                callbackRequestsCatalogWork = _requestedCatalogEpoch > _committedCatalogEpoch;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var registry = registryFactory();
+            if (registry.GetActiveShells().Count == 0)
+                return;
+
+            if (policy.AutoReload && callbackRequestsCatalogWork)
+            {
+                lock (epochStateLock)
+                {
+                    _requestedReloadEpoch = checked(_requestedReloadEpoch + 1);
+                    _reloadCatalogEpoch = catalogRequestAtDelivery;
+                }
+            }
+
+            await RefreshPendingCatalogAsync(cancellationToken).ConfigureAwait(false);
+            await TryReloadPendingAsync(registry, policy, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (ShouldLog(exception, cancellationToken))
+        {
+            loggerInstance.LogError(
+                exception,
+                "Nuplane reconciliation operation {Operation} failed for {CorrelationId}.",
+                nameof(INuplaneObserver.OnPackagesReconciledAsync),
+                changeSet.CorrelationId);
+            throw;
+        }
     }
 
     public async ValueTask<IShellGenerationBuildLease> BeginAsync(
@@ -131,6 +147,14 @@ internal sealed class NuplaneRefreshCoordinator(
 
         return policy;
     }
+
+    private static bool ShouldLog(Exception exception, CancellationToken cancellationToken) =>
+        !(exception is OperationCanceledException && cancellationToken.IsCancellationRequested) &&
+        exception is not OutOfMemoryException and
+            not StackOverflowException and
+            not AccessViolationException and
+            not AppDomainUnloadedException and
+            not BadImageFormatException;
 
     private async ValueTask TryReloadPendingAsync(
         IShellRegistry registry,

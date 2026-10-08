@@ -3,6 +3,7 @@ using CShells.Lifecycle;
 using CShells.Nuplane.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Nuplane.Abstractions;
 
 namespace CShells.Nuplane;
@@ -44,7 +45,8 @@ public static class CShellsNuplaneBuilderExtensions
                 new NuplaneRefreshCoordinator(
                     serviceProvider.GetRequiredService<CShells.Features.IRuntimeFeatureCatalog>(),
                     serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<NuplaneIntegrationOptions>>(),
-                    () => serviceProvider.GetRequiredService<IShellRegistry>())));
+                    () => serviceProvider.GetRequiredService<IShellRegistry>(),
+                    serviceProvider.GetService<ILogger<NuplaneRefreshCoordinator>>())));
             services.AddSingleton<INuplaneObserver>(serviceProvider => serviceProvider.GetRequiredService<CoordinatorHolder>().Coordinator);
             services.AddSingleton<IShellGenerationBuildParticipant>(serviceProvider => serviceProvider.GetRequiredService<CoordinatorHolder>().Coordinator);
         }
