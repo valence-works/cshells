@@ -132,7 +132,8 @@ public class CShellsBuilder
     /// <typeparam name="TService">The closed service type to share.</typeparam>
     /// <remarks>
     /// The root provider retains ownership of instances it creates. Shell providers receive the resolved instances
-    /// without acquiring disposal ownership. Aliases must be selected separately.
+    /// without acquiring disposal ownership. Aliases must be selected separately. See the <see cref="ShareSingletonWithShells(Type)"/>
+    /// overload for unsupported enumerable overrides.
     /// </remarks>
     /// <returns>This builder.</returns>
     public CShellsBuilder ShareSingletonWithShells<TService>() => ShareSingletonWithShells(typeof(TService));
@@ -143,7 +144,9 @@ public class CShellsBuilder
     /// <param name="serviceType">The closed service type whose unkeyed singleton registrations should be shared.</param>
     /// <remarks>
     /// Validation is performed when a shell provider is built, against the final root registrations and exclusion set.
-    /// Keyed registrations and aliases are independent. The root provider retains ownership of instances it creates.
+    /// Keyed registrations and aliases are independent. An explicit unkeyed registration for
+    /// <c>IEnumerable&lt;TService&gt;</c> or the open generic <c>IEnumerable&lt;&gt;</c> conflicts with the
+    /// container-generated service aggregation and is rejected. The root provider retains ownership of instances it creates.
     /// </remarks>
     /// <returns>This builder.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="serviceType"/> is <see langword="null"/>.</exception>

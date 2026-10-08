@@ -34,7 +34,7 @@ internal sealed class ShellProviderBuilder(
     private readonly IRootServiceCollectionAccessor _rootServicesAccessor = Guard.Against.Null(rootServicesAccessor);
     private readonly IServiceProvider _rootProvider = Guard.Against.Null(rootProvider);
     private readonly IShellServiceExclusionRegistry _exclusionRegistry = Guard.Against.Null(exclusionRegistry);
-    private readonly IReadOnlyCollection<Type> _sharedSingletonServiceTypes = Guard.Against.Null(sharedSingletonServiceTypes);
+    private readonly IReadOnlyCollection<Type> sharedSingletonServiceTypes = Guard.Against.Null(sharedSingletonServiceTypes);
     private readonly IShellFeatureFactory _featureFactory = Guard.Against.Null(featureFactory);
     private readonly RuntimeFeatureCatalog _featureCatalog = Guard.Against.Null(featureCatalog);
     private readonly IShellSettingsPreparer? _settingsPreparer = ResolveSettingsPreparer(settingsPreparers);
@@ -199,7 +199,7 @@ internal sealed class ShellProviderBuilder(
 
         foreach (var descriptor in rootDescriptors)
         {
-            if (excluded.Contains(descriptor.ServiceType))
+            if (excluded.Contains(descriptor.ServiceType) || IsBuildParticipantDescriptor(descriptor))
                 continue;
 
             if (!descriptor.IsKeyedService && sharedInstances.TryGetValue(descriptor.ServiceType, out var instances))
@@ -213,6 +213,27 @@ internal sealed class ShellProviderBuilder(
         }
     }
 
+    private static bool IsBuildParticipantDescriptor(ServiceDescriptor descriptor)
+    {
+        var participantType = typeof(IShellGenerationBuildParticipant);
+        if (participantType.IsAssignableFrom(descriptor.ServiceType))
+            return true;
+
+        // Participants are root-owned even when registered under a concrete/base service type.
+        // Inspect only metadata already present on the descriptor: invoking factories here could
+        // create services early or change the root container's lifetime/disposal behavior.
+        var implementationType = descriptor.IsKeyedService
+            ? descriptor.KeyedImplementationType
+            : descriptor.ImplementationType;
+        if (implementationType is not null && participantType.IsAssignableFrom(implementationType))
+            return true;
+
+        var implementationInstance = descriptor.IsKeyedService
+            ? descriptor.KeyedImplementationInstance
+            : descriptor.ImplementationInstance;
+        return implementationInstance is IShellGenerationBuildParticipant;
+    }
+
     private Dictionary<Type, object[]> ResolveSharedSingletons(
         IServiceCollection rootDescriptors,
         IReadOnlySet<Type> excludedTypes)
@@ -220,7 +241,7 @@ internal sealed class ShellProviderBuilder(
         var result = new Dictionary<Type, object[]>();
         var registrationsByType = new Dictionary<Type, ServiceDescriptor[]>();
 
-        foreach (var serviceType in _sharedSingletonServiceTypes)
+        foreach (var serviceType in sharedSingletonServiceTypes)
         {
             if (serviceType.ContainsGenericParameters)
             {
@@ -252,6 +273,17 @@ internal sealed class ShellProviderBuilder(
             {
                 throw new InvalidOperationException(
                     $"CShells cannot share service type '{serviceType}' because the root service collection has no unkeyed registration for it. Register at least one unkeyed singleton before building shells.");
+            }
+
+            var enumerableServiceType = typeof(IEnumerable<>).MakeGenericType(serviceType);
+            var enumerableOverride = rootDescriptors.FirstOrDefault(descriptor =>
+                !descriptor.IsKeyedService &&
+                (descriptor.ServiceType == enumerableServiceType ||
+                 descriptor.ServiceType == typeof(IEnumerable<>)));
+            if (enumerableOverride is not null)
+            {
+                throw new InvalidOperationException(
+                    $"CShells cannot share service type '{serviceType}' because the root has an unkeyed registration for '{enumerableOverride.ServiceType}', which overrides the DI-generated IEnumerable<{serviceType.Name}> aggregation. Remove the enumerable registration or do not select this service type for sharing. Keyed enumerable registrations are independent and do not conflict.");
             }
 
             var nonSingleton = registrations.FirstOrDefault(descriptor => descriptor.Lifetime != ServiceLifetime.Singleton);

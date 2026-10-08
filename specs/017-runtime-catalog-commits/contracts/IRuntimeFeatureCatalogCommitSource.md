@@ -16,7 +16,8 @@ The optional source exposes `SnapshotCommitted`, an event carrying the exact det
 - Commits and queue insertions are serialized in generation order. A single dispatcher invokes handlers outside the refresh semaphore.
 - A concurrent or reentrant refresh may commit and return while an earlier notification callback remains active; its event is delivered later in FIFO order.
 - One subscriber exception is logged and isolated; other subscribers and later notifications still run.
-- Removing a handler prevents it from receiving subsequent dispatches. If its delegate has already been captured for the event currently being dispatched, it may still receive that event.
+- A handler added after a commit is not eligible for that commit, even if its notification is still queued. Dispatch samples active eligible handlers when it dequeues each snapshot.
+- Removing a handler before a queued snapshot's handlers are sampled prevents that delivery. Once the invocation list is sampled for an in-flight snapshot, later add/remove operations do not change that list.
 
 ## Replay and races
 

@@ -13,12 +13,17 @@ internal sealed class RuntimeFeatureCatalog(
     private readonly SemaphoreSlim refreshLock = new(1, 1);
     private readonly object notificationGate = new();
     private readonly Queue<RuntimeFeatureCatalogSnapshot> pendingNotifications = new();
+    private readonly List<SnapshotSubscriber> snapshotSubscribers = [];
 
     private RuntimeFeatureCatalogSnapshot? currentSnapshot;
     private long nextGeneration;
     private bool isDispatchingNotifications;
 
-    public event Action<RuntimeFeatureCatalogSnapshot>? SnapshotCommitted;
+    public event Action<RuntimeFeatureCatalogSnapshot>? SnapshotCommitted
+    {
+        add => AddSubscribers(value);
+        remove => RemoveSubscribers(value);
+    }
 
     public RuntimeFeatureCatalogSnapshot CurrentSnapshot => Volatile.Read(ref currentSnapshot)
         ?? throw new InvalidOperationException("The runtime feature catalog has not been initialized.");
@@ -40,7 +45,7 @@ internal sealed class RuntimeFeatureCatalog(
     public async Task<RuntimeFeatureCatalogSnapshot> RefreshAsync(CancellationToken cancellationToken = default)
     {
         await refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        var discoveryWarnings = new List<(Assembly Assembly, Exception Error)>();
+        List<(Assembly Assembly, Exception Error)> discoveryWarnings = [];
         var dispatchNotifications = false;
         RuntimeFeatureCatalogSnapshot snapshot;
 
@@ -64,9 +69,9 @@ internal sealed class RuntimeFeatureCatalog(
                 featureMap,
                 DateTimeOffset.UtcNow);
 
-            Volatile.Write(ref currentSnapshot, snapshot);
             lock (notificationGate)
             {
+                Volatile.Write(ref currentSnapshot, snapshot);
                 pendingNotifications.Enqueue(snapshot);
                 if (!isDispatchingNotifications)
                 {
@@ -101,6 +106,7 @@ internal sealed class RuntimeFeatureCatalog(
         while (true)
         {
             RuntimeFeatureCatalogSnapshot snapshot;
+            Action<RuntimeFeatureCatalogSnapshot>[] subscribers;
             lock (notificationGate)
             {
                 if (pendingNotifications.Count == 0)
@@ -110,13 +116,13 @@ internal sealed class RuntimeFeatureCatalog(
                 }
 
                 snapshot = pendingNotifications.Dequeue();
+                subscribers = snapshotSubscribers
+                    .Where(subscriber => subscriber.FirstEligibleGeneration <= snapshot.Generation)
+                    .Select(subscriber => subscriber.Handler)
+                    .ToArray();
             }
 
-            var subscribers = SnapshotCommitted;
-            if (subscribers is null)
-                continue;
-
-            foreach (var subscriber in subscribers.GetInvocationList().Cast<Action<RuntimeFeatureCatalogSnapshot>>())
+            foreach (var subscriber in subscribers)
             {
                 try
                 {
@@ -132,6 +138,53 @@ internal sealed class RuntimeFeatureCatalog(
             }
         }
     }
+
+    private void AddSubscribers(Action<RuntimeFeatureCatalogSnapshot>? subscribers)
+    {
+        if (subscribers is null)
+            return;
+
+        var handlers = subscribers.GetInvocationList().Cast<Action<RuntimeFeatureCatalogSnapshot>>();
+        lock (notificationGate)
+        {
+            var firstEligibleGeneration = currentSnapshot is null ? 1 : currentSnapshot.Generation + 1;
+            foreach (var handler in handlers)
+                snapshotSubscribers.Add(new SnapshotSubscriber(handler, firstEligibleGeneration));
+        }
+    }
+
+    private void RemoveSubscribers(Action<RuntimeFeatureCatalogSnapshot>? subscribers)
+    {
+        if (subscribers is null)
+            return;
+
+        var handlers = subscribers.GetInvocationList().Cast<Action<RuntimeFeatureCatalogSnapshot>>().ToArray();
+        lock (notificationGate)
+        {
+            for (var start = snapshotSubscribers.Count - handlers.Length; start >= 0; start--)
+            {
+                var matches = true;
+                for (var offset = 0; offset < handlers.Length; offset++)
+                {
+                    if (snapshotSubscribers[start + offset].Handler == handlers[offset])
+                        continue;
+
+                    matches = false;
+                    break;
+                }
+
+                if (!matches)
+                    continue;
+
+                snapshotSubscribers.RemoveRange(start, handlers.Length);
+                return;
+            }
+        }
+    }
+
+    private sealed record SnapshotSubscriber(
+        Action<RuntimeFeatureCatalogSnapshot> Handler,
+        long FirstEligibleGeneration);
 
     private static void LogSafely(Action log)
     {

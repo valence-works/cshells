@@ -20,6 +20,8 @@ internal sealed class ShellRegistry : IShellRegistry
     private readonly IReadOnlyList<IShellGenerationActivationParticipant> _activationParticipants;
     private readonly IReadOnlyList<IShellGenerationBuildParticipant> _buildParticipants;
     private readonly ConcurrentDictionary<string, NameSlot> _slots = new(StringComparer.OrdinalIgnoreCase);
+    // Keep only generation high-water marks after unregister; removed slots/providers can be collected.
+    private readonly ConcurrentDictionary<string, long> _generationCounters = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _retainedBuildLeaseSetsGate = new();
     private readonly HashSet<ShellGenerationBuildLeaseSet> _retainedBuildLeaseSets = [];
     private ImmutableList<IShellLifecycleSubscriber> _subscribers = [];
@@ -390,8 +392,8 @@ internal sealed class ShellRegistry : IShellRegistry
         // the IDrainOperation contract ("concurrent callers for the same shell receive the
         // same instance") with one less moving part than the previous Lazy<T>+ConcurrentDictionary
         // pattern — the drain reference now lives on the Shell where it always belonged.
-        if (typedShell.Drain is { } existing)
-            return Task.FromResult(existing);
+        if (typedShell.PublishedDrain is { } existing)
+            return Task.FromResult<IDrainOperation>(existing);
 
         var policy = ResolveDrainPolicy();
         var gracePeriod = ResolveGracePeriod();
@@ -456,7 +458,7 @@ internal sealed class ShellRegistry : IShellRegistry
     /// Fans out a state-change event to every registered subscriber. Subscriber exceptions are
     /// caught and logged so one failing subscriber cannot block peers or the transition.
     /// </summary>
-    internal async Task FireStateChangedAsync(
+    internal async Task<bool> FireStateChangedAsync(
         IShell shell,
         ShellLifecycleState previous,
         ShellLifecycleState current,
@@ -464,9 +466,10 @@ internal sealed class ShellRegistry : IShellRegistry
     {
         var snapshot = _subscribers;
         if (snapshot.IsEmpty)
-            return;
+            return false;
 
         var activationFailure = (ShellGenerationActivationException?)null;
+        var notificationFailed = false;
 
         foreach (var subscriber in snapshot)
         {
@@ -474,26 +477,54 @@ internal sealed class ShellRegistry : IShellRegistry
             {
                 await subscriber.OnStateChangedAsync(shell, previous, current, cancellationToken).ConfigureAwait(false);
             }
-            catch (ShellGenerationActivationException ex)
-            {
-                // Candidate publication is the one subscriber failure that must abort the
-                // generation. Continue notifying peers first so subscriber isolation remains
-                // intact, then let the transition owner dispose the rejected candidate.
-                activationFailure ??= ex;
-                _logger.LogError(ex,
-                    "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
-                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex,
-                    "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
-                subscriber.GetType().FullName, previous, current, shell.Descriptor);
+                notificationFailed = true;
+                if (ex is ShellGenerationActivationException activationException)
+                {
+                    // Candidate publication is the one subscriber failure that must abort the
+                    // generation. Continue notifying peers before the transition owner rolls back.
+                    activationFailure ??= activationException;
+                    LogSubscriberFailure(activationException, subscriber, shell, previous, current, publicationFailure: true);
+                }
+                else
+                    LogSubscriberFailure(ex, subscriber, shell, previous, current, publicationFailure: false);
             }
         }
 
         if (activationFailure is not null)
             throw activationFailure;
+
+        return notificationFailed;
+    }
+
+    private void LogSubscriberFailure(
+        Exception exception,
+        IShellLifecycleSubscriber subscriber,
+        IShell shell,
+        ShellLifecycleState previous,
+        ShellLifecycleState current,
+        bool publicationFailure)
+    {
+        try
+        {
+            if (publicationFailure)
+            {
+                _logger.LogError(exception,
+                    "Shell generation publication failed in subscriber {SubscriberType} during {Previous} → {Current} for shell {Shell}",
+                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+            }
+            else
+            {
+                _logger.LogError(exception,
+                    "Shell lifecycle subscriber {SubscriberType} threw during {Previous} → {Current} for shell {Shell}",
+                    subscriber.GetType().FullName, previous, current, shell.Descriptor);
+            }
+        }
+        catch
+        {
+            // A logger failure must not stop notification fan-out.
+        }
     }
 
     // =========================================================================
@@ -536,10 +567,12 @@ internal sealed class ShellRegistry : IShellRegistry
                 "Registry was constructed without a ShellProviderBuilder. Use AddCShells(...) to configure the container.");
     }
 
-    private static ShellGenerationBuildContext ReserveBuildContext(NameSlot slot, IShellBlueprint blueprint)
+    private ShellGenerationBuildContext ReserveBuildContext(IShellBlueprint blueprint)
     {
-        var generation = NextGenerationNumber(slot.NextGeneration, blueprint.Name);
-        slot.NextGeneration = generation;
+        var generation = checked((int)_generationCounters.AddOrUpdate(
+            blueprint.Name,
+            static _ => 1,
+            static (name, previous) => NextGenerationNumber(previous, name)));
         var metadata = blueprint.Metadata.ToImmutableDictionary();
         var descriptor = ShellDescriptor.Create(blueprint.Name, generation, metadata);
         return new ShellGenerationBuildContext(descriptor, new ShellId(blueprint.Name));
@@ -603,7 +636,7 @@ internal sealed class ShellRegistry : IShellRegistry
     /// </summary>
     private async Task<IShell> CreateGenerationAsync(NameSlot slot, IShellBlueprint blueprint, CancellationToken cancellationToken)
     {
-        var context = ReserveBuildContext(slot, blueprint);
+        var context = ReserveBuildContext(blueprint);
         var descriptor = context.Descriptor;
         var leaseSet = new ShellGenerationBuildLeaseSet(descriptor);
         ShellSettings settings;
@@ -639,7 +672,9 @@ internal sealed class ShellRegistry : IShellRegistry
             {
                 try
                 {
-                    await FireStateChangedAsync(s, prev, curr).ConfigureAwait(false);
+                    var notificationFailed = await FireStateChangedAsync(s, prev, curr).ConfigureAwait(false);
+                    if (curr == ShellLifecycleState.Disposed && notificationFailed)
+                        ((Shell)s).MarkDisposedNotificationFailed();
                 }
                 finally
                 {
@@ -909,16 +944,13 @@ internal sealed class ShellRegistry : IShellRegistry
     }
 
     /// <summary>
-    /// Per-name state: a serialization semaphore for activate/reload/unregister, a generation
-    /// counter, and the currently-active + historical shells. The catalogue blueprint itself
+    /// Per-name state: a serialization semaphore for activate/reload/unregister
+    /// and the currently-active + historical shells. The catalogue blueprint itself
     /// is NOT held here — it lives in the provider and is fetched on every activation.
     /// </summary>
     private sealed class NameSlot
     {
         internal readonly SemaphoreSlim Semaphore = new(1, 1);
-
-        // Incremented under the Semaphore. `long` so the cast to int in ShellDescriptor is explicit.
-        internal long NextGeneration;
 
         // Written under the Semaphore, plus a lock-free CAS-to-null in ReleaseGeneration when the active
         // generation is disposed; read without locking by GetActive.

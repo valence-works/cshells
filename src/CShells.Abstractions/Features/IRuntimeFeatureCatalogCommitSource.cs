@@ -21,7 +21,9 @@ public interface IRuntimeFeatureCatalogCommitSource
     /// fail the committed refresh. Handlers should enqueue expensive work elsewhere. Each successful initial or later
     /// refresh produces one notification; existing commits are not replayed to new subscribers. A concurrent or
     /// reentrant refresh can commit and return while its notification waits behind a currently executing callback.
-    /// The current snapshot can therefore be newer than the event payload.
+    /// A handler added after a commit is not eligible for that commit even while it is queued. Removing a handler
+    /// before the dispatcher samples a queued notification prevents that delivery; removal after sampling cannot
+    /// change the in-flight invocation list. The current snapshot can therefore be newer than the event payload.
     /// </remarks>
     event Action<RuntimeFeatureCatalogSnapshot>? SnapshotCommitted;
 }

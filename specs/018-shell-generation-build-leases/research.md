@@ -2,7 +2,7 @@
 
 ## Decision: Reserve identity before composition and validate before acquisition
 
-- **Decision**: Under the existing per-name semaphore, reserve the next descriptor generation and snapshot blueprint metadata into an immutable `ShellDescriptor` before calling `ComposeAsync`. Pair it with `new ShellId(blueprint.Name)`. Preserve the composed-name validation and begin participants only after it succeeds. Reject any generation greater than `int.MaxValue` before narrowing.
+- **Decision**: Under the existing per-name semaphore, reserve the next descriptor generation and snapshot blueprint metadata into an immutable `ShellDescriptor` before calling `ComposeAsync`. Pair it with `new ShellId(blueprint.Name)`. Preserve the composed-name validation and begin participants only after it succeeds. Keep a case-insensitive name-to-counter high-water mark for the registry lifetime, independently of removable shell slots, so unregister/recreate cannot reuse a generation. Reserve atomically, including when a removed slot overlaps a replacement, and reject any generation greater than `int.MaxValue` before narrowing.
 - **Rationale**: This gives each attempted build one framework-owned identity even if composition fails, prevents mutable blueprint metadata from changing the context, and avoids descriptor wrap/reuse.
 - **Alternatives considered**: Assigning the descriptor after composition (lets callbacks miss the attempt identity and observe mutated metadata); deriving identity from composed settings (lets the blueprint select another shell identity); unchecked cast (wraps the public descriptor generation).
 
@@ -20,7 +20,7 @@
 
 ## Decision: Use one small idempotent lease-set owner
 
-- **Decision**: The registry's lease-set object owns leases during acquisition and pre-provider build. The set passes through the builder result and transfers to `Shell` before initializer resolution. It releases in reverse acquisition order, attempts all leases, and retains only lease objects whose release fails. One cached release operation prevents duplicate attempts.
+- **Decision**: The registry's lease-set object owns leases during acquisition and pre-provider build. The set passes through the builder result and transfers to `Shell` before initializer resolution. It releases in reverse acquisition order, attempts all leases, and retains only lease objects whose release fails. One shared in-flight release operation and terminal state prevent duplicate attempts. After completion, the retained owner drops the task and its original exception graph; concurrent callers receive the original release failure, while later calls report a lightweight prior-failure error without retrying.
 - **Rationale**: A single owner object makes handoff and exactly-once release observable without a public lifecycle state machine. It supports reverse unwind for partial acquisition and normal teardown.
 - **Alternatives considered**: A list copied between layers (can double-release or orphan resources); a public lease state machine (unnecessary API complexity); disposing leases directly from lifecycle subscribers (notification occurs before provider teardown and is fallible).
 

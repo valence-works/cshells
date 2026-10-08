@@ -41,6 +41,8 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
     /// <inheritdoc />
     public DrainStatus Status => (DrainStatus)Volatile.Read(ref _status);
 
+    internal bool IsCompleted => _completion.Task.IsCompleted;
+
     /// <inheritdoc />
     public DateTimeOffset? Deadline => _deadline;
 
@@ -102,11 +104,13 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
                     var finalStatus = ResolveStatus(result.HandlerResults);
                     Volatile.Write(ref _status, (int)finalStatus);
                     _completion.TrySetResult(result with { Status = finalStatus });
+                    _shell.ReleaseDrain(this);
                 }
             }
             catch (Exception ex)
             {
                 _completion.TrySetException(ex);
+                _shell.ReleaseDrain(this);
             }
             finally
             {
@@ -117,6 +121,15 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
 
     private async Task<DrainResult> ExecuteAsync()
     {
+        // Disposed can precede completion of provider teardown. Join that shared task,
+        // without waiting again for scopes abandoned by an earlier drain or emergency stop.
+        if (_shell.State == ShellLifecycleState.Disposed)
+        {
+            await _shell.DisposeAsync().ConfigureAwait(false);
+            return new DrainResult(_shell.Descriptor, DrainStatus.Completed, TimeSpan.Zero,
+                _shell.ActiveScopeCount, [], []);
+        }
+
         var scopeWaitStart = Stopwatch.GetTimestamp();
         int abandonedScopes;
         TimeSpan scopeWaitElapsed;
@@ -192,13 +205,39 @@ internal sealed class DrainOperation : IDrainOperation, IDrainExtensionHandle
 
     private async Task<IReadOnlyList<DrainHandlerResult>> InvokeHandlersAsync()
     {
+        if (_shell.State == ShellLifecycleState.Disposed)
+            return [];
+
         // Resolve handlers inside a scope so transient registrations get a fresh instance.
         // Lifetime is deferred (see continuation below) so the scope and the cancellation
         // sources outlive any abandoned handler still running after the grace period —
         // disposing them while a handler is mid-flight would yield use-after-dispose for
         // services resolved into the scope.
-        var scope = _shell.ServiceProvider.CreateAsyncScope();
-        var handlers = scope.ServiceProvider.GetServices<IDrainHandler>().ToList();
+        AsyncServiceScope scope;
+        try
+        {
+            scope = _shell.ServiceProvider.CreateAsyncScope();
+        }
+        catch (ObjectDisposedException) when (_shell.State == ShellLifecycleState.Disposed)
+        {
+            return [];
+        }
+
+        List<IDrainHandler> handlers;
+        try
+        {
+            handlers = scope.ServiceProvider.GetServices<IDrainHandler>().ToList();
+        }
+        catch (ObjectDisposedException) when (_shell.State == ShellLifecycleState.Disposed)
+        {
+            await scope.DisposeAsync().ConfigureAwait(false);
+            return [];
+        }
+        catch
+        {
+            await scope.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
 
         if (handlers.Count == 0)
         {
