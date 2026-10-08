@@ -45,7 +45,7 @@
 **Purpose**: Prove the behavioral contract, catch restoration of the stale snapshot, and validate the actual delivered packages.
 
 - [x] T009 Run the focused Nuplane tests, full `tests/CShells.Tests/CShells.Tests.csproj` suite, and Release build of `src/CShells.Nuplane/CShells.Nuplane.csproj` for net8.0/net9.0/net10.0; then perform a compiled frozen-options mutation that fails the dynamic options test and verify byte-identical restoration passes, recording exact-head evidence in `specs/023-live-nuplane-options/quickstart.md`.
-- [ ] T010 After normal owner-repository PR merge and main checks, audit all ten public package archives and run an outside-checkout, fresh-cache PackageReference-only dynamic-options consumer on actual .NET 8, 9, and 10 runtimes; record source/package identity, cache source, hashes, loaded DLL assets, exact commands, and scenario results in `specs/023-live-nuplane-options/quickstart.md` and the owning issue.
+- [x] T010 After normal owner-repository PR merge and main checks, audit all ten public package archives and run an outside-checkout, fresh-cache PackageReference-only dynamic-options consumer on actual .NET 8, 9, and 10 runtimes; record source/package identity, cache source, hashes, loaded DLL assets, exact commands, and scenario results in `specs/023-live-nuplane-options/quickstart.md` and the owning issue.
 
 ## Dependencies and Execution Order
 
