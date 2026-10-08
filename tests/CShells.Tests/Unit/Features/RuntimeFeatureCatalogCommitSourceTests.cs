@@ -1,5 +1,6 @@
 using System.Reflection;
 using CShells.Features;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CShells.Tests.Unit.Features;
@@ -210,7 +211,203 @@ public class RuntimeFeatureCatalogCommitSourceTests
         }
     }
 
+    [Fact]
+    public async Task RefreshAsync_LateSubscriberDoesNotReceiveAlreadyCommittedQueuedGeneration()
+    {
+        var catalog = CreateCatalog();
+        var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
+        var firstSubscriberEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstSubscriber = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var originalGenerations = new List<long>();
+        var lateGenerations = new List<long>();
+        source.SnapshotCommitted += snapshot =>
+        {
+            originalGenerations.Add(snapshot.Generation);
+            if (snapshot.Generation == 1)
+            {
+                firstSubscriberEntered.SetResult();
+                releaseFirstSubscriber.Task.GetAwaiter().GetResult();
+            }
+        };
+        Action<RuntimeFeatureCatalogSnapshot> lateSubscriber = snapshot => lateGenerations.Add(snapshot.Generation);
+
+        var firstRefresh = Task.Run(() => catalog.RefreshAsync());
+        Task<RuntimeFeatureCatalogSnapshot>? secondRefresh = null;
+        try
+        {
+            await firstSubscriberEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            secondRefresh = Task.Run(() => catalog.RefreshAsync());
+            var second = await secondRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(2, second.Generation);
+            Assert.Equal(1, Assert.Single(originalGenerations));
+            source.SnapshotCommitted += lateSubscriber;
+        }
+        finally
+        {
+            releaseFirstSubscriber.TrySetResult();
+            try
+            {
+                if (secondRefresh is not null)
+                    await secondRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            finally
+            {
+                await firstRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        var third = await catalog.RefreshAsync();
+
+        Assert.Equal([1L, 2L, 3L], originalGenerations);
+        Assert.Equal([third.Generation], lateGenerations);
+        Assert.Equal(3, third.Generation);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_UnsubscribeBeforeQueuedGenerationSamplingSuppressesOnlyQueuedDelivery()
+    {
+        var catalog = CreateCatalog();
+        var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
+        var firstSubscriberEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstSubscriber = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var targetGenerations = new List<long>();
+        source.SnapshotCommitted += snapshot =>
+        {
+            if (snapshot.Generation == 1)
+            {
+                firstSubscriberEntered.SetResult();
+                releaseFirstSubscriber.Task.GetAwaiter().GetResult();
+            }
+        };
+        Action<RuntimeFeatureCatalogSnapshot> targetSubscriber = snapshot => targetGenerations.Add(snapshot.Generation);
+        source.SnapshotCommitted += targetSubscriber;
+
+        var firstRefresh = Task.Run(() => catalog.RefreshAsync());
+        Task<RuntimeFeatureCatalogSnapshot>? secondRefresh = null;
+        try
+        {
+            await firstSubscriberEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            secondRefresh = Task.Run(() => catalog.RefreshAsync());
+            var second = await secondRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(2, second.Generation);
+            source.SnapshotCommitted -= targetSubscriber;
+        }
+        finally
+        {
+            releaseFirstSubscriber.TrySetResult();
+            try
+            {
+                if (secondRefresh is not null)
+                    await secondRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            finally
+            {
+                await firstRefresh.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        await catalog.RefreshAsync();
+
+        Assert.Equal([1L], targetGenerations);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_EventAddAndRemovePreserveMulticastSubsequenceSemantics()
+    {
+        var duplicateCatalog = CreateCatalog();
+        var duplicateSource = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(duplicateCatalog);
+        var duplicateCalls = new List<string>();
+        Action<RuntimeFeatureCatalogSnapshot> first = _ => duplicateCalls.Add("first");
+        Action<RuntimeFeatureCatalogSnapshot> second = _ => duplicateCalls.Add("second");
+        duplicateSource.SnapshotCommitted += first + second + first;
+        duplicateSource.SnapshotCommitted -= first;
+
+        await duplicateCatalog.RefreshAsync();
+
+        Assert.Equal(["first", "second"], duplicateCalls);
+
+        var subsequenceCatalog = CreateCatalog();
+        var subsequenceSource = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(subsequenceCatalog);
+        var subsequenceCalls = new List<string>();
+        Action<RuntimeFeatureCatalogSnapshot> firstSubsequenceHandler = _ => subsequenceCalls.Add("first");
+        Action<RuntimeFeatureCatalogSnapshot> secondSubsequenceHandler = _ => subsequenceCalls.Add("second");
+        subsequenceSource.SnapshotCommitted += firstSubsequenceHandler;
+        subsequenceSource.SnapshotCommitted += secondSubsequenceHandler;
+        subsequenceSource.SnapshotCommitted -= firstSubsequenceHandler + secondSubsequenceHandler;
+
+        await subsequenceCatalog.RefreshAsync();
+
+        Assert.Empty(subsequenceCalls);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_ThrowingInformationLoggerDoesNotSuppressSubscribersOrCommits()
+    {
+        var logger = new ThrowingLogger(LogLevel.Information);
+        var catalog = new RuntimeFeatureCatalog(_ => Task.FromResult<IReadOnlyCollection<Assembly>>([]), logger);
+        var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
+        var received = new List<long>();
+        source.SnapshotCommitted += snapshot => received.Add(snapshot.Generation);
+        source.SnapshotCommitted += snapshot => received.Add(snapshot.Generation);
+
+        var first = await catalog.RefreshAsync();
+        var second = await catalog.RefreshAsync();
+
+        Assert.Same(second, catalog.CurrentSnapshot);
+        Assert.Equal([1L, 2L], [first.Generation, second.Generation]);
+        Assert.Equal([1L, 1L, 2L, 2L], received);
+        Assert.Equal(2, logger.ThrowCount);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_ThrowingErrorLoggerDoesNotStopFanOutOrLaterGenerations()
+    {
+        var logger = new ThrowingLogger(LogLevel.Error);
+        var catalog = new RuntimeFeatureCatalog(_ => Task.FromResult<IReadOnlyCollection<Assembly>>([]), logger);
+        var source = (IRuntimeFeatureCatalogCommitSource)new RuntimeFeatureCatalogAccessor(catalog);
+        var received = new List<long>();
+        source.SnapshotCommitted += _ => throw new InvalidOperationException("subscriber failed");
+        source.SnapshotCommitted += snapshot => received.Add(snapshot.Generation);
+
+        var first = await catalog.RefreshAsync();
+        var second = await catalog.RefreshAsync();
+
+        Assert.Same(second, catalog.CurrentSnapshot);
+        Assert.Equal([first.Generation, second.Generation], received);
+        Assert.Equal(2, logger.ThrowCount);
+    }
+
     private static RuntimeFeatureCatalog CreateCatalog() => new(
         _ => Task.FromResult<IReadOnlyCollection<Assembly>>([]),
         NullLogger<RuntimeFeatureCatalog>.Instance);
+
+    private sealed class ThrowingLogger(LogLevel throwAt) : ILogger<RuntimeFeatureCatalog>
+    {
+        public int ThrowCount { get; private set; }
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel != throwAt)
+                return;
+
+            ThrowCount++;
+            throw new InvalidOperationException("logger failed");
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose() { }
+        }
+    }
 }
