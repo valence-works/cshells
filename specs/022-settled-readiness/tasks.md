@@ -34,7 +34,7 @@ Tests are required by constitution V; author them with implementation, then run 
 - [X] T007 [P] Document capability casting, unsupported versus empty distinction, diagnostic-only Complete errors, no activation, no use lease, and unchanged routing/runner semantics in `src/CShells/README.md` and `src/CShells.Abstractions/README.md`.
 - [X] T008 Run focused observation, existing settlement/runner/lifecycle tests, full `tests/CShells.Tests/CShells.Tests.csproj`, `tests/CShells.Tests.EndToEnd/CShells.Tests.EndToEnd.csproj`, and three-target `src/CShells/CShells.csproj` build; save exact-head evidence in `specs/022-settled-readiness/quickstart.md`.
 - [X] T009 Root independently reviews the exact delta and runs a compiled marker-bypass mutation/revert proof against `tests/CShells.Tests/Integration/Lifecycle/ShellRegistrySettledObservationTests.cs`; record results in `specs/022-settled-readiness/quickstart.md`.
-- [ ] T010 Root publishes one org-branch PR, merges only after exact-head review and required hosted gates, verifies main and all ten published preview packages, then qualifies a PackageReference-only external consumer on net8/net9/net10; record provenance/results in `specs/022-settled-readiness/quickstart.md` and the owning issue. Keep Foundation stable adoption acceptance separate.
+- [X] T010 Root publishes one org-branch PR, merges only after exact-head review and required hosted gates, verifies main and all ten published preview packages, then qualifies a PackageReference-only external consumer on net8/net9/net10; record provenance/results in `specs/022-settled-readiness/quickstart.md` and the owning issue. Keep Foundation stable adoption acceptance separate.
 
 ## Dependencies and Execution Order
 
