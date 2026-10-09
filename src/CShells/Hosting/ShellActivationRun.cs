@@ -150,7 +150,12 @@ internal sealed class ShellActivationRun : IShellActivationRun
                 exception: null,
                 verifiedGeneration: outcome == ShellActivationAttemptOutcome.Succeeded && returnedShell is Shell settled
                     ? settled.Descriptor.Generation
-                    : null);
+                    : null)
+            {
+                ReturnedGeneration = outcome == ShellActivationAttemptOutcome.Succeeded
+                    ? returnedShell.Descriptor.Generation
+                    : null
+            };
         }
         catch (OperationCanceledException) when (_runToken.IsCancellationRequested)
         {
@@ -337,6 +342,7 @@ internal sealed class ShellActivationRun : IShellActivationRun
                 VerifiedGeneration = IsSatisfiedStatus(previous.Status)
                     ? previous.VerifiedGeneration
                     : attempt.VerifiedGeneration ?? previous.VerifiedGeneration,
+                ReturnedGeneration = attempt.ReturnedGeneration ?? previous.ReturnedGeneration,
                 LastOutcome = attempt.Outcome,
                 LastAttemptStartedAt = attempt.StartedAt,
                 LastAttemptCompletedAt = attempt.CompletedAt,

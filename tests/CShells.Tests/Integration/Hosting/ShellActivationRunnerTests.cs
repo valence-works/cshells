@@ -37,6 +37,7 @@ public sealed class ShellActivationRunnerTests
     public async Task Start_ValidatesCopiesDeduplicatesAndRunsInitialPassSerially()
     {
         var events = new List<string>();
+        var attempts = new List<ShellActivationAttempt>();
         await using var host = BuildHost(cshells => cshells.WithAssemblies()
             .AddShell("a", _ => { })
             .AddShell("b", _ => { }),
@@ -46,12 +47,19 @@ public sealed class ShellActivationRunnerTests
         Assert.Throws<ArgumentException>(() => runner.Start(["a", " "]));
 
         var names = new List<string> { "a", "A", "b" };
-        var run = runner.Start(names, observer: new RecordingObserver(events));
+        var run = runner.Start(names, observer: new CallbackObserver(attempt =>
+        {
+            events.Add(attempt.ShellName);
+            attempts.Add(attempt);
+        }));
         names.Clear();
         await run.InitialPass.WaitAsync(Timeout);
         Assert.Equal(["a", "b"], events);
         Assert.Equal([ShellActivationTargetStatus.Succeeded, ShellActivationTargetStatus.Succeeded], run.Snapshot.Select(s => s.Status));
         Assert.All(run.Snapshot, state => Assert.Equal(1, state.VerifiedGeneration));
+        long?[] expectedReturnedGenerations = [1, 1];
+        Assert.Equal(expectedReturnedGenerations, attempts.Select(attempt => attempt.ReturnedGeneration));
+        Assert.All(run.Snapshot, state => Assert.Equal(state.VerifiedGeneration, state.ReturnedGeneration));
         await run.StopAsync();
 
         var empty = runner.Start([]);
@@ -155,6 +163,7 @@ public sealed class ShellActivationRunnerTests
             Assert.Equal(["first", "second"], attempts);
             Assert.Equal(1, policyCalls);
             Assert.Equal(ShellActivationTargetStatus.Stopped, run.Snapshot[2].Status);
+            Assert.Null(run.Snapshot[1].ReturnedGeneration);
         }
         finally
         {
@@ -377,19 +386,32 @@ public sealed class ShellActivationRunnerTests
     [InlineData(false)]
     public async Task CustomRegistrySuccessRequiresCurrentIdentityAndHasNoDefaultGeneration(bool returnsCurrent)
     {
-        var returned = CShells.Tests.Integration.AspNetCore.ShellMiddlewareTests.FakeShell.WithServices(_ => { }, "custom");
+        var returned = CShells.Tests.Integration.AspNetCore.ShellMiddlewareTests.FakeShell.WithServices(_ => { }, "custom", generation: 37);
         var current = returnsCurrent
             ? returned
             : CShells.Tests.Integration.AspNetCore.ShellMiddlewareTests.FakeShell.WithServices(_ => { }, "custom");
         await using var host = BuildRunnerHost(new FixedCustomRegistry(returned, current));
         try
         {
-            var run = host.GetRequiredService<IShellActivationRunner>().Start(["custom"]);
+            ShellActivationAttempt? observedAttempt = null;
+            var run = host.GetRequiredService<IShellActivationRunner>().Start(["custom"],
+                observer: new CallbackObserver(attempt => observedAttempt = attempt));
             await run.InitialPass.WaitAsync(Timeout);
+            Assert.NotNull(observedAttempt);
             var state = Assert.Single(run.Snapshot);
             Assert.Equal(returnsCurrent ? ShellActivationAttemptOutcome.Succeeded : ShellActivationAttemptOutcome.NotCurrent, state.LastOutcome);
             Assert.Equal(returnsCurrent ? ShellActivationTargetStatus.Succeeded : ShellActivationTargetStatus.Failed, state.Status);
             Assert.Null(state.VerifiedGeneration);
+            if (returnsCurrent)
+            {
+                Assert.Equal((long)returned.Descriptor.Generation, observedAttempt.ReturnedGeneration);
+                Assert.Equal((long)returned.Descriptor.Generation, state.ReturnedGeneration);
+            }
+            else
+            {
+                Assert.Null(observedAttempt.ReturnedGeneration);
+                Assert.Null(state.ReturnedGeneration);
+            }
             await run.StopAsync();
         }
         finally
@@ -397,6 +419,141 @@ public sealed class ShellActivationRunnerTests
             await ((ServiceProvider)returned.ServiceProvider).DisposeAsync();
             if (!ReferenceEquals(returned, current))
                 await ((ServiceProvider)current.ServiceProvider).DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task CancellationAfterSuccessfulReturnPreservesReturnedGeneration()
+    {
+        var attemptEntered = new TaskCompletionSource<ShellActivationAttempt>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseObserver = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var host = BuildHost(cshells => cshells.WithAssemblies().AddShell("tenant", _ => { }),
+            services => services.AddShellActivationRunner());
+        using var startup = new CancellationTokenSource();
+        var observer = new CancellationGatedObserver(attemptEntered, releaseObserver);
+        var run = host.GetRequiredService<IShellActivationRunner>().Start(
+            ["tenant"], observer: observer, startupCancellationToken: startup.Token);
+        try
+        {
+            var completedAttempt = await attemptEntered.Task.WaitAsync(Timeout);
+            Assert.Equal(ShellActivationAttemptOutcome.Succeeded, completedAttempt.Outcome);
+            var returnedGeneration = completedAttempt.ReturnedGeneration;
+            Assert.NotNull(returnedGeneration);
+
+            var duringObserver = Assert.Single(run.Snapshot);
+            Assert.Equal(ShellActivationTargetStatus.Succeeded, duringObserver.Status);
+            Assert.Equal(completedAttempt.ReturnedGeneration, duringObserver.ReturnedGeneration);
+
+            await startup.CancelAsync().WaitAsync(Timeout);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.InitialPass.WaitAsync(Timeout));
+
+            var afterCancellation = Assert.Single(run.Snapshot);
+            Assert.Equal(ShellActivationTargetStatus.Succeeded, afterCancellation.Status);
+            Assert.Equal(returnedGeneration, completedAttempt.ReturnedGeneration);
+            Assert.Equal(returnedGeneration, afterCancellation.ReturnedGeneration);
+        }
+        finally
+        {
+            releaseObserver.TrySetResult();
+            await IgnoreFailureAsync(run.InitialPass);
+            await IgnoreFailureAsync(run.StopAsync());
+        }
+    }
+
+    [Fact]
+    public void ExistingActivationResultConstructorsRemainAvailableAndReturnedGenerationDefaultsToNull()
+    {
+        Type[] attemptParameterTypes =
+        [
+            typeof(string),
+            typeof(int),
+            typeof(ShellActivationAttemptOutcome),
+            typeof(DateTimeOffset),
+            typeof(DateTimeOffset),
+            typeof(string),
+            typeof(string),
+            typeof(Exception),
+            typeof(long?)
+        ];
+        Type[] stateParameterTypes =
+        [
+            typeof(string),
+            typeof(int),
+            typeof(ShellActivationTargetStatus),
+            typeof(int),
+            typeof(DateTimeOffset?),
+            typeof(DateTimeOffset?),
+            typeof(TimeSpan?),
+            typeof(long?),
+            typeof(ShellActivationAttemptOutcome?),
+            typeof(DateTimeOffset?),
+            typeof(DateTimeOffset?),
+            typeof(DateTimeOffset?),
+            typeof(string),
+            typeof(string),
+            typeof(string)
+        ];
+
+        var attemptConstructor = typeof(ShellActivationAttempt).GetConstructor(attemptParameterTypes);
+        var stateConstructor = typeof(ShellActivationAttemptState).GetConstructor(stateParameterTypes);
+        Assert.NotNull(attemptConstructor);
+        Assert.NotNull(stateConstructor);
+        Assert.True(attemptConstructor!.GetParameters()[^1].IsOptional);
+        Assert.All(stateConstructor!.GetParameters().Take(3), parameter => Assert.False(parameter.IsOptional));
+        Assert.All(stateConstructor.GetParameters().Skip(3), parameter => Assert.True(parameter.IsOptional));
+
+        var attempt = new ShellActivationAttempt("tenant", 1, ShellActivationAttemptOutcome.Succeeded,
+            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, null, null, null, verifiedGeneration: 1);
+        var state = new ShellActivationAttemptState("tenant", 1, ShellActivationTargetStatus.Succeeded,
+            verifiedGeneration: 1);
+        Assert.Null(attempt.ReturnedGeneration);
+        Assert.Null(state.ReturnedGeneration);
+    }
+
+    [Fact]
+    public async Task ReturnedGenerationRemainsAssociatedWithSuccessfulAttemptAfterLaterReload()
+    {
+        var attempts = new List<ShellActivationAttempt>();
+        await using var host = BuildHost(cshells => cshells.WithAssemblies().AddShell("tenant", _ => { }),
+            services => services.AddShellActivationRunner());
+        var registry = host.GetRequiredService<ShellRegistry>();
+        IShellActivationRun? run = null;
+        IDrainOperation? pendingDrain = null;
+        try
+        {
+            run = host.GetRequiredService<IShellActivationRunner>().Start(["tenant"],
+                observer: new CallbackObserver(attempt => attempts.Add(attempt)));
+            await run.InitialPass.WaitAsync(Timeout);
+
+            var original = Assert.Single(run.Snapshot);
+            var successfulAttempt = Assert.Single(attempts);
+            Assert.Equal(ShellActivationAttemptOutcome.Succeeded, successfulAttempt.Outcome);
+            Assert.Equal(successfulAttempt.ReturnedGeneration, original.ReturnedGeneration);
+            Assert.Equal(original.VerifiedGeneration, original.ReturnedGeneration);
+
+            var reload = await registry.ReloadAsync("tenant");
+            pendingDrain = reload.Drain;
+            var replacement = Assert.IsType<Shell>(reload.NewShell);
+            Assert.NotEqual(original.ReturnedGeneration, (long)replacement.Descriptor.Generation);
+            if (pendingDrain is not null)
+                await pendingDrain.WaitAsync().WaitAsync(Timeout);
+            pendingDrain = null;
+
+            var afterReload = Assert.Single(run.Snapshot);
+            Assert.Equal(ShellActivationTargetStatus.Succeeded, afterReload.Status);
+            Assert.Equal(original.ReturnedGeneration, afterReload.ReturnedGeneration);
+            Assert.Equal(original.VerifiedGeneration, afterReload.VerifiedGeneration);
+            await run.StopAsync();
+        }
+        finally
+        {
+            if (pendingDrain is not null)
+            {
+                await IgnoreFailureAsync(pendingDrain.WaitAsync());
+            }
+
+            if (run is not null)
+                await IgnoreFailureAsync(run.StopAsync());
         }
     }
 
@@ -409,7 +566,9 @@ public sealed class ShellActivationRunnerTests
         {
             var run = host.GetRequiredService<IShellActivationRunner>().Start(["custom"]);
             await run.InitialPass.WaitAsync(Timeout);
-            Assert.Equal(ShellActivationTargetStatus.Failed, Assert.Single(run.Snapshot).Status);
+            var state = Assert.Single(run.Snapshot);
+            Assert.Equal(ShellActivationTargetStatus.Failed, state.Status);
+            Assert.Null(state.ReturnedGeneration);
             await run.StopAsync();
         }
         finally
@@ -432,6 +591,7 @@ public sealed class ShellActivationRunnerTests
         var state = Assert.Single(run.Snapshot);
         Assert.Equal(ShellActivationAttemptOutcome.NotCurrent, state.LastOutcome);
         Assert.Null(state.VerifiedGeneration);
+        Assert.Null(state.ReturnedGeneration);
         Assert.Equal(ShellActivationTargetStatus.Stopped, state.Status);
     }
 
@@ -456,9 +616,11 @@ public sealed class ShellActivationRunnerTests
         var attempt = await observed.Task.WaitAsync(Timeout);
         var state = Assert.Single(run.Snapshot);
         Assert.Equal(ShellActivationAttemptOutcome.ActivationFailed, attempt.Outcome);
+        Assert.Null(attempt.ReturnedGeneration);
         Assert.Equal("private connection text", attempt.Exception!.Message);
         Assert.DoesNotContain("private connection", state.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.Equal(ShellActivationTargetStatus.Stopped, state.Status);
+        Assert.Null(state.ReturnedGeneration);
         await run.StopAsync();
     }
 
@@ -513,6 +675,7 @@ public sealed class ShellActivationRunnerTests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var registryDecorator = new GatedReturnRegistryProxy(entered, release);
+        var attempts = new List<ShellActivationAttempt>();
         await using var host = BuildHost(cshells => cshells.WithAssemblies().AddShell("tenant", _ => { }), services =>
         {
             services.AddShellActivationRunner();
@@ -523,7 +686,8 @@ public sealed class ShellActivationRunnerTests
             });
         });
         var registry = host.GetRequiredService<ShellRegistry>();
-        var run = host.GetRequiredService<IShellActivationRunner>().Start(["tenant"]);
+        var run = host.GetRequiredService<IShellActivationRunner>().Start(["tenant"],
+            observer: new CallbackObserver(attempt => attempts.Add(attempt)));
         try
         {
             await entered.Task.WaitAsync(Timeout);
@@ -531,6 +695,7 @@ public sealed class ShellActivationRunnerTests
             var externallySatisfied = Assert.Single(run.Snapshot);
             Assert.Equal(ShellActivationTargetStatus.SatisfiedExternally, externallySatisfied.Status);
             Assert.Equal(((Shell)firstGeneration).Descriptor.Generation, externallySatisfied.VerifiedGeneration);
+            Assert.Null(externallySatisfied.ReturnedGeneration);
 
             var drain = await registry.DrainAsync(firstGeneration);
             await drain.WaitAsync().WaitAsync(Timeout);
@@ -543,6 +708,17 @@ public sealed class ShellActivationRunnerTests
             Assert.Equal(ShellActivationTargetStatus.SatisfiedExternally, terminal.Status);
             Assert.Equal(returnCurrentShell ? ShellActivationAttemptOutcome.Succeeded : ShellActivationAttemptOutcome.NotCurrent, terminal.LastOutcome);
             Assert.Equal(externallySatisfied.VerifiedGeneration, terminal.VerifiedGeneration);
+            var attempt = Assert.Single(attempts);
+            if (returnCurrentShell)
+            {
+                Assert.Equal(((Shell)returnedShell).Descriptor.Generation, attempt.ReturnedGeneration);
+                Assert.Equal(attempt.ReturnedGeneration, terminal.ReturnedGeneration);
+            }
+            else
+            {
+                Assert.Null(attempt.ReturnedGeneration);
+                Assert.Null(terminal.ReturnedGeneration);
+            }
         }
         finally
         {
@@ -576,6 +752,7 @@ public sealed class ShellActivationRunnerTests
             var external = await registry.ActivateAsync("tenant");
             var beforeCancellation = Assert.Single(run.Snapshot);
             Assert.Equal(ShellActivationTargetStatus.SatisfiedExternally, beforeCancellation.Status);
+            Assert.Null(beforeCancellation.ReturnedGeneration);
 
             await startup.CancelAsync();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.InitialPass);
@@ -584,6 +761,7 @@ public sealed class ShellActivationRunnerTests
             var afterCancellationAndDrain = Assert.Single(run.Snapshot);
             Assert.Equal(ShellActivationTargetStatus.SatisfiedExternally, afterCancellationAndDrain.Status);
             Assert.Equal(beforeCancellation.VerifiedGeneration, afterCancellationAndDrain.VerifiedGeneration);
+            Assert.Null(afterCancellationAndDrain.ReturnedGeneration);
         }
         finally
         {
@@ -682,6 +860,17 @@ public sealed class ShellActivationRunnerTests
         }
     }
 
+    private sealed class CancellationGatedObserver(
+        TaskCompletionSource<ShellActivationAttempt> entered,
+        TaskCompletionSource release) : IShellActivationAttemptObserver
+    {
+        public async ValueTask OnAttemptCompletedAsync(ShellActivationAttempt attempt, CancellationToken cancellationToken)
+        {
+            entered.TrySetResult(attempt);
+            await release.Task.WaitAsync(Timeout, cancellationToken);
+        }
+    }
+
     private sealed class CustomRunner : IShellActivationRunner
     {
         public IShellActivationRun Start(IReadOnlyList<string> shellNames, ShellActivationRetryPolicy? retryPolicy = null,
@@ -690,15 +879,6 @@ public sealed class ShellActivationRunnerTests
     }
 
     private sealed class ClassifiedException(string message) : Exception(message) { }
-
-    private sealed class RecordingObserver(List<string> events) : IShellActivationAttemptObserver
-    {
-        public ValueTask OnAttemptCompletedAsync(ShellActivationAttempt attempt, CancellationToken cancellationToken)
-        {
-            events.Add(attempt.ShellName);
-            return ValueTask.CompletedTask;
-        }
-    }
 
     private abstract class RegistryDecorator(IShellRegistry inner) : IShellRegistry
     {
