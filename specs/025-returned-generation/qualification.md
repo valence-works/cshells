@@ -1,0 +1,19 @@
+# Returned Generation Diagnostics Qualification
+
+[CShells #167](https://github.com/valence-works/cshells/issues/167) is complete. Product [PR168](https://github.com/valence-works/cshells/pull/168) normal squash-merged as `f5bfc0db5ef9440dd777c2dd0d97fbf817f22e2f`; public Feedz preview **0.0.30-preview.173** is the executable acceptance version. [Final issue evidence and claim release](https://github.com/valence-works/cshells/issues/167#issuecomment-6073687376) records root and independent reviews, verification, publication and consumer proof.
+
+## Verification
+
+- Production builds for .NET 8/9/10 passed with zero warnings/errors. The full library suite passed 811 tests and E2E passed 31; final focused runner tests passed 24/24. A final bounded-wait-only test adjustment followed the full-suite run and passed in that focused suite; production source was unchanged.
+- An unchanged consumer binary compiled against the prechange public abstractions executed the original 9/15-parameter constructors against candidate abstractions on actual .NET 8/9/10. Both compiled capture/projection mutations failed only the intended custom-current row (expected 37, actual null); stale controls passed. Exact source/DLL restoration and a restored focused pass were recorded.
+- [Exact-head CI](https://github.com/valence-works/cshells/actions/runs/37878478247) passed for PR head `757abfb4dbcbe4b183abc0aa4da147622f8688fd`. Resulting-main [Packages attempt 2](https://github.com/valence-works/cshells/actions/runs/37878600719/attempts/2) passed build/test/pack and Feedz deployment. NuGet.org deployment was skipped for the preview.
+- All ten public archives are byte-identical to pipeline artifacts; nuspec versions/source commits and family dependencies match, and all thirty net8/net9/net10 assets are present. `CShells.Nuplane` alone declares Nuplane `0.0.11-preview.99` dependencies, across all three TFMs. Independent archive recomputation agrees.
+- The fresh-cache PackageReference-only consumer passed ten groups and 44 assertions on each actual runtime: .NET 8.0.10, 9.0.9 and 10.0.8 (30 groups/132 assertions total). Six loaded DLLs match the audited public TFM assets, and both cached archives trace to Feedz. Cases include constructor/default-null, built-in/custom success, stale/failure/call cancellation, cancellation during a gated observer after successful return, external-only and late current/stale results, and terminal history after actual reload. Independent review corroborates raw reports, source hashes and package provenance.
+
+## Retained failures and boundaries
+
+Publisher attempt 1 failed an existing weak-probe test (810/811 passed; expected count 0, collected sentinel -1); one failed-job rerun passed. Its cause is not claimed fixed. Consumer attempt 1 failed restore on a stale HTTP index; attempt 2 restored but failed a harness-only collection-interface compile binding. Attempt 3 used an isolated HTTP cache and corrected `IServiceCollection` declaration, built with zero warnings/errors and passed all runtime cases. An early source review overlapped a deliberate mutation; its raw record is excluded from acceptance and superseded by a fresh restored-source review.
+
+Raw logs, TRX, hashes, archives and independent/root addenda are retained in session artifact `cshells-167-returned-generation/` (`root-qa`, `feedz-audit`, `public-consumer-execution-3`). The consumer qualification JSON SHA-256 is `d35d448ecdddf60cae523b05268b36e5411a0423dffafe345577fb0ffda50d7a`.
+
+Copilot and Greptile requests were waived by the owner; neither is represented as approving the change. This qualifies the bounded diagnostic feature and preview consumer. Final stable releases, pruning admission/safety, and Foundation host adoption/readiness remain separate program work. A later documentation-only publication does not replace this immutable `.173` executable acceptance.

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `025-returned-generation`  
 **Created**: 2026-10-09  
-**Status**: In progress — local implementation qualified; review, hosted gates and public-package acceptance pending  
+**Status**: Implemented and qualified in public preview `0.0.30-preview.173` ([qualification](qualification.md)); stable program releases and Foundation adoption remain separate.
 **Input**: GitHub issue #167, “Expose the returned generation in activation-run diagnostics”
 
 ## User Scenarios & Testing

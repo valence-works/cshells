@@ -26,10 +26,10 @@
 - [x] T010 [US1] Compile a small compatibility consumer against the pre-change `CShells.Abstractions` binary from the base commit, then run the unchanged consumer with the candidate `CShells.Abstractions` binary substituted; prove both existing activation-result constructors bind and execute, and retain source/package provenance and logs under `artifacts/modular-hosting-2500/cshells-167/` in the session-owned artifact workspace.
 - [x] T011 [US1] Perform the compiled reversible mutation from `specs/025-returned-generation/quickstart.md`: remove only the successful returned-generation assignment, prove the causal returned-generation test fails, restore byte-identical source, rebuild, and rerun the focused suite successfully; retain mutation and restoration evidence.
 - [x] T012 [US1] Complete an independent exact-source review of the candidate diff and test evidence before opening an organization pull request; record the reviewed commit and findings under `artifacts/modular-hosting-2500/cshells-167/` in the session-owned artifact workspace.
-- [ ] T013 [US1] Open the normal organization pull request after local gates and exact-source review pass; require all current-head hosted checks and applicable review gates to pass before merge.
-- [ ] T014 [US1] After normal merge, verify resulting-main checks and the normal preview-package publication; audit the complete published CShells family for source commit, package/version metadata, dependency versions, TFMs, and archive/DLL identity under `artifacts/modular-hosting-2500/cshells-167/` in the session-owned artifact workspace.
-- [ ] T015 [US1] Build and run a fresh-cache PackageReference-only consumer against the exact published preview package family on .NET 8, 9, and 10; verify successful built-in/custom returned-generation values, `NotCurrent`/failure/cancellation null values, external-only and in-flight external-satisfaction behavior, later-generation stability, and existing verified-generation semantics; retain loaded-assembly/archive/cache provenance and logs under `artifacts/modular-hosting-2500/cshells-167/` in the session-owned artifact workspace.
-- [ ] T016 [US1] Post the required issue evidence for implementation, review, merge, resulting-main checks, and public-package qualification to CShells #167, then release the issue claim only after the task is complete.
+- [x] T013 [US1] Open the normal organization pull request after local gates and exact-source review pass; require all current-head hosted checks and applicable review gates to pass before merge.
+- [x] T014 [US1] After normal merge, verify resulting-main checks and the normal preview-package publication; audit the complete published CShells family for source commit, package/version metadata, dependency versions, TFMs, and archive/DLL identity under `artifacts/modular-hosting-2500/cshells-167/` in the session-owned artifact workspace.
+- [x] T015 [US1] Build and run a fresh-cache PackageReference-only consumer against the exact published preview package family on .NET 8, 9, and 10; verify successful built-in/custom returned-generation values, `NotCurrent`/failure/cancellation null values, external-only and in-flight external-satisfaction behavior, later-generation stability, and existing verified-generation semantics; retain loaded-assembly/archive/cache provenance and logs under `artifacts/modular-hosting-2500/cshells-167/` in the session-owned artifact workspace.
+- [x] T016 [US1] Post the required issue evidence for implementation, review, merge, resulting-main checks, and public-package qualification to CShells #167, then release the issue claim only after the task is complete.
 
 ## Dependencies & Execution Order
 
@@ -58,3 +58,7 @@
 - Do not change public constructor parameter lists, lifecycle settlement, retry policy, cancellation, external reconciliation, or readiness behavior.
 - Test assertions must distinguish the external target's existing `VerifiedGeneration` from a later successful in-flight call's `ReturnedGeneration`.
 - No new project, dependency, package pin, or generated-map update is expected.
+
+## Delivery record
+
+All tasks completed. [Qualification](qualification.md) records the exact product/main/public-package acceptance. This completion record adds no production change or stable-release acceptance.

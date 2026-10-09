@@ -3,6 +3,8 @@
 **Branch**: `025-returned-generation` | **Date**: 2026-10-09 | **Spec**: [spec.md](spec.md)  
 **Input**: Feature specification from `specs/025-returned-generation/spec.md` (CShells #167)
 
+**Delivery**: Completed through [PR168](https://github.com/valence-works/cshells/pull/168) and public preview `.173`; see [qualification](qualification.md) for exact gates and limitations.
+
 ## Summary
 
 Add a nullable scalar returned-generation value to the transient activation attempt and immutable target snapshot. Populate it from the descriptor of the successful shell returned by the runner's own registry call, for built-in and custom registries. Keep `VerifiedGeneration` semantics unchanged, leave existing public constructors unchanged, and ensure external satisfaction does not fabricate a returned value.
