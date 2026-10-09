@@ -71,4 +71,11 @@ public sealed record ShellActivationAttempt
 
     /// <summary>The generation verified as current for a successful concrete CShells shell.</summary>
     public long? VerifiedGeneration { get; }
+
+    /// <summary>
+    /// The descriptor generation returned by this attempt's successful current activation call,
+    /// or <see langword="null"/> when the call did not return an accepted current shell.
+    /// This value does not imply built-in CShells settlement verification.
+    /// </summary>
+    public long? ReturnedGeneration { get; init; }
 }

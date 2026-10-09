@@ -19,6 +19,7 @@ This package contains the fundamental interfaces and models needed to build CShe
 - `IShellInitializer` - Startup hook resolved from the shell provider before a shell becomes active
 - `ISettledShellRegistry` - Optional nonactivating observation of the current generation after activation settlement
 - `IShellGenerationBuildParticipant` and `IShellGenerationBuildLease` - Optional host-owned protection tied to one shell build and its selected feature-catalog snapshot
+- `ShellActivationAttempt` and `ShellActivationAttemptState` - Transient attempt and safe target-snapshot diagnostics, including returned and verified generation values
 - `LifecyclePhase`, `LifecycleOrderAttribute`, and `AddShellInitializer<T>()` - First-class initializer ordering APIs
 - `IDrainHandler` - Cooperative drain hook invoked in parallel while an old shell generation shuts down
 - Core abstractions for extensibility

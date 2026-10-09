@@ -98,6 +98,13 @@ public sealed record ShellActivationAttemptState
     /// <summary>The verified generation for a successful concrete CShells shell, if known.</summary>
     public long? VerifiedGeneration { get; init; }
 
+    /// <summary>
+    /// The descriptor generation returned by a successful current activation call owned by this run,
+    /// or <see langword="null"/> when no such call has returned. External satisfaction alone does not
+    /// set this value; a successful in-flight owned call may still report its own returned generation.
+    /// </summary>
+    public long? ReturnedGeneration { get; init; }
+
     /// <summary>The outcome of the last completed attempt, if any.</summary>
     public ShellActivationAttemptOutcome? LastOutcome { get; init; }
 
