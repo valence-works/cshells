@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit review configuration. AGENTS.md and CLAUDE.md are picked up as review guidelines by default.
+language: en-US
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  in_progress_fortune: false
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  suggested_reviewers: false
+  auto_review:
+    enabled: true
+    drafts: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+  path_filters:
+    - "!specs/**"
+    - "!.specify/**"
+    - "!.github/agents/**"
+    - "!.github/prompts/**"
+    - "!branding/**"
+    - "!**/*.DotSettings.user"
+  path_instructions:
+    - path: "src/**/*.cs"
+      instructions: |
+        Review against AGENTS.md and .github/quality/PRINCIPLES.md (ignore principles marked Proposed). In particular:
+        - Customizing a default must add to it, not silently replace it; replacement needs an explicitly named opt-out.
+        - Every public parameter or option must have an observable effect and a test that proves it.
+        - New types are internal unless a documented user scenario needs them public.
+        - Unknown or mismatched configuration must throw or log at Error with a fix hint, not warn and continue.
+        - Public vocabulary must match .github/quality/GLOSSARY.md; flag new synonyms for existing concepts.
+        - No FR-/SC-/US- spec IDs in names or comments.
+        - Style: file-scoped namespaces, `var`, primary constructors, collection expressions, camelCase private fields
+          without an underscore prefix, and `Guard.Against.Null(...)` for guard clauses.
+        Do not re-raise proposals recorded in .github/quality/DECISIONS.md.
+    - path: "src/*.Abstractions/**"
+      instructions: |
+        Abstractions packages hold feature-author contracts only. Flag host orchestration, routing internals or
+        plumbing types added here; they belong in the implementation packages, internal by default.
+    - path: "tests/**/*.cs"
+      instructions: |
+        Tests must assert caller-observable behavior. Flag reflection "shape" tests, auto-property tests, internal-counter
+        assertions, Thread.Sleep/Task.Delay synchronization (use gates), and new copies of test hosts, capturing loggers or
+        registry stubs where a shared helper in TestHelpers/ exists. Flag behavior already asserted elsewhere at a lower level.
+        Test file names mirror the class under test with a `Tests` suffix.
+    - path: "{docs,wiki}/**"
+      instructions: |
+        Every code snippet must compile against the current public API. Flag references to renamed or removed types and
+        members, and content that duplicates another doc's home for the same feature.
+    - path: "**/*.{csproj,props,targets}"
+      instructions: |
+        Package versions are managed centrally in Directory.Packages.props; flag any `Version` on a `<PackageReference>`.
+        Packable projects may depend only on packages available from nuget.org.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - ".github/quality/PRINCIPLES.md"
+      - ".github/quality/GLOSSARY.md"
+      - ".github/quality/DECISIONS.md"
+
+chat:
+  auto_reply: true
