@@ -60,10 +60,10 @@ reviews:
 knowledge_base:
   code_guidelines:
     enabled: true
+    # Guideline files apply only to their own directory unless mapped with applyTo.
     filePatterns:
-      - ".github/quality/PRINCIPLES.md"
-      - ".github/quality/GLOSSARY.md"
-      - ".github/quality/DECISIONS.md"
+      - files: ".github/quality/PRINCIPLES.md,.github/quality/GLOSSARY.md,.github/quality/DECISIONS.md"
+        applyTo: "**/*"
 
 chat:
   auto_reply: true
