@@ -42,9 +42,9 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Others -->
-    <PackageVersion Include="Nuplane.Abstractions" Version="0.0.11-preview.99" />
-    <PackageVersion Include="Nuplane.Loading.Abstractions" Version="0.0.11-preview.99" />
-    <PackageVersion Include="Nuplane" Version="0.0.11-preview.99" />
+    <PackageVersion Include="Nuplane.Abstractions" Version="0.0.11" />
+    <PackageVersion Include="Nuplane.Loading.Abstractions" Version="0.0.11" />
+    <PackageVersion Include="Nuplane" Version="0.0.11" />
     <PackageVersion Include="FluentStorage" Version="6.0.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2025.2.4" />
     <!-- Testing -->
