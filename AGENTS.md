@@ -140,6 +140,11 @@ When asked to review or address PR review comments, think critically about each 
 - Collection expressions (`[..list]`) over `new List<T>` wherever possible
 - `[ResolverOrder(N)]` attribute controls strategy ordering — lower wins
 
+## Quality Standard
+
+- `.github/quality/GLOSSARY.md` is the canonical domain vocabulary. Use its **keep** terms; don't introduce terms it marks rename/merge/retire. New public vocabulary is added there in the same PR.
+- `.github/quality/PRINCIPLES.md` is the bar for public API, simplicity, docs and tests. `.github/quality/README.md` explains the audit/fix loop and its labels.
+
 ## Key Reference Files
 
 | Purpose | Path |
