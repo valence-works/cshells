@@ -492,6 +492,7 @@ public sealed class NuplaneRefreshCoordinatorTests
         try
         {
             packageCatalog.Packages = [];
+            RequestCollectibleUnload(loadContextReference);
             await host.GetRequiredService<INuplaneObserver>().OnPackagesReconciledAsync(
                 FakePackageAssemblyCatalog.ChangeSet(removed: ["dynamic-feature"]), [], CancellationToken.None);
 
@@ -500,6 +501,7 @@ public sealed class NuplaneRefreshCoordinatorTests
             Assert.NotSame(oldShell, activeShell);
             Assert.Equal(ShellLifecycleState.Active, activeShell!.State);
             Assert.Equal(ShellLifecycleState.Draining, oldShell.State);
+            CollectForUnload();
             Assert.True(loadContextReference.IsAlive,
                 "The collectible package context must remain alive while its shell generation still serves an open scope.");
 
@@ -521,9 +523,11 @@ public sealed class NuplaneRefreshCoordinatorTests
             await oldScope.DisposeAsync();
         }
 
-        var loadContext = Assert.IsAssignableFrom<AssemblyLoadContext>(loadContextReference.Target);
-        loadContext.Unload();
     }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void RequestCollectibleUnload(WeakReference loadContextReference)
+        => Assert.IsAssignableFrom<AssemblyLoadContext>(loadContextReference.Target).Unload();
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static void AssertShellUsesDynamicFeature(IShell shell)
@@ -548,14 +552,19 @@ public sealed class NuplaneRefreshCoordinatorTests
     {
         for (var attempt = 0; attempt < 100 && loadContextReference.IsAlive; attempt++)
         {
-            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
-            GC.WaitForPendingFinalizers();
-            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            CollectForUnload();
             await Task.Yield();
         }
 
         Assert.False(loadContextReference.IsAlive,
             "The removed package context remained rooted after the old shell generation drained and disposed.");
+    }
+
+    private static void CollectForUnload()
+    {
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
     }
 
     private sealed class CollectibleFeatureLoadContext : AssemblyLoadContext
