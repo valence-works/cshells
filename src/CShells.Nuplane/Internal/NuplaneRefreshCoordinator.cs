@@ -12,7 +12,7 @@ internal sealed class NuplaneRefreshCoordinator(
     IRuntimeFeatureCatalog featureCatalog,
     IOptionsMonitor<NuplaneIntegrationOptions> options,
     Func<IShellRegistry> shellRegistryFactory,
-    ILogger<NuplaneRefreshCoordinator>? logger = null) : INuplaneObserver, IShellGenerationBuildParticipant
+    ILogger<NuplaneRefreshCoordinator>? logger = null) : IPackagePathIndependentNuplaneObserver, IShellGenerationBuildParticipant
 {
     private readonly IRuntimeFeatureCatalog catalog = featureCatalog ?? throw new ArgumentNullException(nameof(featureCatalog));
     private readonly IOptionsMonitor<NuplaneIntegrationOptions> optionsMonitor = options ?? throw new ArgumentNullException(nameof(options));

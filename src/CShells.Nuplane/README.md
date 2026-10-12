@@ -26,7 +26,7 @@ shells.WithNuplaneFeatureDiscovery();
 
 `AddNuplane` accepts a configuration callback and returns `IServiceCollection`. Calling `WithNuplaneFeatureDiscovery` afterward appends the CShells adapter observer after Nuplane's autoloader and existing observer registrations. The adapter uses one root coordinator for both Nuplane observation and CShells build participation. Do not register another coordinator through `OnPackagesChanged<T>()`.
 
-The provider queries `IPackageAssemblyCatalog` and contributes each `PackageAssemblies.Assemblies` collection in package order. These are already-loaded `Assembly` instances. The adapter does not read `AssemblyReferences`, load packages, or activate them. Adding the package alone does not replace CShells' current feature sources; the host opts in by calling `WithNuplaneFeatureDiscovery`.
+The provider queries `IPackageAssemblyCatalog` and contributes each `PackageAssemblies.Assemblies` collection in package order. These are already-loaded `Assembly` instances. The adapter does not read `AssemblyReferences`, load packages, or activate them. Its coordinator implements Nuplane's `IPackagePathIndependentNuplaneObserver` contract because its lifecycle callbacks never open or retain package paths. Adding the package alone does not replace CShells' current feature sources; the host opts in by calling `WithNuplaneFeatureDiscovery`.
 
 ## Choose refresh and reload behavior
 
@@ -77,7 +77,7 @@ As with the framework's other logging consumers, exception-preserving diagnostic
 
 When a package completion arrives with no active shell, the adapter records catalog freshness and returns without scanning assemblies, activating a shell, or reloading. The next requested shell build consumes pending freshness before CShells initializes or reads the feature catalog. A successful refresh is committed even if later shell initialization fails, so the next build can reuse that fresh snapshot.
 
-Refresh requests and acknowledgements use separate epochs. A failed or cancelled refresh remains pending. A source change arriving during refresh remains outstanding after the in-flight refresh commits its captured epoch. The build participant returns a no-op lease and does not provide assembly-readability, load-context, or generation-lifetime protection.
+Refresh requests and acknowledgements use separate epochs. A failed or cancelled refresh remains pending. A source change arriving during refresh remains outstanding after the in-flight refresh commits its captured epoch. The build participant returns a no-op lease; it contributes no separate lifetime protection. The runtime catalog and each shell provider retain the discovered feature types they use. After package removal, a serving generation can continue resolving its existing feature types while it drains; its references keep the collectible load context alive until the generation is disposed. Nuplane remains responsible for package paths and any graph-use lifetime attached to that load context.
 
 ## Report host-specific reload failures
 

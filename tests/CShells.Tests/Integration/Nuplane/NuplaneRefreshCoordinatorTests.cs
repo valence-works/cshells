@@ -1,3 +1,7 @@
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
+using CShells.Features;
 using CShells.Lifecycle;
 using CShells.Nuplane;
 using CShells.Nuplane.Internal;
@@ -9,6 +13,17 @@ namespace CShells.Tests.Integration.Nuplane;
 
 public sealed class NuplaneRefreshCoordinatorTests
 {
+    [Fact]
+    public async Task RemovedPackageAssembly_RemainsAvailableToDrainingShellUntilItsScopeEnds()
+    {
+        var fixturePath = Path.Combine(AppContext.BaseDirectory, "CShells.DynamicFeatureFixture.dll");
+        Assert.True(File.Exists(fixturePath), $"Dynamic feature fixture was not copied to '{fixturePath}'.");
+
+        var (packageCatalog, loadContextReference) = CreateCollectiblePackageCatalog(fixturePath);
+        await RemovePackageWhileServingShellDrainsAsync(packageCatalog, loadContextReference);
+        await AssertCollectibleAsync(loadContextReference);
+    }
+
     [Fact]
     public async Task ColdChangedWorkIsDeferredUntilBuildAndUnchangedCallbackDoesNotReloadFirstShell()
     {
@@ -445,6 +460,113 @@ public sealed class NuplaneRefreshCoordinatorTests
         var registry = TestShellRegistry.Create(out var registryState);
         var coordinator = new NuplaneRefreshCoordinator(catalog, new TestOptionsMonitor<NuplaneIntegrationOptions>(options ?? new NuplaneIntegrationOptions()), () => registry);
         return (coordinator, catalog, registryState);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static (FakePackageAssemblyCatalog Catalog, WeakReference LoadContextReference) CreateCollectiblePackageCatalog(
+        string fixturePath)
+    {
+        var loadContext = new CollectibleFeatureLoadContext();
+        var loadContextReference = new WeakReference(loadContext, trackResurrection: true);
+        var assembly = loadContext.LoadFromAssemblyPath(fixturePath);
+        return (new FakePackageAssemblyCatalog
+        {
+            Packages = [FakePackageAssemblyCatalog.CreatePackage("dynamic-feature", assembly)]
+        }, loadContextReference);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task RemovePackageWhileServingShellDrainsAsync(
+        FakePackageAssemblyCatalog packageCatalog,
+        WeakReference loadContextReference)
+    {
+        await using var host = NuplaneTestHost.Build(
+            services => services.AddSingleton<IPackageAssemblyCatalog>(packageCatalog),
+            shells => shells.WithNuplaneFeatureDiscovery(options => options.AutoReload = true)
+                .AddShell("collectible-package", shell => shell.WithFeature("Dynamic")));
+        var registry = host.GetRequiredService<IShellRegistry>();
+        var oldShell = await registry.ActivateAsync("collectible-package");
+        AssertShellUsesDynamicFeature(oldShell);
+
+        var oldScope = oldShell.BeginScope();
+        try
+        {
+            packageCatalog.Packages = [];
+            await host.GetRequiredService<INuplaneObserver>().OnPackagesReconciledAsync(
+                FakePackageAssemblyCatalog.ChangeSet(removed: ["dynamic-feature"]), [], CancellationToken.None);
+
+            var activeShell = registry.GetActive("collectible-package");
+            Assert.NotNull(activeShell);
+            Assert.NotSame(oldShell, activeShell);
+            Assert.Equal(ShellLifecycleState.Active, activeShell!.State);
+            Assert.Equal(ShellLifecycleState.Draining, oldShell.State);
+            Assert.True(loadContextReference.IsAlive,
+                "The collectible package context must remain alive while its shell generation still serves an open scope.");
+
+            var retainedFeature = AssertRetainedDynamicFeature(oldScope, activeShell);
+            Assert.Equal("DynamicFeature", retainedFeature.Name);
+            var markerType = retainedFeature.Assembly.GetType(
+                "CShells.DynamicFeatureFixture.DynamicFeatureMarker", throwOnError: true)!;
+            Assert.NotNull(oldScope.ServiceProvider.GetService(markerType));
+            Assert.Null(activeShell.ServiceProvider.GetService(markerType));
+
+            var oldDrain = Assert.IsAssignableFrom<IDrainOperation>(oldShell.Drain);
+            await oldScope.DisposeAsync();
+            var drainResult = await oldDrain.WaitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(DrainStatus.Completed, drainResult.Status);
+            Assert.Equal(ShellLifecycleState.Disposed, oldShell.State);
+        }
+        finally
+        {
+            await oldScope.DisposeAsync();
+        }
+
+        var loadContext = Assert.IsAssignableFrom<AssemblyLoadContext>(loadContextReference.Target);
+        loadContext.Unload();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void AssertShellUsesDynamicFeature(IShell shell)
+    {
+        var descriptors = shell.ServiceProvider.GetRequiredService<IReadOnlyCollection<ShellFeatureDescriptor>>();
+        Assert.Contains(descriptors, descriptor => descriptor.Id == "Dynamic");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Type AssertRetainedDynamicFeature(IShellScope oldScope, IShell activeShell)
+    {
+        var oldDescriptors = oldScope.ServiceProvider.GetRequiredService<IReadOnlyCollection<ShellFeatureDescriptor>>();
+        var retainedType = Assert.Single(oldDescriptors, descriptor => descriptor.Id == "Dynamic").StartupType;
+        Assert.NotNull(retainedType);
+
+        var activeDescriptors = activeShell.ServiceProvider.GetRequiredService<IReadOnlyCollection<ShellFeatureDescriptor>>();
+        Assert.DoesNotContain(activeDescriptors, descriptor => descriptor.Id == "Dynamic");
+        return retainedType!;
+    }
+
+    private static async Task AssertCollectibleAsync(WeakReference loadContextReference)
+    {
+        for (var attempt = 0; attempt < 100 && loadContextReference.IsAlive; attempt++)
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            await Task.Yield();
+        }
+
+        Assert.False(loadContextReference.IsAlive,
+            "The removed package context remained rooted after the old shell generation drained and disposed.");
+    }
+
+    private sealed class CollectibleFeatureLoadContext : AssemblyLoadContext
+    {
+        public CollectibleFeatureLoadContext()
+            : base($"CShells.Nuplane.DynamicFeature-{Guid.NewGuid():N}", isCollectible: true)
+        {
+        }
+
+        protected override Assembly? Load(AssemblyName assemblyName) =>
+            AssemblyLoadContext.Default.LoadFromAssemblyName(assemblyName);
     }
 
 }
