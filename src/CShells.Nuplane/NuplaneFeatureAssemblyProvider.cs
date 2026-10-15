@@ -8,8 +8,9 @@ namespace CShells.Nuplane;
 /// Contributes assemblies Nuplane has already loaded for active packages to CShells feature discovery.
 /// </summary>
 /// <remarks>
-/// The provider returns loaded <see cref="Assembly"/> instances in package-catalog order. It does not load
-/// package files or use <see cref="PackageAssemblies.AssemblyReferences"/>.
+/// The provider returns loaded <see cref="Assembly"/> instances in package-catalog order. The catalog owns its
+/// active/load-state and package-data lookups; this provider itself does not open package files or use
+/// <see cref="PackageAssemblies.AssemblyReferences"/>.
 /// </remarks>
 public sealed class NuplaneFeatureAssemblyProvider(IPackageAssemblyCatalog packageAssemblyCatalog) : IFeatureAssemblyProvider
 {

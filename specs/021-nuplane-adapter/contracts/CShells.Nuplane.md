@@ -75,7 +75,7 @@ The adapter does not format host-specific errors. A host callback may recognize 
 
 ## Registration and ordering guarantees
 
-- The adapter appends its own `INuplaneObserver` factory after the loader observer. The coordinator implements `IPackagePathIndependentNuplaneObserver` because every lifecycle callback uses change metadata and the loaded-assembly catalog; it never opens or retains package paths. Existing observer descriptors remain in place and are not replaced.
+- The adapter appends its own `INuplaneObserver` factory after the loader observer. The coordinator implements `IPostLoadingNuplaneObserver`. Its scoped callbacks are no-ops during coordinated Phase A; it refreshes the catalog and optionally reloads shells from the awaited post-loading callback, after root admission and store-lock release and after Nuplane loads leased graphs. On the ordinary non-coordinated route, `OnPackagesReconciledAsync` retains its existing behavior. The coordinator does not claim package-path independence because its refresh reads the active package catalog.
 - Root observer and root `IShellGenerationBuildParticipant` resolve one coordinator instance.
 - Only the private, nonparticipant `CoordinatorHolder` is selected by `ShareSingletonWithShells<T>()`.
 - The participant concrete and interface descriptors stay root-only. Shell observer aliases resolve the root coordinator through the shared holder.

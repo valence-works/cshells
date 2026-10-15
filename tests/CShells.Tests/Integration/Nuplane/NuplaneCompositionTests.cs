@@ -170,7 +170,8 @@ public sealed class NuplaneCompositionTests
         }
 
         Assert.Same(observer, participant);
-        Assert.IsAssignableFrom<IPackagePathIndependentNuplaneObserver>(observer);
+        Assert.IsAssignableFrom<IPostLoadingNuplaneObserver>(observer);
+        Assert.False(observer is IPackagePathIndependentNuplaneObserver);
         var shell = await host.GetRequiredService<IShellRegistry>().ActivateAsync("aliases");
         Assert.Same(observer, shell.ServiceProvider.GetServices<INuplaneObserver>().Last());
         Assert.Null(shell.ServiceProvider.GetService<IShellGenerationBuildParticipant>());

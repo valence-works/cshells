@@ -6,7 +6,9 @@ using CShells.Lifecycle;
 using CShells.Nuplane;
 using CShells.Nuplane.Internal;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nuplane.Abstractions;
+using Nuplane.Abstractions.PackageStoreProtection;
 using Nuplane.Loading;
 
 namespace CShells.Tests.Integration.Nuplane;
@@ -205,6 +207,56 @@ public sealed class NuplaneRefreshCoordinatorTests
         await NuplaneCoordinatorTestCases.NotifyAsync(coordinator, sourceChanged: false);
 
         Assert.Equal(2, catalog.RefreshCount);
+        Assert.Single(loggerProvider.Snapshot());
+    }
+
+    [Fact]
+    public async Task CoordinatedRefreshWaitsForPostLoadingAndRetriesPendingRefresh()
+    {
+        var refreshFailure = new InvalidOperationException("first post-loading refresh failed");
+        var loggerProvider = new NuplaneTestLoggerProvider();
+        var catalog = new TestRuntimeFeatureCatalog
+        {
+            RefreshHandler = (number, _) => number == 1
+                ? Task.FromException(refreshFailure)
+                : Task.CompletedTask
+        };
+        var registry = TestShellRegistry.Create(out var registryState);
+        var coordinator = new NuplaneRefreshCoordinator(
+            catalog,
+            new TestOptionsMonitor<NuplaneIntegrationOptions>(new NuplaneIntegrationOptions { AutoReload = true }),
+            () => registry,
+            loggerProvider.CreateTypedLogger<NuplaneRefreshCoordinator>());
+        var postLoadingObserver = Assert.IsAssignableFrom<IPostLoadingNuplaneObserver>(coordinator);
+        var applied = FakePackageAssemblyCatalog.Resolved("feature-package");
+        var changed = new PackageChangeSet([applied], [], [], "post-loading-correlation", DateTimeOffset.UtcNow);
+
+        await coordinator.OnPackagesChangingAsync(changed, null!, CancellationToken.None);
+        await coordinator.OnPackagesChangedAsync(changed, null!, CancellationToken.None);
+        await coordinator.OnPackageFailedAsync("failed-package", new InvalidOperationException("ignored"), null!, CancellationToken.None);
+        await coordinator.OnPackagesReconciledAsync(changed, [applied], null!, CancellationToken.None);
+
+        Assert.Equal(0, catalog.RefreshCount);
+        Assert.Equal(0, registryState.ActiveShellReadCount);
+        Assert.Equal(0, registryState.ReloadCount);
+
+        var firstFailure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            postLoadingObserver.OnPackageLoadingCompletedAsync(changed, [applied], CancellationToken.None));
+
+        Assert.Same(refreshFailure, firstFailure);
+        Assert.Equal(1, catalog.RefreshCount);
+        Assert.Equal(0, registryState.ReloadCount);
+        var error = Assert.Single(loggerProvider.Snapshot());
+        Assert.Equal(LogLevel.Error, error.Level);
+        Assert.Same(refreshFailure, error.Exception);
+        Assert.Equal(nameof(IPostLoadingNuplaneObserver.OnPackageLoadingCompletedAsync), error.Properties["Operation"]);
+        Assert.Equal("post-loading-correlation", error.Properties["CorrelationId"]);
+
+        var unchangedEligible = FakePackageAssemblyCatalog.ChangeSet();
+        await postLoadingObserver.OnPackageLoadingCompletedAsync(unchangedEligible, [applied], CancellationToken.None);
+
+        Assert.Equal(2, catalog.RefreshCount);
+        Assert.Equal(1, registryState.ReloadCount);
         Assert.Single(loggerProvider.Snapshot());
     }
 
