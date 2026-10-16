@@ -2,7 +2,7 @@
 
 ## Dependencies
 
-The adapter package references `CShells`, `CShells.Abstractions`, `Nuplane.Abstractions`, and `Nuplane.Loading.Abstractions`. Nuplane dependencies use central interim version `0.0.11-preview.99`. The package does not reference Nuplane runtime/loading implementations or Elsa.
+The adapter package references `CShells`, `CShells.Abstractions`, `Nuplane.Abstractions`, and `Nuplane.Loading.Abstractions`. This release candidate pins the Nuplane family to `0.0.12`; stable package availability is an external prerequisite for package restore and final qualification. The package does not reference Nuplane runtime/loading implementations or Elsa.
 
 ## Feature assembly provider
 
@@ -75,9 +75,9 @@ The adapter does not format host-specific errors. A host callback may recognize 
 
 ## Registration and ordering guarantees
 
-- The adapter appends its own `INuplaneObserver` factory after the loader observer. Existing observer descriptors remain in place and are not replaced.
+- The adapter appends its own `INuplaneObserver` factory after the loader observer. The coordinator implements `IPostLoadingNuplaneObserver`. Its scoped callbacks are no-ops during coordinated Phase A; it refreshes the catalog and optionally reloads shells from the awaited post-loading callback, after root admission and store-lock release and after Nuplane loads leased graphs. On the ordinary non-coordinated route, `OnPackagesReconciledAsync` retains its existing behavior. The coordinator does not claim package-path independence because its refresh reads the active package catalog.
 - Root observer and root `IShellGenerationBuildParticipant` resolve one coordinator instance.
 - Only the private, nonparticipant `CoordinatorHolder` is selected by `ShareSingletonWithShells<T>()`.
 - The participant concrete and interface descriptors stay root-only. Shell observer aliases resolve the root coordinator through the shared holder.
 - Registry resolution is lazy inside observer work through a root `Func<IShellRegistry>`; the coordinator constructor does not resolve the registry.
-- The no-op build lease provides no assembly-readability or generation-lifetime protection.
+- The no-op build lease provides no separate assembly-readability or generation-lifetime protection. Runtime catalog snapshots and shell providers retain loaded assemblies and feature types while needed; a serving or draining generation therefore keeps its collectible load context alive until the generation is disposed. Nuplane retains ownership of package paths and graph-use lifetime.

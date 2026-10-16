@@ -16,6 +16,7 @@ public sealed class DynamicFeature : IWebShellFeature
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services)
     {
+        services.AddSingleton<DynamicFeatureMarker>();
     }
 
     /// <inheritdoc />
@@ -25,4 +26,8 @@ public sealed class DynamicFeature : IWebShellFeature
     }
 
     private static IResult HandleRequest() => Results.Ok("collectible-feature");
+}
+
+public sealed class DynamicFeatureMarker
+{
 }

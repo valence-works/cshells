@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nuplane.Abstractions;
+using Nuplane.Abstractions.PackageStoreProtection;
 
 namespace CShells.Nuplane.Internal;
 
@@ -12,7 +13,7 @@ internal sealed class NuplaneRefreshCoordinator(
     IRuntimeFeatureCatalog featureCatalog,
     IOptionsMonitor<NuplaneIntegrationOptions> options,
     Func<IShellRegistry> shellRegistryFactory,
-    ILogger<NuplaneRefreshCoordinator>? logger = null) : INuplaneObserver, IShellGenerationBuildParticipant
+    ILogger<NuplaneRefreshCoordinator>? logger = null) : IPostLoadingNuplaneObserver, IShellGenerationBuildParticipant
 {
     private readonly IRuntimeFeatureCatalog catalog = featureCatalog ?? throw new ArgumentNullException(nameof(featureCatalog));
     private readonly IOptionsMonitor<NuplaneIntegrationOptions> optionsMonitor = options ?? throw new ArgumentNullException(nameof(options));
@@ -34,9 +35,55 @@ internal sealed class NuplaneRefreshCoordinator(
 
     public Task OnPackageFailedAsync(string packageId, Exception exception, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public async Task OnPackagesReconciledAsync(
+    public Task OnPackagesReconciledAsync(
         PackageChangeSet changeSet,
         IReadOnlyList<ResolvedPackage> appliedPackages,
+        CancellationToken cancellationToken)
+        => ProcessCompletionAsync(
+            changeSet,
+            appliedPackages,
+            nameof(INuplaneObserver.OnPackagesReconciledAsync),
+            cancellationToken);
+
+    public Task OnPackagesChangingAsync(
+        PackageChangeSet changeSet,
+        PackageStoreOperationBorrow borrow,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task OnPackagesChangedAsync(
+        PackageChangeSet changeSet,
+        PackageStoreOperationBorrow borrow,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task OnPackageFailedAsync(
+        string packageId,
+        Exception exception,
+        PackageStoreOperationBorrow borrow,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>
+    /// Participating reconciliation deliberately does no refresh while its root admission and store lock are held.
+    /// The post-loading callback runs after those locks are released and after Nuplane has loaded leased graphs.
+    /// </summary>
+    public Task OnPackagesReconciledAsync(
+        PackageChangeSet changeSet,
+        IReadOnlyList<ResolvedPackage> appliedPackages,
+        PackageStoreOperationBorrow borrow,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task OnPackageLoadingCompletedAsync(
+        PackageChangeSet changeSet,
+        IReadOnlyList<ResolvedPackage> appliedPackages,
+        CancellationToken cancellationToken) => ProcessCompletionAsync(
+            changeSet,
+            appliedPackages,
+            nameof(IPostLoadingNuplaneObserver.OnPackageLoadingCompletedAsync),
+            cancellationToken);
+
+    private async Task ProcessCompletionAsync(
+        PackageChangeSet changeSet,
+        IReadOnlyList<ResolvedPackage> appliedPackages,
+        string operationName,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(changeSet);
@@ -88,7 +135,7 @@ internal sealed class NuplaneRefreshCoordinator(
             loggerInstance.LogError(
                 exception,
                 "Nuplane reconciliation operation {Operation} failed for {CorrelationId}.",
-                nameof(INuplaneObserver.OnPackagesReconciledAsync),
+                operationName,
                 changeSet.CorrelationId);
             throw;
         }
